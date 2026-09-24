@@ -1,0 +1,24 @@
+package com.roadrail.config;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+import java.util.Map;
+
+@ConfigurationProperties(prefix = "roadrail")
+public record AppProperties(
+        String adminToken,
+        String kakaoRestApiKey,
+        String kakaoMobilityBaseUrl,
+        int onTimeThresholdMin,
+        int decisionSimilarMin,
+        int decisionPopWarn,
+        int defaultAccessMin,
+        int forecastTauMin,
+        int nowCacheSeconds,
+        int roadStaleMinutes,
+        Map<String, Integer> quota) {
+
+    public int quotaOf(String provider) {
+        return quota == null ? 0 : quota.getOrDefault(provider, 0);
+    }
+}

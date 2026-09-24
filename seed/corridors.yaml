@@ -1,0 +1,1757 @@
+# 코리도 시드 (FR-102) — tools/build_seed.py 가 생성. 손으로 고쳐도 되며 적용은 멱등입니다.
+# road.<DIR>[]: 방향별 영업소 구간 체인, rail: 역 쌍, env: 날씨·대기 지점
+generatedAt: "2026-09-24T22:10:31+09:00"
+generator: "tools/build_seed.py"
+note: "구간 체인은 realUnitTrtm 오늘 행 수로 표본 충분성을 확인해 자동 선택 (MIN_ROWS=120)"
+stations:
+  - code: "3900023"
+    name: "서울"
+    lat: 37.55406888733184
+    lon: 126.97070335253385
+    source: "KAKAO"
+  - code: "3900025"
+    name: "용산"
+    lat: 37.5300763645794
+    lon: 126.964824061815
+    source: "KAKAO"
+  - code: "3900073"
+    name: "대전"
+    lat: 36.33229415139486
+    lon: 127.4346445159045
+    source: "KAKAO"
+  - code: "3900096"
+    name: "동대구"
+    lat: 35.8793239931795
+    lon: 128.628393775388
+    source: "KAKAO"
+  - code: "3900114"
+    name: "부산"
+    lat: 35.11520340622514
+    lon: 129.04154985192403
+    source: "KAKAO"
+  - code: "3900884"
+    name: "천안아산"
+    lat: 36.79434469820448
+    lon: 127.10444383891124
+    source: "KAKAO"
+  - code: "3900242"
+    name: "목포"
+    lat: 34.79113445784631
+    lon: 126.38657548066539
+    source: "KAKAO"
+  - code: "3900587"
+    name: "강릉"
+    lat: 37.7645235587621
+    lon: 128.899627553491
+    source: "KAKAO"
+units:
+  - code: "101"
+    name: "서울"
+    routeNo: "001"
+    lat: 37.365046
+    lon: 127.102077
+  - code: "103"
+    name: "수원신갈"
+    routeNo: "001"
+    lat: 37.266835
+    lon: 127.102395
+  - code: "106"
+    name: "오산"
+    routeNo: "001"
+    lat: 37.143445
+    lon: 127.08013
+  - code: "107"
+    name: "안성"
+    routeNo: "001"
+    lat: 36.995586
+    lon: 127.15041
+  - code: "108"
+    name: "천안"
+    routeNo: "001"
+    lat: 36.826143
+    lon: 127.166314
+  - code: "110"
+    name: "독립기념관"
+    routeNo: "001"
+    lat: 36.768049
+    lon: 127.230608
+  - code: "111"
+    name: "청주"
+    routeNo: "001"
+    lat: 36.625153
+    lon: 127.37979
+  - code: "112"
+    name: "남청주"
+    routeNo: "001"
+    lat: 36.534429
+    lon: 127.423946
+  - code: "113"
+    name: "신탄진"
+    routeNo: "001"
+    lat: 36.439014
+    lon: 127.422199
+  - code: "115"
+    name: "대전"
+    routeNo: "001"
+    lat: 36.361324
+    lon: 127.448327
+  - code: "116"
+    name: "옥천"
+    routeNo: "001"
+    lat: 36.309934
+    lon: 127.568131
+  - code: "118"
+    name: "영동"
+    routeNo: "001"
+    lat: 36.270309
+    lon: 127.829721
+  - code: "120"
+    name: "황간"
+    routeNo: "001"
+    lat: 36.223027
+    lon: 127.901978
+  - code: "122"
+    name: "김천"
+    routeNo: "001"
+    lat: 36.130898
+    lon: 128.094079
+  - code: "123"
+    name: "구미"
+    routeNo: "001"
+    lat: 36.113469
+    lon: 128.360342
+  - code: "125"
+    name: "남구미"
+    routeNo: "001"
+    lat: 36.072644
+    lon: 128.371779
+  - code: "126"
+    name: "왜관"
+    routeNo: "001"
+    lat: 35.979206
+    lon: 128.429108
+  - code: "127"
+    name: "서대구"
+    routeNo: "001"
+    lat: 35.884362
+    lon: 128.525315
+  - code: "129"
+    name: "북대구"
+    routeNo: "001"
+    lat: 35.911046
+    lon: 128.584088
+  - code: "130"
+    name: "동김천"
+    routeNo: "001"
+    lat: 36.139931
+    lon: 128.175588
+  - code: "131"
+    name: "경산"
+    routeNo: "001"
+    lat: 35.874997
+    lon: 128.793257
+  - code: "132"
+    name: "영천"
+    routeNo: "001"
+    lat: 35.925306
+    lon: 128.951405
+  - code: "133"
+    name: "서경주"
+    routeNo: "001"
+    lat: 35.840712
+    lon: 129.082896
+  - code: "135"
+    name: "경주"
+    routeNo: "001"
+    lat: 35.809826
+    lon: 129.18864
+  - code: "137"
+    name: "통도사"
+    routeNo: "001"
+    lat: 35.50268
+    lon: 129.09513
+  - code: "138"
+    name: "양산"
+    routeNo: "001"
+    lat: 35.376937
+    lon: 129.048465
+  - code: "139"
+    name: "서울산"
+    routeNo: "001"
+    lat: 35.556094
+    lon: 129.124318
+  - code: "140"
+    name: "부산"
+    routeNo: "001"
+    lat: 35.278796
+    lon: 129.10517
+  - code: "171"
+    name: "마성"
+    routeNo: "050"
+    lat: 37.284826
+    lon: 127.177727
+  - code: "172"
+    name: "용인"
+    routeNo: "050"
+    lat: 37.259341
+    lon: 127.21131
+  - code: "173"
+    name: "양지"
+    routeNo: "050"
+    lat: 37.236295
+    lon: 127.295666
+  - code: "175"
+    name: "덕평"
+    routeNo: "050"
+    lat: 37.239441
+    lon: 127.365735
+  - code: "176"
+    name: "이천"
+    routeNo: "050"
+    lat: 37.251268
+    lon: 127.495005
+  - code: "177"
+    name: "여주"
+    routeNo: "050"
+    lat: 37.253734
+    lon: 127.649845
+  - code: "178"
+    name: "문막"
+    routeNo: "050"
+    lat: 37.313698
+    lon: 127.825898
+  - code: "180"
+    name: "원주"
+    routeNo: "050"
+    lat: 37.399177
+    lon: 127.949955
+  - code: "181"
+    name: "새말"
+    routeNo: "050"
+    lat: 37.449741
+    lon: 128.070769
+  - code: "182"
+    name: "둔내"
+    routeNo: "050"
+    lat: 37.497035
+    lon: 128.205765
+  - code: "183"
+    name: "면온"
+    routeNo: "050"
+    lat: 37.561235
+    lon: 128.362953
+  - code: "184"
+    name: "대관령"
+    routeNo: "050"
+    lat: 37.682744
+    lon: 128.695545
+  - code: "185"
+    name: "평창"
+    routeNo: "050"
+    lat: 37.587321
+    lon: 128.412389
+  - code: "187"
+    name: "진부"
+    routeNo: "050"
+    lat: 37.648394
+    lon: 128.561586
+  - code: "189"
+    name: "강릉"
+    routeNo: "065"
+    lat: 37.746445
+    lon: 128.846836
+  - code: "227"
+    name: "군산"
+    routeNo: "015"
+    lat: 36.002506
+    lon: 126.790774
+  - code: "228"
+    name: "동군산"
+    routeNo: "015"
+    lat: 35.945164
+    lon: 126.829418
+  - code: "229"
+    name: "북천안"
+    routeNo: "001"
+    lat: 36.898911
+    lon: 127.183964
+  - code: "234"
+    name: "서천"
+    routeNo: "015"
+    lat: 36.095569
+    lon: 126.689046
+  - code: "253"
+    name: "서서울"
+    routeNo: "015"
+    lat: 37.355446
+    lon: 126.864689
+  - code: "257"
+    name: "홍성"
+    routeNo: "015"
+    lat: 36.595656
+    lon: 126.562018
+  - code: "258"
+    name: "광천"
+    routeNo: "015"
+    lat: 36.498494
+    lon: 126.593303
+  - code: "259"
+    name: "대천"
+    routeNo: "015"
+    lat: 36.332006
+    lon: 126.570493
+  - code: "281"
+    name: "매송"
+    routeNo: "015"
+    lat: 37.281755
+    lon: 126.890682
+  - code: "282"
+    name: "비봉"
+    routeNo: "015"
+    lat: 37.244711
+    lon: 126.886648
+  - code: "283"
+    name: "발안"
+    routeNo: "015"
+    lat: 37.12135
+    lon: 126.886818
+  - code: "285"
+    name: "서평택"
+    routeNo: "015"
+    lat: 36.99411
+    lon: 126.863858
+  - code: "287"
+    name: "송악"
+    routeNo: "015"
+    lat: 36.934057
+    lon: 126.785895
+  - code: "288"
+    name: "당진"
+    routeNo: "015"
+    lat: 36.895637
+    lon: 126.702448
+  - code: "298"
+    name: "서산"
+    routeNo: "015"
+    lat: 36.809913
+    lon: 126.569653
+  - code: "299"
+    name: "해미"
+    routeNo: "015"
+    lat: 36.7086
+    lon: 126.55674
+  - code: "502"
+    name: "부안"
+    routeNo: "015"
+    lat: 35.726985
+    lon: 126.773477
+  - code: "503"
+    name: "줄포"
+    routeNo: "015"
+    lat: 35.598477
+    lon: 126.702323
+  - code: "504"
+    name: "선운산"
+    routeNo: "015"
+    lat: 35.51089
+    lon: 126.688662
+  - code: "506"
+    name: "영광"
+    routeNo: "015"
+    lat: 35.303471
+    lon: 126.554466
+  - code: "507"
+    name: "함평"
+    routeNo: "015"
+    lat: 35.096965
+    lon: 126.48607
+  - code: "508"
+    name: "무안"
+    routeNo: "015"
+    lat: 35.008119
+    lon: 126.497717
+  - code: "509"
+    name: "목포"
+    routeNo: "015"
+    lat: 34.863289
+    lon: 126.485422
+  - code: "511"
+    name: "무창포"
+    routeNo: "015"
+    lat: 36.241003
+    lon: 126.56535
+  - code: "528"
+    name: "기흥동탄"
+    routeNo: "001"
+    lat: 37.217456
+    lon: 127.091878
+  - code: "580"
+    name: "북강릉"
+    routeNo: "065"
+    lat: 37.835913
+    lon: 128.821284
+corridors:
+  - id: "SEL-DJN"
+    name: "서울–대전"
+    originCity: "서울"
+    destCity: "대전"
+    road:
+      DN:
+        - start: "101"
+          end: "103"
+          startName: "서울"
+          endName: "수원신갈"
+          distanceKm: 12.6
+          rowsToday: 900
+        - start: "103"
+          end: "528"
+          startName: "수원신갈"
+          endName: "기흥동탄"
+          distanceKm: 6.4
+          rowsToday: 257
+        - start: "528"
+          end: "106"
+          startName: "기흥동탄"
+          endName: "오산"
+          distanceKm: 9.5
+          rowsToday: 235
+        - start: "106"
+          end: "107"
+          startName: "오산"
+          endName: "안성"
+          distanceKm: 20.2
+          rowsToday: 292
+        - start: "107"
+          end: "229"
+          startName: "안성"
+          endName: "북천안"
+          distanceKm: 12.8
+          rowsToday: 262
+        - start: "229"
+          end: "108"
+          startName: "북천안"
+          endName: "천안"
+          distanceKm: 9.5
+          rowsToday: 262
+        - start: "108"
+          end: "110"
+          startName: "천안"
+          endName: "독립기념관"
+          distanceKm: 9.9
+          rowsToday: 251
+        - start: "110"
+          end: "111"
+          startName: "독립기념관"
+          endName: "청주"
+          distanceKm: 23.8
+          rowsToday: 139
+        - start: "111"
+          end: "113"
+          startName: "청주"
+          endName: "신탄진"
+          distanceKm: 24.2
+          rowsToday: 191
+        - start: "113"
+          end: "115"
+          startName: "신탄진"
+          endName: "대전"
+          distanceKm: 10.3
+          rowsToday: 226
+      UP:
+        - start: "115"
+          end: "113"
+          startName: "대전"
+          endName: "신탄진"
+          distanceKm: 10.3
+          rowsToday: 240
+        - start: "113"
+          end: "112"
+          startName: "신탄진"
+          endName: "남청주"
+          distanceKm: 12.2
+          rowsToday: 146
+        - start: "112"
+          end: "111"
+          startName: "남청주"
+          endName: "청주"
+          distanceKm: 12.5
+          rowsToday: 36
+        - start: "111"
+          end: "110"
+          startName: "청주"
+          endName: "독립기념관"
+          distanceKm: 23.8
+          rowsToday: 125
+        - start: "110"
+          end: "108"
+          startName: "독립기념관"
+          endName: "천안"
+          distanceKm: 9.9
+          rowsToday: 191
+        - start: "108"
+          end: "229"
+          startName: "천안"
+          endName: "북천안"
+          distanceKm: 9.5
+          rowsToday: 323
+        - start: "229"
+          end: "107"
+          startName: "북천안"
+          endName: "안성"
+          distanceKm: 12.8
+          rowsToday: 161
+        - start: "107"
+          end: "106"
+          startName: "안성"
+          endName: "오산"
+          distanceKm: 20.2
+          rowsToday: 273
+        - start: "106"
+          end: "528"
+          startName: "오산"
+          endName: "기흥동탄"
+          distanceKm: 9.5
+          rowsToday: 218
+        - start: "528"
+          end: "103"
+          startName: "기흥동탄"
+          endName: "수원신갈"
+          distanceKm: 6.4
+          rowsToday: 269
+        - start: "103"
+          end: "101"
+          startName: "수원신갈"
+          endName: "서울"
+          distanceKm: 12.6
+          rowsToday: 837
+    rail:
+      DN:
+        dep: "3900023"
+        arr: "3900073"
+      UP:
+        dep: "3900073"
+        arr: "3900023"
+    env:
+      - role: "origin"
+        name: "서울"
+        lat: 37.55406888733184
+        lon: 126.97070335253385
+        sido: "서울"
+      - role: "dest"
+        name: "대전"
+        lat: 36.33229415139486
+        lon: 127.4346445159045
+        sido: "대전"
+  - id: "SEL-CAN"
+    name: "서울–천안"
+    originCity: "서울"
+    destCity: "천안"
+    road:
+      DN:
+        - start: "101"
+          end: "103"
+          startName: "서울"
+          endName: "수원신갈"
+          distanceKm: 12.6
+          rowsToday: 900
+        - start: "103"
+          end: "528"
+          startName: "수원신갈"
+          endName: "기흥동탄"
+          distanceKm: 6.4
+          rowsToday: 257
+        - start: "528"
+          end: "106"
+          startName: "기흥동탄"
+          endName: "오산"
+          distanceKm: 9.5
+          rowsToday: 235
+        - start: "106"
+          end: "107"
+          startName: "오산"
+          endName: "안성"
+          distanceKm: 20.2
+          rowsToday: 292
+        - start: "107"
+          end: "229"
+          startName: "안성"
+          endName: "북천안"
+          distanceKm: 12.8
+          rowsToday: 262
+        - start: "229"
+          end: "108"
+          startName: "북천안"
+          endName: "천안"
+          distanceKm: 9.5
+          rowsToday: 262
+      UP:
+        - start: "108"
+          end: "229"
+          startName: "천안"
+          endName: "북천안"
+          distanceKm: 9.5
+          rowsToday: 323
+        - start: "229"
+          end: "107"
+          startName: "북천안"
+          endName: "안성"
+          distanceKm: 12.8
+          rowsToday: 161
+        - start: "107"
+          end: "106"
+          startName: "안성"
+          endName: "오산"
+          distanceKm: 20.2
+          rowsToday: 273
+        - start: "106"
+          end: "528"
+          startName: "오산"
+          endName: "기흥동탄"
+          distanceKm: 9.5
+          rowsToday: 218
+        - start: "528"
+          end: "103"
+          startName: "기흥동탄"
+          endName: "수원신갈"
+          distanceKm: 6.4
+          rowsToday: 269
+        - start: "103"
+          end: "101"
+          startName: "수원신갈"
+          endName: "서울"
+          distanceKm: 12.6
+          rowsToday: 837
+    rail:
+      DN:
+        dep: "3900023"
+        arr: "3900884"
+      UP:
+        dep: "3900884"
+        arr: "3900023"
+    env:
+      - role: "origin"
+        name: "서울"
+        lat: 37.55406888733184
+        lon: 126.97070335253385
+        sido: "서울"
+      - role: "dest"
+        name: "천안아산"
+        lat: 36.79434469820448
+        lon: 127.10444383891124
+        sido: "충남"
+  - id: "SEL-DGU"
+    name: "서울–대구"
+    originCity: "서울"
+    destCity: "대구"
+    road:
+      DN:
+        - start: "101"
+          end: "103"
+          startName: "서울"
+          endName: "수원신갈"
+          distanceKm: 12.6
+          rowsToday: 900
+        - start: "103"
+          end: "528"
+          startName: "수원신갈"
+          endName: "기흥동탄"
+          distanceKm: 6.4
+          rowsToday: 257
+        - start: "528"
+          end: "106"
+          startName: "기흥동탄"
+          endName: "오산"
+          distanceKm: 9.5
+          rowsToday: 235
+        - start: "106"
+          end: "107"
+          startName: "오산"
+          endName: "안성"
+          distanceKm: 20.2
+          rowsToday: 292
+        - start: "107"
+          end: "229"
+          startName: "안성"
+          endName: "북천안"
+          distanceKm: 12.8
+          rowsToday: 262
+        - start: "229"
+          end: "108"
+          startName: "북천안"
+          endName: "천안"
+          distanceKm: 9.5
+          rowsToday: 262
+        - start: "108"
+          end: "110"
+          startName: "천안"
+          endName: "독립기념관"
+          distanceKm: 9.9
+          rowsToday: 251
+        - start: "110"
+          end: "111"
+          startName: "독립기념관"
+          endName: "청주"
+          distanceKm: 23.8
+          rowsToday: 139
+        - start: "111"
+          end: "113"
+          startName: "청주"
+          endName: "신탄진"
+          distanceKm: 24.2
+          rowsToday: 191
+        - start: "113"
+          end: "115"
+          startName: "신탄진"
+          endName: "대전"
+          distanceKm: 10.3
+          rowsToday: 226
+        - start: "115"
+          end: "116"
+          startName: "대전"
+          endName: "옥천"
+          distanceKm: 14.0
+          rowsToday: 303
+        - start: "116"
+          end: "118"
+          startName: "옥천"
+          endName: "영동"
+          distanceKm: 27.4
+          rowsToday: 44
+        - start: "118"
+          end: "122"
+          startName: "영동"
+          endName: "김천"
+          distanceKm: 32.6
+          rowsToday: 154
+        - start: "122"
+          end: "123"
+          startName: "김천"
+          endName: "구미"
+          distanceKm: 27.6
+          rowsToday: 226
+        - start: "123"
+          end: "125"
+          startName: "구미"
+          endName: "남구미"
+          distanceKm: 5.4
+          rowsToday: 190
+        - start: "125"
+          end: "126"
+          startName: "남구미"
+          endName: "왜관"
+          distanceKm: 13.3
+          rowsToday: 135
+        - start: "126"
+          end: "127"
+          startName: "왜관"
+          endName: "서대구"
+          distanceKm: 15.7
+          rowsToday: 306
+        - start: "127"
+          end: "129"
+          startName: "서대구"
+          endName: "북대구"
+          distanceKm: 7.0
+          rowsToday: 209
+      UP:
+        - start: "129"
+          end: "126"
+          startName: "북대구"
+          endName: "왜관"
+          distanceKm: 18.3
+          rowsToday: 310
+        - start: "126"
+          end: "123"
+          startName: "왜관"
+          endName: "구미"
+          distanceKm: 18.6
+          rowsToday: 165
+        - start: "123"
+          end: "130"
+          startName: "구미"
+          endName: "동김천"
+          distanceKm: 19.4
+          rowsToday: 290
+        - start: "130"
+          end: "122"
+          startName: "동김천"
+          endName: "김천"
+          distanceKm: 8.5
+          rowsToday: 118
+        - start: "122"
+          end: "120"
+          startName: "김천"
+          endName: "황간"
+          distanceKm: 23.1
+          rowsToday: 134
+        - start: "120"
+          end: "118"
+          startName: "황간"
+          endName: "영동"
+          distanceKm: 9.6
+          rowsToday: 62
+        - start: "118"
+          end: "115"
+          startName: "영동"
+          endName: "대전"
+          distanceKm: 41.0
+          rowsToday: 154
+        - start: "115"
+          end: "113"
+          startName: "대전"
+          endName: "신탄진"
+          distanceKm: 10.3
+          rowsToday: 240
+        - start: "113"
+          end: "112"
+          startName: "신탄진"
+          endName: "남청주"
+          distanceKm: 12.2
+          rowsToday: 146
+        - start: "112"
+          end: "111"
+          startName: "남청주"
+          endName: "청주"
+          distanceKm: 12.5
+          rowsToday: 36
+        - start: "111"
+          end: "110"
+          startName: "청주"
+          endName: "독립기념관"
+          distanceKm: 23.8
+          rowsToday: 125
+        - start: "110"
+          end: "108"
+          startName: "독립기념관"
+          endName: "천안"
+          distanceKm: 9.9
+          rowsToday: 191
+        - start: "108"
+          end: "229"
+          startName: "천안"
+          endName: "북천안"
+          distanceKm: 9.5
+          rowsToday: 323
+        - start: "229"
+          end: "107"
+          startName: "북천안"
+          endName: "안성"
+          distanceKm: 12.8
+          rowsToday: 161
+        - start: "107"
+          end: "106"
+          startName: "안성"
+          endName: "오산"
+          distanceKm: 20.2
+          rowsToday: 273
+        - start: "106"
+          end: "528"
+          startName: "오산"
+          endName: "기흥동탄"
+          distanceKm: 9.5
+          rowsToday: 218
+        - start: "528"
+          end: "103"
+          startName: "기흥동탄"
+          endName: "수원신갈"
+          distanceKm: 6.4
+          rowsToday: 269
+        - start: "103"
+          end: "101"
+          startName: "수원신갈"
+          endName: "서울"
+          distanceKm: 12.6
+          rowsToday: 837
+    rail:
+      DN:
+        dep: "3900023"
+        arr: "3900096"
+      UP:
+        dep: "3900096"
+        arr: "3900023"
+    env:
+      - role: "origin"
+        name: "서울"
+        lat: 37.55406888733184
+        lon: 126.97070335253385
+        sido: "서울"
+      - role: "dest"
+        name: "동대구"
+        lat: 35.8793239931795
+        lon: 128.628393775388
+        sido: "대구"
+  - id: "SEL-BSN"
+    name: "서울–부산"
+    originCity: "서울"
+    destCity: "부산"
+    road:
+      DN:
+        - start: "101"
+          end: "103"
+          startName: "서울"
+          endName: "수원신갈"
+          distanceKm: 12.6
+          rowsToday: 900
+        - start: "103"
+          end: "528"
+          startName: "수원신갈"
+          endName: "기흥동탄"
+          distanceKm: 6.4
+          rowsToday: 257
+        - start: "528"
+          end: "106"
+          startName: "기흥동탄"
+          endName: "오산"
+          distanceKm: 9.5
+          rowsToday: 235
+        - start: "106"
+          end: "107"
+          startName: "오산"
+          endName: "안성"
+          distanceKm: 20.2
+          rowsToday: 292
+        - start: "107"
+          end: "229"
+          startName: "안성"
+          endName: "북천안"
+          distanceKm: 12.8
+          rowsToday: 262
+        - start: "229"
+          end: "108"
+          startName: "북천안"
+          endName: "천안"
+          distanceKm: 9.5
+          rowsToday: 262
+        - start: "108"
+          end: "110"
+          startName: "천안"
+          endName: "독립기념관"
+          distanceKm: 9.9
+          rowsToday: 251
+        - start: "110"
+          end: "111"
+          startName: "독립기념관"
+          endName: "청주"
+          distanceKm: 23.8
+          rowsToday: 139
+        - start: "111"
+          end: "113"
+          startName: "청주"
+          endName: "신탄진"
+          distanceKm: 24.2
+          rowsToday: 191
+        - start: "113"
+          end: "115"
+          startName: "신탄진"
+          endName: "대전"
+          distanceKm: 10.3
+          rowsToday: 226
+        - start: "115"
+          end: "116"
+          startName: "대전"
+          endName: "옥천"
+          distanceKm: 14.0
+          rowsToday: 303
+        - start: "116"
+          end: "118"
+          startName: "옥천"
+          endName: "영동"
+          distanceKm: 27.4
+          rowsToday: 44
+        - start: "118"
+          end: "122"
+          startName: "영동"
+          endName: "김천"
+          distanceKm: 32.6
+          rowsToday: 154
+        - start: "122"
+          end: "123"
+          startName: "김천"
+          endName: "구미"
+          distanceKm: 27.6
+          rowsToday: 226
+        - start: "123"
+          end: "125"
+          startName: "구미"
+          endName: "남구미"
+          distanceKm: 5.4
+          rowsToday: 190
+        - start: "125"
+          end: "126"
+          startName: "남구미"
+          endName: "왜관"
+          distanceKm: 13.3
+          rowsToday: 135
+        - start: "126"
+          end: "127"
+          startName: "왜관"
+          endName: "서대구"
+          distanceKm: 15.7
+          rowsToday: 306
+        - start: "127"
+          end: "129"
+          startName: "서대구"
+          endName: "북대구"
+          distanceKm: 7.0
+          rowsToday: 209
+        - start: "129"
+          end: "131"
+          startName: "북대구"
+          endName: "경산"
+          distanceKm: 22.2
+          rowsToday: 289
+        - start: "131"
+          end: "132"
+          startName: "경산"
+          endName: "영천"
+          distanceKm: 17.6
+          rowsToday: 218
+        - start: "132"
+          end: "135"
+          startName: "영천"
+          endName: "경주"
+          distanceKm: 28.7
+          rowsToday: 100
+        - start: "135"
+          end: "139"
+          startName: "경주"
+          endName: "서울산"
+          distanceKm: 33.1
+          rowsToday: 153
+        - start: "139"
+          end: "137"
+          startName: "서울산"
+          endName: "통도사"
+          distanceKm: 7.5
+          rowsToday: 146
+        - start: "137"
+          end: "138"
+          startName: "통도사"
+          endName: "양산"
+          distanceKm: 16.8
+          rowsToday: 142
+        - start: "138"
+          end: "140"
+          startName: "양산"
+          endName: "부산"
+          distanceKm: 13.9
+          rowsToday: 421
+      UP:
+        - start: "140"
+          end: "138"
+          startName: "부산"
+          endName: "양산"
+          distanceKm: 13.9
+          rowsToday: 433
+        - start: "138"
+          end: "137"
+          startName: "양산"
+          endName: "통도사"
+          distanceKm: 16.8
+          rowsToday: 181
+        - start: "137"
+          end: "139"
+          startName: "통도사"
+          endName: "서울산"
+          distanceKm: 7.5
+          rowsToday: 123
+        - start: "139"
+          end: "135"
+          startName: "서울산"
+          endName: "경주"
+          distanceKm: 33.1
+          rowsToday: 172
+        - start: "135"
+          end: "133"
+          startName: "경주"
+          endName: "서경주"
+          distanceKm: 11.7
+          rowsToday: 145
+        - start: "133"
+          end: "131"
+          startName: "서경주"
+          endName: "경산"
+          distanceKm: 30.3
+          rowsToday: 158
+        - start: "131"
+          end: "129"
+          startName: "경산"
+          endName: "북대구"
+          distanceKm: 22.2
+          rowsToday: 345
+        - start: "129"
+          end: "126"
+          startName: "북대구"
+          endName: "왜관"
+          distanceKm: 18.3
+          rowsToday: 310
+        - start: "126"
+          end: "123"
+          startName: "왜관"
+          endName: "구미"
+          distanceKm: 18.6
+          rowsToday: 165
+        - start: "123"
+          end: "130"
+          startName: "구미"
+          endName: "동김천"
+          distanceKm: 19.4
+          rowsToday: 290
+        - start: "130"
+          end: "122"
+          startName: "동김천"
+          endName: "김천"
+          distanceKm: 8.5
+          rowsToday: 118
+        - start: "122"
+          end: "120"
+          startName: "김천"
+          endName: "황간"
+          distanceKm: 23.1
+          rowsToday: 134
+        - start: "120"
+          end: "118"
+          startName: "황간"
+          endName: "영동"
+          distanceKm: 9.6
+          rowsToday: 62
+        - start: "118"
+          end: "115"
+          startName: "영동"
+          endName: "대전"
+          distanceKm: 41.0
+          rowsToday: 154
+        - start: "115"
+          end: "113"
+          startName: "대전"
+          endName: "신탄진"
+          distanceKm: 10.3
+          rowsToday: 240
+        - start: "113"
+          end: "112"
+          startName: "신탄진"
+          endName: "남청주"
+          distanceKm: 12.2
+          rowsToday: 146
+        - start: "112"
+          end: "111"
+          startName: "남청주"
+          endName: "청주"
+          distanceKm: 12.5
+          rowsToday: 36
+        - start: "111"
+          end: "110"
+          startName: "청주"
+          endName: "독립기념관"
+          distanceKm: 23.8
+          rowsToday: 125
+        - start: "110"
+          end: "108"
+          startName: "독립기념관"
+          endName: "천안"
+          distanceKm: 9.9
+          rowsToday: 191
+        - start: "108"
+          end: "229"
+          startName: "천안"
+          endName: "북천안"
+          distanceKm: 9.5
+          rowsToday: 323
+        - start: "229"
+          end: "107"
+          startName: "북천안"
+          endName: "안성"
+          distanceKm: 12.8
+          rowsToday: 161
+        - start: "107"
+          end: "106"
+          startName: "안성"
+          endName: "오산"
+          distanceKm: 20.2
+          rowsToday: 273
+        - start: "106"
+          end: "528"
+          startName: "오산"
+          endName: "기흥동탄"
+          distanceKm: 9.5
+          rowsToday: 218
+        - start: "528"
+          end: "103"
+          startName: "기흥동탄"
+          endName: "수원신갈"
+          distanceKm: 6.4
+          rowsToday: 269
+        - start: "103"
+          end: "101"
+          startName: "수원신갈"
+          endName: "서울"
+          distanceKm: 12.6
+          rowsToday: 837
+    rail:
+      DN:
+        dep: "3900023"
+        arr: "3900114"
+      UP:
+        dep: "3900114"
+        arr: "3900023"
+    env:
+      - role: "origin"
+        name: "서울"
+        lat: 37.55406888733184
+        lon: 126.97070335253385
+        sido: "서울"
+      - role: "dest"
+        name: "부산"
+        lat: 35.11520340622514
+        lon: 129.04154985192403
+        sido: "부산"
+  - id: "DJN-DGU"
+    name: "대전–대구"
+    originCity: "대전"
+    destCity: "대구"
+    road:
+      DN:
+        - start: "115"
+          end: "116"
+          startName: "대전"
+          endName: "옥천"
+          distanceKm: 14.0
+          rowsToday: 303
+        - start: "116"
+          end: "118"
+          startName: "옥천"
+          endName: "영동"
+          distanceKm: 27.4
+          rowsToday: 44
+        - start: "118"
+          end: "122"
+          startName: "영동"
+          endName: "김천"
+          distanceKm: 32.6
+          rowsToday: 154
+        - start: "122"
+          end: "123"
+          startName: "김천"
+          endName: "구미"
+          distanceKm: 27.6
+          rowsToday: 226
+        - start: "123"
+          end: "125"
+          startName: "구미"
+          endName: "남구미"
+          distanceKm: 5.4
+          rowsToday: 190
+        - start: "125"
+          end: "126"
+          startName: "남구미"
+          endName: "왜관"
+          distanceKm: 13.3
+          rowsToday: 135
+        - start: "126"
+          end: "127"
+          startName: "왜관"
+          endName: "서대구"
+          distanceKm: 15.7
+          rowsToday: 306
+        - start: "127"
+          end: "129"
+          startName: "서대구"
+          endName: "북대구"
+          distanceKm: 7.0
+          rowsToday: 209
+      UP:
+        - start: "129"
+          end: "126"
+          startName: "북대구"
+          endName: "왜관"
+          distanceKm: 18.3
+          rowsToday: 310
+        - start: "126"
+          end: "123"
+          startName: "왜관"
+          endName: "구미"
+          distanceKm: 18.6
+          rowsToday: 165
+        - start: "123"
+          end: "130"
+          startName: "구미"
+          endName: "동김천"
+          distanceKm: 19.4
+          rowsToday: 290
+        - start: "130"
+          end: "122"
+          startName: "동김천"
+          endName: "김천"
+          distanceKm: 8.5
+          rowsToday: 118
+        - start: "122"
+          end: "120"
+          startName: "김천"
+          endName: "황간"
+          distanceKm: 23.1
+          rowsToday: 134
+        - start: "120"
+          end: "118"
+          startName: "황간"
+          endName: "영동"
+          distanceKm: 9.6
+          rowsToday: 62
+        - start: "118"
+          end: "115"
+          startName: "영동"
+          endName: "대전"
+          distanceKm: 41.0
+          rowsToday: 154
+    rail:
+      DN:
+        dep: "3900073"
+        arr: "3900096"
+      UP:
+        dep: "3900096"
+        arr: "3900073"
+    env:
+      - role: "origin"
+        name: "대전"
+        lat: 36.33229415139486
+        lon: 127.4346445159045
+        sido: "대전"
+      - role: "dest"
+        name: "동대구"
+        lat: 35.8793239931795
+        lon: 128.628393775388
+        sido: "대구"
+  - id: "DGU-BSN"
+    name: "대구–부산"
+    originCity: "대구"
+    destCity: "부산"
+    road:
+      DN:
+        - start: "129"
+          end: "131"
+          startName: "북대구"
+          endName: "경산"
+          distanceKm: 22.2
+          rowsToday: 289
+        - start: "131"
+          end: "140"
+          startName: "경산"
+          endName: "부산"
+          distanceKm: 82.9
+          rowsToday: 65
+      UP:
+        - start: "140"
+          end: "138"
+          startName: "부산"
+          endName: "양산"
+          distanceKm: 13.9
+          rowsToday: 433
+        - start: "138"
+          end: "137"
+          startName: "양산"
+          endName: "통도사"
+          distanceKm: 16.8
+          rowsToday: 181
+        - start: "137"
+          end: "139"
+          startName: "통도사"
+          endName: "서울산"
+          distanceKm: 7.5
+          rowsToday: 123
+        - start: "139"
+          end: "129"
+          startName: "서울산"
+          endName: "북대구"
+          distanceKm: 72.1
+          rowsToday: 43
+    rail:
+      DN:
+        dep: "3900096"
+        arr: "3900114"
+      UP:
+        dep: "3900114"
+        arr: "3900096"
+    env:
+      - role: "origin"
+        name: "동대구"
+        lat: 35.8793239931795
+        lon: 128.628393775388
+        sido: "대구"
+      - role: "dest"
+        name: "부산"
+        lat: 35.11520340622514
+        lon: 129.04154985192403
+        sido: "부산"
+  - id: "SEL-MKP"
+    name: "서울–목포"
+    originCity: "서울"
+    destCity: "목포"
+    road:
+      DN:
+        - start: "253"
+          end: "281"
+          startName: "서서울"
+          endName: "매송"
+          distanceKm: 9.8
+          rowsToday: 344
+        - start: "281"
+          end: "282"
+          startName: "매송"
+          endName: "비봉"
+          distanceKm: 4.8
+          rowsToday: 147
+        - start: "282"
+          end: "283"
+          startName: "비봉"
+          endName: "발안"
+          distanceKm: 15.8
+          rowsToday: 191
+        - start: "283"
+          end: "298"
+          startName: "발안"
+          endName: "서산"
+          distanceKm: 51.3
+          rowsToday: 143
+        - start: "298"
+          end: "299"
+          startName: "서산"
+          endName: "해미"
+          distanceKm: 13.0
+          rowsToday: 185
+        - start: "299"
+          end: "257"
+          startName: "해미"
+          endName: "홍성"
+          distanceKm: 14.5
+          rowsToday: 98
+        - start: "257"
+          end: "259"
+          startName: "홍성"
+          endName: "대천"
+          distanceKm: 33.7
+          rowsToday: 158
+        - start: "259"
+          end: "234"
+          startName: "대천"
+          endName: "서천"
+          distanceKm: 32.6
+          rowsToday: 192
+        - start: "234"
+          end: "227"
+          startName: "서천"
+          endName: "군산"
+          distanceKm: 15.9
+          rowsToday: 129
+        - start: "227"
+          end: "502"
+          startName: "군산"
+          endName: "부안"
+          distanceKm: 35.3
+          rowsToday: 49
+        - start: "502"
+          end: "503"
+          startName: "부안"
+          endName: "줄포"
+          distanceKm: 18.0
+          rowsToday: 89
+        - start: "503"
+          end: "504"
+          startName: "줄포"
+          endName: "선운산"
+          distanceKm: 11.3
+          rowsToday: 103
+        - start: "504"
+          end: "506"
+          startName: "선운산"
+          endName: "영광"
+          distanceKm: 30.0
+          rowsToday: 144
+        - start: "506"
+          end: "509"
+          startName: "영광"
+          endName: "목포"
+          distanceKm: 56.7
+          rowsToday: 107
+      UP:
+        - start: "509"
+          end: "508"
+          startName: "목포"
+          endName: "무안"
+          distanceKm: 18.6
+          rowsToday: 257
+        - start: "508"
+          end: "507"
+          startName: "무안"
+          endName: "함평"
+          distanceKm: 11.4
+          rowsToday: 94
+        - start: "507"
+          end: "502"
+          startName: "함평"
+          endName: "부안"
+          distanceKm: 86.0
+          rowsToday: 7
+        - start: "502"
+          end: "228"
+          startName: "부안"
+          endName: "동군산"
+          distanceKm: 28.5
+          rowsToday: 93
+        - start: "228"
+          end: "511"
+          startName: "동군산"
+          endName: "무창포"
+          distanceKm: 46.6
+          rowsToday: 151
+        - start: "511"
+          end: "259"
+          startName: "무창포"
+          endName: "대천"
+          distanceKm: 11.6
+          rowsToday: 96
+        - start: "259"
+          end: "258"
+          startName: "대천"
+          endName: "광천"
+          distanceKm: 21.4
+          rowsToday: 194
+        - start: "258"
+          end: "257"
+          startName: "광천"
+          endName: "홍성"
+          distanceKm: 12.8
+          rowsToday: 128
+        - start: "257"
+          end: "298"
+          startName: "홍성"
+          endName: "서산"
+          distanceKm: 27.4
+          rowsToday: 126
+        - start: "298"
+          end: "288"
+          startName: "서산"
+          endName: "당진"
+          distanceKm: 17.5
+          rowsToday: 147
+        - start: "288"
+          end: "287"
+          startName: "당진"
+          endName: "송악"
+          distanceKm: 9.8
+          rowsToday: 249
+        - start: "287"
+          end: "285"
+          startName: "송악"
+          endName: "서평택"
+          distanceKm: 11.1
+          rowsToday: 208
+        - start: "285"
+          end: "253"
+          startName: "서평택"
+          endName: "서서울"
+          distanceKm: 46.2
+          rowsToday: 315
+    rail:
+      DN:
+        dep: "3900025"
+        arr: "3900242"
+      UP:
+        dep: "3900242"
+        arr: "3900025"
+    env:
+      - role: "origin"
+        name: "용산"
+        lat: 37.5300763645794
+        lon: 126.964824061815
+        sido: "서울"
+      - role: "dest"
+        name: "목포"
+        lat: 34.79113445784631
+        lon: 126.38657548066539
+        sido: "전남"
+  - id: "SEL-GNG"
+    name: "서울–강릉"
+    originCity: "서울"
+    destCity: "강릉"
+    road:
+      DN:
+        - start: "101"
+          end: "171"
+          startName: "서울"
+          endName: "마성"
+          distanceKm: 12.8
+          rowsToday: 467
+        - start: "171"
+          end: "173"
+          startName: "마성"
+          endName: "양지"
+          distanceKm: 13.5
+          rowsToday: 118
+        - start: "173"
+          end: "175"
+          startName: "양지"
+          endName: "덕평"
+          distanceKm: 7.1
+          rowsToday: 169
+        - start: "175"
+          end: "176"
+          startName: "덕평"
+          endName: "이천"
+          distanceKm: 13.2
+          rowsToday: 73
+        - start: "176"
+          end: "177"
+          startName: "이천"
+          endName: "여주"
+          distanceKm: 15.8
+          rowsToday: 193
+        - start: "177"
+          end: "178"
+          startName: "여주"
+          endName: "문막"
+          distanceKm: 19.5
+          rowsToday: 164
+        - start: "178"
+          end: "180"
+          startName: "문막"
+          endName: "원주"
+          distanceKm: 16.7
+          rowsToday: 187
+        - start: "180"
+          end: "181"
+          startName: "원주"
+          endName: "새말"
+          distanceKm: 13.9
+          rowsToday: 220
+        - start: "181"
+          end: "182"
+          startName: "새말"
+          endName: "둔내"
+          distanceKm: 15.0
+          rowsToday: 177
+        - start: "182"
+          end: "183"
+          startName: "둔내"
+          endName: "면온"
+          distanceKm: 17.9
+          rowsToday: 79
+        - start: "183"
+          end: "185"
+          startName: "면온"
+          endName: "평창"
+          distanceKm: 6.0
+          rowsToday: 47
+        - start: "185"
+          end: "187"
+          startName: "평창"
+          endName: "진부"
+          distanceKm: 17.0
+          rowsToday: 139
+        - start: "187"
+          end: "184"
+          startName: "진부"
+          endName: "대관령"
+          distanceKm: 14.3
+          rowsToday: 139
+        - start: "184"
+          end: "580"
+          startName: "대관령"
+          endName: "북강릉"
+          distanceKm: 23.3
+          rowsToday: 152
+        - start: "580"
+          end: "189"
+          startName: "북강릉"
+          endName: "강릉"
+          distanceKm: 11.7
+          rowsToday: 145
+      UP:
+        - start: "189"
+          end: "580"
+          startName: "강릉"
+          endName: "북강릉"
+          distanceKm: 11.7
+          rowsToday: 190
+        - start: "580"
+          end: "184"
+          startName: "북강릉"
+          endName: "대관령"
+          distanceKm: 23.3
+          rowsToday: 172
+        - start: "184"
+          end: "187"
+          startName: "대관령"
+          endName: "진부"
+          distanceKm: 14.3
+          rowsToday: 130
+        - start: "187"
+          end: "185"
+          startName: "진부"
+          endName: "평창"
+          distanceKm: 17.0
+          rowsToday: 123
+        - start: "185"
+          end: "183"
+          startName: "평창"
+          endName: "면온"
+          distanceKm: 6.0
+          rowsToday: 72
+        - start: "183"
+          end: "180"
+          startName: "면온"
+          endName: "원주"
+          distanceKm: 46.8
+          rowsToday: 86
+        - start: "180"
+          end: "178"
+          startName: "원주"
+          endName: "문막"
+          distanceKm: 16.7
+          rowsToday: 193
+        - start: "178"
+          end: "177"
+          startName: "문막"
+          endName: "여주"
+          distanceKm: 19.5
+          rowsToday: 195
+        - start: "177"
+          end: "176"
+          startName: "여주"
+          endName: "이천"
+          distanceKm: 15.8
+          rowsToday: 199
+        - start: "176"
+          end: "173"
+          startName: "이천"
+          endName: "양지"
+          distanceKm: 20.4
+          rowsToday: 193
+        - start: "173"
+          end: "172"
+          startName: "양지"
+          endName: "용인"
+          distanceKm: 9.1
+          rowsToday: 290
+        - start: "172"
+          end: "101"
+          startName: "용인"
+          endName: "서울"
+          distanceKm: 17.5
+          rowsToday: 404
+    rail:
+      DN:
+        dep: "3900023"
+        arr: "3900587"
+      UP:
+        dep: "3900587"
+        arr: "3900023"
+    env:
+      - role: "origin"
+        name: "서울"
+        lat: 37.55406888733184
+        lon: 126.97070335253385
+        sido: "서울"
+      - role: "dest"
+        name: "강릉"
+        lat: 37.7645235587621
+        lon: 128.899627553491
+        sido: "강원"

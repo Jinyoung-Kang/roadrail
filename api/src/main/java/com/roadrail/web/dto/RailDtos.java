@@ -1,0 +1,37 @@
+package com.roadrail.web.dto;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
+
+public final class RailDtos {
+    private RailDtos() {}
+
+    public record TrainStats(int samples, int verified, Double onTimeRate, Double avgArrDelayMin, Double p90ArrDelayMin,
+                             Double avgRideMin, boolean delayEstimated) {}
+
+    public record NextTrain(String trnNo, OffsetDateTime planDepAt, OffsetDateTime planArrAt, String planDep, String planArr,
+                            int planRideMin, Double avgArrDelayMin30d, Double onTimeRate30d, int samples,
+                            boolean delayEstimated) {}
+
+    public record NextTrains(String referenceDate, String basis, List<NextTrain> trains) {}
+
+    public record TrainRun(String trnNo, OffsetDateTime actDepAt, OffsetDateTime actArrAt, OffsetDateTime planDepAt,
+                           OffsetDateTime planArrAt, Double depDelayMin, Double arrDelayMin, String depBasis, String arrBasis,
+                           double rideMin, Boolean onTime, TrainStats stats30d) {}
+
+    public record Trains(String corridorId, String direction, String date, String depStation, String arrStation,
+                         List<TrainRun> trains, List<String> availableDates, String note) {}
+
+    public record PunctualityItem(String key, int samples, int verified, Double onTimeRate, Double avgArrDelayMin,
+                                  Double p90ArrDelayMin, Double avgRideMin, Double estimatedShare) {}
+
+    public record Bucket(String label, int count) {}
+
+    public record Summary(int samples, int verified, int unverified, Double onTimeRate, Double avgArrDelayMin,
+                          Double p90ArrDelayMin) {}
+
+    public record Punctuality(String corridorId, String direction, String from, String to, String groupBy,
+                              int onTimeThresholdMin, Summary summary, List<PunctualityItem> items,
+                              List<Bucket> histogram, Summary nationwideExact, Map<String, String> rules, String note) {}
+}

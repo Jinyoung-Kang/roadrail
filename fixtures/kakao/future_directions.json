@@ -1,0 +1,41 @@
+{
+ "trans_id": "01a0d38a7b4377a18918ebfcfbb6b9ba",
+ "routes": [
+  {
+   "result_code": 0,
+   "result_msg": "길찾기 성공",
+   "summary": {
+    "origin": {
+     "name": "",
+     "x": 127.10206797741786,
+     "y": 37.365045988036464
+    },
+    "destination": {
+     "name": "",
+     "x": 127.44831974147544,
+     "y": 36.36132199262703
+    },
+    "waypoints": [],
+    "priority": "RECOMMEND",
+    "bound": {
+     "min_x": 127.09271517343997,
+     "min_y": 36.35897073898753,
+     "max_x": 127.4427912243961,
+     "max_y": 37.3671418403877
+    },
+    "fare": {
+     "taxi": 139500,
+     "toll": 0
+    },
+    "distance": 131941,
+    "duration": 5408
+   },
+   "sections": [
+    {
+     "distance": 131941,
+     "duration": 5276
+    }
+   ]
+  }
+ ]
+}

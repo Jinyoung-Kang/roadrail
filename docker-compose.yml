@@ -1,0 +1,93 @@
+# RoadRail — 로컬 실행 (Apple Silicon · Docker Desktop). 모든 포트는 127.0.0.1 에만 바인딩 (NFR-08)
+# 기존 매크로 대시보드(3000·8080·8000·5432·6379)와 겹치지 않게 3300번대 사용
+name: roadrail
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: roadrail
+      POSTGRES_PASSWORD: roadrail
+      POSTGRES_DB: roadrail
+      TZ: Asia/Seoul
+      PGTZ: Asia/Seoul
+    ports: ["127.0.0.1:5462:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "timezone=Asia/Seoul"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U roadrail -d roadrail"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    # 영속화 끔 — 예산 확정값은 ops.quota_budget 에도 저장
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports: ["127.0.0.1:6409:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    env_file: .env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/roadrail
+      SPRING_DATASOURCE_USERNAME: roadrail
+      SPRING_DATASOURCE_PASSWORD: roadrail
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      SPRING_FLYWAY_LOCATIONS: filesystem:/app/db/migrations
+      TZ: Asia/Seoul
+    ports: ["127.0.0.1:8300:8300"]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8300/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+    restart: unless-stopped
+
+  collector:
+    build:
+      context: .
+      dockerfile: collector/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://roadrail:roadrail@db:5432/roadrail
+      REDIS_URL: redis://redis:6379/0
+      SEED_PATH: /app/seed/corridors.yaml
+      TZ: Asia/Seoul
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      api: { condition: service_healthy }   # 스키마(Flyway)는 api 가 소유
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_KAKAO_JS_KEY: ${NEXT_PUBLIC_KAKAO_JS_KEY:-}
+    environment:
+      API_INTERNAL_URL: http://api:8300
+      TZ: Asia/Seoul
+    ports: ["127.0.0.1:3300:3300"]
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped
+
+volumes:
+  pgdata:

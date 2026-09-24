@@ -1,0 +1,82 @@
+# =============================================================================
+# RoadRail api — 조회 · 판단(R-DEC-01) · 예측 조회 · 관리(수동 실행·백필). 스키마(Flyway) 소유자.
+# =============================================================================
+server:
+  port: 8300
+  shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: application/json
+    min-response-size: 2048
+
+spring:
+  application:
+    name: roadrail-api
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5462/roadrail
+    username: roadrail
+    password: roadrail
+    hikari:
+      maximum-pool-size: 12
+      connection-init-sql: SET TIME ZONE 'Asia/Seoul'
+  flyway:
+    locations: filesystem:../db/migrations
+    schemas: ops
+    create-schemas: true
+    default-schema: ops
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6409
+      timeout: 500ms
+  jackson:
+    default-property-inclusion: always
+    time-zone: Asia/Seoul
+  web:
+    locale: ko_KR
+    locale-resolver: fixed
+
+springdoc:
+  swagger-ui:
+    path: /docs
+  api-docs:
+    path: /v3/api-docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+roadrail:
+  admin-token: ${ADMIN_TOKEN:}
+  kakao-rest-api-key: ${KAKAO_REST_API_KEY:}
+  kakao-mobility-base-url: https://apis-navi.kakaomobility.com
+  on-time-threshold-min: ${ON_TIME_THRESHOLD_MIN:5}
+  decision-similar-min: ${DECISION_SIMILAR_MIN:10}
+  decision-pop-warn: ${DECISION_POP_WARN:60}
+  default-access-min: ${DEFAULT_ACCESS_MIN:20}
+  forecast-tau-min: ${FORECAST_TAU_MIN:90}
+  now-cache-seconds: 60
+  # 도로공사 통행시간 공개 지연이 약 3시간이라 기획서의 30분 기준 대신 실측 기반 값 (docs/W1-smoke.md)
+  road-stale-minutes: 300
+  quota:
+    EX: ${QUOTA_EX:20000}
+    KORAIL: ${QUOTA_KORAIL:9000}
+    KMA: ${QUOTA_KMA:9000}
+    AIRKOREA: ${QUOTA_AIRKOREA:450}
+    KAKAO: ${QUOTA_KAKAO:5000}
+
+logging:
+  level:
+    root: INFO
+    com.roadrail: INFO
+  pattern:
+    level: "%5p [%X{traceId:-}]"

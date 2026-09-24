@@ -1,0 +1,42 @@
+{
+ "documents": [
+  {
+   "address_name": "대전 동구 정동 1-1",
+   "category_group_code": "",
+   "category_group_name": "",
+   "category_name": "교통,수송 > 기차,철도 > 기차역 > KTX정차역",
+   "distance": "",
+   "id": "7830504",
+   "phone": "1588-7788",
+   "place_name": "대전역",
+   "place_url": "http://place.map.kakao.com/7830504",
+   "road_address_name": "대전 동구 중앙로 215",
+   "x": "127.4346445159045",
+   "y": "36.33229415139486"
+  },
+  {
+   "address_name": "대전 동구 중동 317",
+   "category_group_code": "SW8",
+   "category_group_name": "지하철역",
+   "category_name": "교통,수송 > 지하철,전철 > 대전1호선",
+   "distance": "",
+   "id": "21160997",
+   "phone": "042-539-3604",
+   "place_name": "대전역 대전1호선",
+   "place_url": "http://place.map.kakao.com/21160997",
+   "road_address_name": "대전 동구 중앙로 지하 218",
+   "x": "127.43366564167553",
+   "y": "36.33151458526354"
+  }
+ ],
+ "meta": {
+  "is_end": false,
+  "pageable_count": 45,
+  "same_name": {
+   "keyword": "대전역",
+   "region": [],
+   "selected_region": ""
+  },
+  "total_count": 738
+ }
+}

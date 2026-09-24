@@ -1,0 +1,60 @@
+{
+ "list": [
+  {
+   "unitName": "판교",
+   "pageNo": null,
+   "numOfRows": null,
+   "unitCode": "065 ",
+   "routeNo": "001",
+   "routeName": "경부선",
+   "xValue": "127.103200",
+   "yValue": "37.396399"
+  },
+  {
+   "unitName": "대왕판교",
+   "pageNo": null,
+   "numOfRows": null,
+   "unitCode": "069 ",
+   "routeNo": "001",
+   "routeName": "경부선",
+   "xValue": "127.093456",
+   "yValue": "37.408887"
+  },
+  {
+   "unitName": "서울",
+   "pageNo": null,
+   "numOfRows": null,
+   "unitCode": "101 ",
+   "routeNo": "001",
+   "routeName": "경부선",
+   "xValue": "127.102077",
+   "yValue": "37.365046"
+  },
+  {
+   "unitName": "수원신갈",
+   "pageNo": null,
+   "numOfRows": null,
+   "unitCode": "103 ",
+   "routeNo": "001",
+   "routeName": "경부선",
+   "xValue": "127.102395",
+   "yValue": "37.266835"
+  },
+  {
+   "unitName": "기흥",
+   "pageNo": null,
+   "numOfRows": null,
+   "unitCode": "105 ",
+   "routeNo": "001",
+   "routeName": "경부선",
+   "xValue": "127.102448",
+   "yValue": "37.222267"
+  }
+ ],
+ "count": 590,
+ "pageNo": 1,
+ "numOfRows": 5,
+ "pageSize": 118,
+ "message": "인증키가 유효합니다.",
+ "code": "SUCCESS"
+}

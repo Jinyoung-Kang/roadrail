@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+html, body { background: #fff; color: #171a20; }
+body { font-family: "Pretendard Variable", Pretendard, system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+       -webkit-font-smoothing: antialiased; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+@layer components {
+  .btn { @apply inline-flex items-center justify-center h-10 min-w-[200px] sm:min-w-[264px] px-6 rounded text-sm font-medium transition-colors; }
+  .btn-primary { @apply btn bg-accent text-white hover:bg-accentHover; }
+  .btn-secondary { @apply btn bg-cloud text-ink2 hover:bg-[#e8e8e8]; }
+  .btn-ghost { @apply btn bg-white/80 text-ink2 backdrop-blur hover:bg-white; }
+  .nav-link { @apply px-3 py-1.5 rounded text-sm font-medium text-ink transition-colors hover:bg-black/5; }
+  .chip { @apply h-8 px-3 rounded text-[13px] font-medium text-ink2 bg-white/70 backdrop-blur ring-1 ring-black/5 hover:bg-white transition-colors; }
+  .chip-on { @apply bg-ink text-white ring-ink hover:bg-ink; }
+  .tile { @apply rounded bg-white shadow-tile; }
+  .eyebrow { @apply text-[13px] font-medium text-muted tracking-wide; }
+  .th { @apply text-left font-medium text-muted text-xs py-2 px-3 border-b border-line whitespace-nowrap; }
+  .td { @apply py-2.5 px-3 border-b border-line text-sm tabular whitespace-nowrap; }
+}
+
+/* 차트 공통 — 보조선은 옅게 */
+.recharts-cartesian-grid line { stroke: #e1e0d9; }
+.recharts-text { fill: #898781; font-size: 11px; }
+
+/* 히어로 배경 지도: 타일 이미지만 회색조로 (도로·철도 선은 SVG 라 색 유지) */
+.rr-map-muted img { filter: grayscale(1) brightness(1.06) contrast(0.92); }

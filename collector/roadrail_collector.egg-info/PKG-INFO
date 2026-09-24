@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: roadrail-collector
+Version: 0.1.0
+Summary: RoadRail collector + analytics (Python 3.11 · asyncio · httpx · APScheduler · pandas)
+Requires-Python: <3.12,>=3.11
+Requires-Dist: httpx==0.28.1
+Requires-Dist: psycopg[binary,pool]==3.2.10
+Requires-Dist: redis==6.4.0
+Requires-Dist: APScheduler==3.11.0
+Requires-Dist: pandas==2.3.2
+Requires-Dist: numpy==2.3.3
+Requires-Dist: PyYAML==6.0.2
+Requires-Dist: pydantic-settings==2.10.1
+Provides-Extra: dev
+Requires-Dist: pytest==8.4.2; extra == "dev"
+Requires-Dist: pytest-asyncio==1.2.0; extra == "dev"
+Requires-Dist: ruff==0.13.1; extra == "dev"
