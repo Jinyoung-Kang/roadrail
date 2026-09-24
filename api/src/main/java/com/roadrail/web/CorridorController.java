@@ -25,7 +25,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1")
 @Validated
-@Tag(name = "corridors", description = "코리도 · 판단 카드 · 도로 · 철도 · 환경")
+@Tag(name = "corridors", description = "자주 오가는 길(수집 중인 도시 쌍) · 판단 카드 · 도로 · 철도 · 환경")
 public class CorridorController {
     private final CorridorService corridors;
     private final NowCardService now;
@@ -45,7 +45,7 @@ public class CorridorController {
     }
 
     @GetMapping("/corridors")
-    @Operation(summary = "코리도 목록 (FR-102) — 도로 구간 체인 · 역 쌍 · 환경 지점 좌표 포함")
+    @Operation(summary = "자주 오가는 길 목록 (FR-102) — 도로 구간 체인 · 역 쌍 · 환경 지점 좌표 포함")
     public List<Corridor> list() {
         return corridors.list();
     }
@@ -94,11 +94,12 @@ public class CorridorController {
     }
 
     @GetMapping("/corridors/{id}/rail/trains")
-    @Operation(summary = "날짜별 코리도 열차 + 열차별 최근 30일 정시성 (FR-302)")
+    @Operation(summary = "날짜별 길의 역 쌍 열차 + 열차별 최근 30일 정시성 (FR-302)")
     public RailDtos.Trains trains(@PathVariable String id, @RequestParam(defaultValue = "DN") String dir,
                                   @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         corridors.require(id);
-        return rail.trains(id, CorridorService.dir(dir), date);
+        var pair = rail.pairOf(id, CorridorService.dir(dir));
+        return rail.trains(pair.dep(), pair.arr(), date);
     }
 
     @GetMapping("/corridors/{id}/env")

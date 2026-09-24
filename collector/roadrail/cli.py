@@ -5,7 +5,7 @@
   roadrail run <job>                   작업 1회 실행 (collect-once)
   roadrail rail-backfill FROM TO       운행정보 기간 재수집 (YYYY-MM-DD)
   roadrail recompute-rail FROM TO      저장된 운행정보로 정시성 재계산 (API 호출 없음)
-  roadrail reclassify-road             도로 품질 규칙 재적용 + 코리도 합산 재계산 (API 호출 없음)
+  roadrail reclassify-road             도로 품질 규칙 재적용 + 길 합산 재계산 (API 호출 없음)
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ async def _run(argv: list[str]) -> int:
         elif cmd == "reclassify-road":
             from .pipeline.road import reclassify_all
             changed, slots = await reclassify_all()
-            print(f"품질 변경 {changed}행 · 코리도 슬롯 {slots}개 재계산")
+            print(f"품질 변경 {changed}행 · 길 슬롯 {slots}개 재계산")
         elif cmd == "recompute-rail" and len(argv) == 3:
             d, end = dt.date.fromisoformat(argv[1]), dt.date.fromisoformat(argv[2])
             while d <= end:

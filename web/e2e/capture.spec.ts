@@ -4,10 +4,11 @@ import { test } from "@playwright/test";
 test.skip(!process.env.CAPTURE, "CAPTURE=1 일 때만");
 
 const shots: [string, string, boolean?][] = [
-  ["/?c=SEL-DJN&dir=DN", "home"],
-  ["/?c=SEL-DJN&dir=DN#evidence", "home-full", true],
+  ["/", "home"],
+  ["/?from=%EC%A0%84%EC%A3%BC%EC%8B%9C~35.82407~127.14814~&to=%EB%B6%80%EC%82%B0%EC%97%AD~35.11520~129.04155~3900114&t=120", "trip"],
+  ["/", "home-full", true],
   ["/road/SEL-DJN?dir=DN", "road"],
-  ["/rail/SEL-DJN?dir=DN", "rail"],
+  ["/rail?dep=3900023&arr=3900073", "rail"],
   ["/forecast", "forecast"],
   ["/ops", "ops"],
 ];

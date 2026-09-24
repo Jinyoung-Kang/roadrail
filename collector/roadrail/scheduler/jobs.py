@@ -19,7 +19,7 @@ from ..core import db, rds
 from ..core.config import settings
 from ..core.log import log
 from ..core.timeutil import now_kst
-from ..pipeline import analysis, env, rail, road
+from ..pipeline import analysis, env, rail, road, stations
 from ..providers.base import JobContext
 from .quota import QuotaBudget, QuotaExhausted
 
@@ -53,6 +53,11 @@ async def _kakao_estimate() -> dict[str, int]:
     return {"KAKAO": r["n"]}
 
 
+async def _station_estimate() -> dict[str, int]:
+    r = await db.fetchone("SELECT count(*) AS n FROM ref.station WHERE lat IS NULL")
+    return {"KAKAO_LOCAL": r["n"]}
+
+
 def _const(d: dict[str, int]) -> Callable[[], Awaitable[dict[str, int]]]:
     async def f() -> dict[str, int]:
         return d
@@ -69,6 +74,7 @@ JOBS: dict[str, JobSpec] = {
     "weather_vilage": JobSpec(env.collect_weather, _grid_estimate),
     "air_quality_sido": JobSpec(env.collect_air, _sido_estimate),
     "kakao_eta": JobSpec(env.collect_kakao_eta, _kakao_estimate),
+    "station_geocode": JobSpec(stations.geocode_stations, _station_estimate),
     "baseline_daily": JobSpec(analysis.baseline_daily, _const({})),
     "backtest_daily": JobSpec(analysis.backtest_daily, _const({}), lock_ttl=3600),
     "maintenance": JobSpec(analysis.maintenance, _const({})),
@@ -147,7 +153,7 @@ async def run_job(name: str, trigger: str = "SCHEDULE", estimates: dict[str, int
 async def persist_quota(providers: set[str]) -> None:
     """Redis 예산 카운터 → ops.quota_budget 확정값."""
     for p in providers:
-        if p not in ("EX", "KORAIL", "KMA", "AIRKOREA", "KAKAO"):
+        if p not in ("EX", "KORAIL", "KMA", "AIRKOREA", "KAKAO", "KAKAO_LOCAL"):
             continue
         s = await budget().snapshot(p)
         await db.execute("""

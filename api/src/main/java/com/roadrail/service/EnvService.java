@@ -81,7 +81,7 @@ public class EnvService {
                 rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6), rs.getString(7),
                 Arrays.asList((String[]) rs.getArray(8).getArray()))).list();
         return new Incidents(cid, since, items,
-                "도로공사 실시간 문자 안내. 코리도 매칭 규칙 M-v1: 노선명 일치 + (코리도 영업소명 언급 또는 코리도 주 노선). "
+                "도로공사 실시간 문자 안내. 길 매칭 규칙 M-v1: 노선명 일치 + (길 영업소명 언급 또는 길 주 노선). "
                         + "corridorIds 가 비어 있으면 '전체'. 이벤트/홍보(유형 15)는 제외.");
     }
 

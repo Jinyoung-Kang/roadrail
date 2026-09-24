@@ -26,7 +26,7 @@ export default function ForecastPage() {
       <PageHero eyebrow="예측 성능 · 백테스트" title="해석 가능한 모델부터"
                 sub="기준선 모델(M0·M1)이 '지금 값 그대로(지속)'보다 나은지 숫자로 확인합니다.">
         <div className="flex flex-wrap items-center justify-center gap-2">
-          <Select label="코리도" value={cid} onChange={setCid} options={(corridors.data ?? []).map((x) => ({ value: x.id, label: x.name }))} />
+          <Select label="길" value={cid} onChange={setCid} options={(corridors.data ?? []).map((x) => ({ value: x.id, label: x.name }))} />
           <Segmented label="방향" value={dir} onChange={setDir}
                      options={[{ value: "DN" as Dir, label: c ? `${c.originCity}→${c.destCity}` : "하행" },
                                { value: "UP" as Dir, label: c ? `${c.destCity}→${c.originCity}` : "상행" }]} />

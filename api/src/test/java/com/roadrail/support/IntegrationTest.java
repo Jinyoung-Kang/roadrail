@@ -44,6 +44,6 @@ public abstract class IntegrationTest {
 
     @BeforeEach
     void resetRedis() {
-        redis.getConnectionFactory().getConnection().serverCommands().flushDb();
+        redis.execute((org.springframework.data.redis.core.RedisCallback<Object>) c -> { c.serverCommands().flushDb(); return null; });
     }
 }

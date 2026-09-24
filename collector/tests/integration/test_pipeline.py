@@ -50,7 +50,7 @@ async def seeded(tmp_path: Path):
     p.write_text(SEED)
     await db.execute("TRUNCATE ref.corridor, ref.toll_unit, ref.station CASCADE")
     await db.execute("TRUNCATE ts.road_travel_time, ts.road_corridor_tt, ops.slot_gap, rail.run_plan, "
-                     "rail.run_info, rail.train_punctuality, rail.corridor_trip")
+                     "rail.run_info, rail.train_punctuality")
     assert await apply_seed(p) > 0
     return p
 
@@ -146,7 +146,7 @@ async def test_low_coverage_slot_is_gap(seeded):
     assert await count("SELECT count(*) AS n FROM ops.slot_gap WHERE reason = 'LOW_COVERAGE'") == 1
 
 
-async def test_rail_compute_day(seeded):
+async def test_rail_compute_day_and_od_trips(seeded):
     d = dt.date(2026, 9, 23)
 
     def t(h, m):
@@ -156,16 +156,48 @@ async def test_rail_compute_day(seeded):
     info = [dict(run_ymd=d, trn_no="00001", run_seq=1, stn_cd="S1", arr_at=None, dep_at=t(5, 14)),
             dict(run_ymd=d, trn_no="00001", run_seq=2, stn_cd="S2", arr_at=t(6, 18), dep_at=None),
             dict(run_ymd=d, trn_no="00003", run_seq=1, stn_cd="S1", arr_at=None, dep_at=t(6, 0))]  # 도착 행 없음
+    await insert_info(info)
     n = await rail.compute_day(d, plan, info)
     assert n == 2
     rows = {r["trn_no"]: r for r in await db.fetch("SELECT * FROM rail.train_punctuality")}
     assert float(rows["00001"]["arr_delay_min"]) == 8.0 and rows["00001"]["on_time"] is False
     assert rows["00003"]["status"] == "UNVERIFIED" and rows["00003"]["on_time"] is None
-    trips = await db.fetch("SELECT * FROM rail.corridor_trip")
-    assert len(trips) == 1 and trips[0]["direction"] == "DN" and trips[0]["arr_basis"] == "EXACT"
+    trips = await db.fetch("SELECT * FROM rail.od_trips('S1', 'S2', %s, %s)", (d, d))
+    assert len(trips) == 1 and trips[0]["arr_basis"] == "EXACT" and float(trips[0]["arr_delay_min"]) == 8.0
     # 재실행 멱등
     await rail.compute_day(d, plan, info)
-    assert await count("SELECT count(*) AS n FROM rail.corridor_trip") == 1
+    assert await count("SELECT count(*) AS n FROM rail.train_punctuality") == 2
+
+
+async def insert_info(info: list[dict]) -> None:
+    await db.executemany("""INSERT INTO rail.run_info (run_ymd, trn_no, run_seq, stn_cd, arr_at, dep_at)
+                            VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING""",
+                         [(i["run_ymd"], i["trn_no"], i["run_seq"], i["stn_cd"], i["arr_at"], i["dep_at"]) for i in info])
+
+
+async def test_od_trips_matches_python_reference(seeded):
+    """SQL 함수 rail.od_trips 와 Python 기준 구현 corridor_trip()(P-i1)이 같은 값을 낸다 — 두 구현의 계약."""
+    from roadrail.analytics.punctuality import corridor_trip, train_punctuality
+    d = dt.date(2026, 9, 22)
+
+    def t(h, m):
+        return dt.datetime(2026, 9, 22, h, m, tzinfo=KST)
+    plan = dict(run_ymd=d, trn_no="00101", dep_stn_cd="SEL", arr_stn_cd="BSN", plan_dep_at=t(5, 13), plan_arr_at=t(7, 50))
+    stops = [dict(run_ymd=d, trn_no="00101", run_seq=1, stn_cd="SEL", arr_at=None, dep_at=t(5, 14)),
+             dict(run_ymd=d, trn_no="00101", run_seq=2, stn_cd="DJN", arr_at=t(6, 12), dep_at=t(6, 15)),
+             dict(run_ymd=d, trn_no="00101", run_seq=3, stn_cd="DGU", arr_at=t(7, 0), dep_at=t(7, 2)),
+             dict(run_ymd=d, trn_no="00101", run_seq=4, stn_cd="BSN", arr_at=t(7, 57), dep_at=None)]
+    await insert_info(stops)
+    await rail.compute_day(d, [plan], stops)
+    tp = train_punctuality(plan, stops)
+    for a, b in [("SEL", "DJN"), ("DJN", "DGU"), ("DJN", "BSN"), ("SEL", "BSN"), ("DGU", "BSN")]:
+        ref = corridor_trip(stops, a, b, tp)
+        got = (await db.fetch("SELECT * FROM rail.od_trips(%s, %s, %s, %s)", (a, b, d, d)))[0]
+        assert (got["dep_basis"], got["arr_basis"]) == (ref.dep_basis, ref.arr_basis), (a, b)
+        assert abs(float(got["dep_delay_min"]) - ref.dep_delay_min) <= 0.1, (a, b)
+        assert abs(float(got["arr_delay_min"]) - ref.arr_delay_min) <= 0.1, (a, b)
+        assert float(got["ride_min"]) == ref.ride_min
+    assert await db.fetch("SELECT * FROM rail.od_trips('DJN', 'SEL', %s, %s)", (d, d)) == []  # 역방향 없음
 
 
 async def test_api_call_log_masks_key(seeded, monkeypatch):

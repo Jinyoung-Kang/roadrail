@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import type { Corridor, Dir } from "@/lib/types";
 
 /* 카카오 지도 JS SDK — 브라우저에 노출되는 유일한 키(NEXT_PUBLIC_KAKAO_JS_KEY). 실패하면 SVG 노선도로 대체. */
 declare global { interface Window { kakao: any } }
 const KEY = process.env.NEXT_PUBLIC_KAKAO_JS_KEY;
 let loader: Promise<any> | null = null;
+
+export const ROAD = "#2a78d6", RAIL = "#eb6834";
+
+export interface MapLine { path: [number, number][]; color: string; dashed?: boolean; weight?: number }
+export interface MapMarker { lat: number; lon: number; label?: string; color: string; ring?: boolean; size?: number }
+export interface MapLayers { lines: MapLine[]; markers: MapMarker[] }
 
 function loadKakao(): Promise<any> {
   if (typeof window === "undefined") return Promise.reject(new Error("ssr"));
@@ -24,71 +29,70 @@ function loadKakao(): Promise<any> {
   return loader;
 }
 
-const ROAD = "#2a78d6", RAIL = "#eb6834";
-
-export default function RouteMap({ corridor, dir, interactive = false, className = "", padBottom = 0 }: {
-  corridor: Corridor | null; dir: Dir; interactive?: boolean; className?: string; padBottom?: number;
+/** 선(경로)과 점(출발·도착·역)을 그리는 지도. 히어로 배경(interactive=false)과 탐색용 지도 공용. */
+export default function RouteMap({ layers, interactive = false, className = "", padBottom = 0, label = "노선 지도" }: {
+  layers: MapLayers | null; interactive?: boolean; className?: string; padBottom?: number; label?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  const sig = layers ? JSON.stringify(layers).length + ":" + layers.lines.length + ":" + layers.markers.map((m) => m.lat.toFixed(3)).join() : "";
 
   useEffect(() => {
-    if (!corridor || !ref.current) return;
+    if (!layers || !ref.current) return;
     let cancelled = false;
     let cleanup = () => {};
     loadKakao().then((kakao) => {
       if (cancelled || !ref.current) return;
       ref.current.innerHTML = "";
-      const units = corridor.road[dir]?.units.filter((u) => u.lat && u.lon) ?? [];
-      const rail = corridor.rail[dir];
+      const first = layers.markers[0] ?? { lat: 36.5, lon: 127.8 };
       const map = new kakao.maps.Map(ref.current, {
-        center: new kakao.maps.LatLng(units[0]?.lat ?? 36.5, units[0]?.lon ?? 127.5), level: 10,
+        center: new kakao.maps.LatLng(first.lat, first.lon), level: 10,
         draggable: interactive, scrollwheel: interactive, disableDoubleClickZoom: !interactive,
       });
       if (!interactive) map.setZoomable(false);
       const bounds = new kakao.maps.LatLngBounds();
-      const path = units.map((u) => { const p = new kakao.maps.LatLng(u.lat, u.lon); bounds.extend(p); return p; });
-      new kakao.maps.Polyline({ map, path, strokeWeight: 5, strokeColor: ROAD, strokeOpacity: 0.9, strokeStyle: "solid" });
-      if (rail?.dep.lat && rail?.arr.lat) {
-        const a = new kakao.maps.LatLng(rail.dep.lat, rail.dep.lon), b = new kakao.maps.LatLng(rail.arr.lat, rail.arr.lon);
-        bounds.extend(a); bounds.extend(b);
-        new kakao.maps.Polyline({ map, path: [a, b], strokeWeight: 3, strokeColor: RAIL, strokeOpacity: 0.9, strokeStyle: "shortdash" });
-        for (const [p, name] of [[a, rail.dep.name], [b, rail.arr.name]] as const) {
-          new kakao.maps.CustomOverlay({ map, position: p, yAnchor: 1.3,
-            content: `<div style="font:500 12px Pretendard,system-ui;padding:4px 8px;border-radius:4px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.18);color:#171a20;white-space:nowrap"><span style="color:${RAIL}">●</span> ${name}역</div>` });
-        }
+      for (const l of layers.lines) {
+        if (l.path.length < 2) continue;
+        const path = l.path.map(([la, lo]) => { const p = new kakao.maps.LatLng(la, lo); bounds.extend(p); return p; });
+        new kakao.maps.Polyline({ map, path, strokeWeight: l.weight ?? 5, strokeColor: l.color, strokeOpacity: 0.92,
+          strokeStyle: l.dashed ? "shortdash" : "solid" });
       }
-      if (interactive) {
-        units.forEach((u, i) => new kakao.maps.CustomOverlay({ map, position: new kakao.maps.LatLng(u.lat, u.lon), yAnchor: 0.5,
-          content: `<div title="${u.name} (${u.code})" style="width:${i === 0 || i === units.length - 1 ? 12 : 8}px;height:${i === 0 || i === units.length - 1 ? 12 : 8}px;border-radius:50%;background:#fff;border:2px solid ${ROAD}"></div>` }));
+      for (const m of layers.markers) {
+        const p = new kakao.maps.LatLng(m.lat, m.lon);
+        bounds.extend(p);
+        const size = m.size ?? 10;
+        const dot = `<span style="display:inline-block;width:${size}px;height:${size}px;border-radius:50%;background:${m.ring ? "#fff" : m.color};border:2px solid ${m.ring ? m.color : "#fff"};box-shadow:0 0 0 1px rgba(0,0,0,.08)"></span>`;
+        new kakao.maps.CustomOverlay({ map, position: p, yAnchor: m.label ? 1.25 : 0.5,
+          content: m.label
+            ? `<div style="font:500 12px Pretendard,system-ui;padding:4px 8px;border-radius:4px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.18);color:#171a20;white-space:nowrap;display:flex;align-items:center;gap:6px">${dot}${m.label}</div>`
+            : dot });
       }
-      // 컨테이너 크기가 확정된 다음 프레임에 맞춘다 (생성 직후에는 0 크기일 수 있음)
+      // 컨테이너 크기가 확정된 다음에 맞춘다 (생성 직후 0 크기일 수 있음 · rAF 는 백그라운드 탭에서 멈추므로 타이머)
       const fit = () => { map.relayout(); map.setBounds(bounds, 60, 60, 60 + padBottom, 60); };
-      setTimeout(fit, 30);  // rAF 는 백그라운드 탭에서 멈추므로 타이머로
-      const onResize = () => fit();
-      window.addEventListener("resize", onResize);
-      cleanup = () => window.removeEventListener("resize", onResize);
+      setTimeout(fit, 30);
+      window.addEventListener("resize", fit);
+      cleanup = () => window.removeEventListener("resize", fit);
       setFailed(null);
     }).catch((e) => !cancelled && setFailed(e.message));
     return () => { cancelled = true; cleanup(); };
-  }, [corridor, dir, interactive, padBottom]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig, interactive, padBottom]);
 
-  if (failed || !KEY) return <SvgRoute corridor={corridor} dir={dir} className={className} note={failed ?? "카카오 JS 키 없음"} />;
-  // 카카오 SDK 가 컨테이너를 position: relative 로 바꾸므로 배치는 바깥 래퍼가 맡는다
+  if (failed || !KEY) return <SvgRoute layers={layers} className={className} note={failed ?? "카카오 JS 키 없음"} />;
+  // 카카오 SDK 가 컨테이너를 position: relative 로 바꾸므로 배치는 바깥 래퍼가, 쌓임 맥락은 isolate 가 맡는다
   return (
-    <div className={`${className} isolate ${interactive ? "" : "rr-map-muted"}`} aria-label={`${corridor?.name ?? ""} 노선 지도`}>
+    <div className={`${className} isolate ${interactive ? "" : "rr-map-muted"}`} aria-label={label}>
       <div ref={ref} className="h-full w-full" />
     </div>
   );
 }
 
-/** 카카오 지도를 못 쓸 때의 SVG 노선도 (도로 = 파랑 실선, 철도 = 주황 점선) */
-export function SvgRoute({ corridor, dir, className, note }: { corridor: Corridor | null; dir: Dir; className?: string; note?: string }) {
-  if (!corridor) return <div className={className} />;
-  const units = corridor.road[dir]?.units.filter((u) => u.lat && u.lon) ?? [];
-  const rail = corridor.rail[dir];
-  const pts = [...units.map((u) => [u.lon!, u.lat!]), ...(rail?.dep.lat ? [[rail.dep.lon!, rail.dep.lat!], [rail.arr.lon!, rail.arr.lat!]] : [])];
-  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+/** 카카오 지도를 못 쓸 때의 SVG 대체 */
+export function SvgRoute({ layers, className, note }: { layers: MapLayers | null; className?: string; note?: string }) {
+  if (!layers) return <div className={className} />;
+  const pts = [...layers.lines.flatMap((l) => l.path), ...layers.markers.map((m) => [m.lat, m.lon] as [number, number])];
+  if (!pts.length) return <div className={className} />;
+  const ys = pts.map((p) => p[0]), xs = pts.map((p) => p[1]);
   const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
   const W = 1000, H = 600, pad = 90;
   const s = Math.min((W - 2 * pad) / Math.max(x1 - x0, 0.01), (H - 2 * pad) / Math.max(y1 - y0, 0.01));
@@ -96,20 +100,15 @@ export function SvgRoute({ corridor, dir, className, note }: { corridor: Corrido
   const py = (lat: number) => H - pad - (lat - y0) * s - ((H - 2 * pad) - (y1 - y0) * s) / 2;
   return (
     <div className={`${className} bg-gradient-to-b from-[#e9eef3] to-[#f7f8f9]`} title={note}>
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full" preserveAspectRatio="xMidYMid meet" aria-label={`${corridor.name} 노선도`}>
-        <polyline points={units.map((u) => `${px(u.lon!)},${py(u.lat!)}`).join(" ")} fill="none" stroke={ROAD} strokeWidth={4}
-                  strokeLinejoin="round" strokeLinecap="round" />
-        {rail?.dep.lat && rail.arr.lat && (
-          <line x1={px(rail.dep.lon!)} y1={py(rail.dep.lat)} x2={px(rail.arr.lon!)} y2={py(rail.arr.lat)} stroke={RAIL}
-                strokeWidth={3} strokeDasharray="10 8" />
-        )}
-        {units.map((u, i) => (
-          <circle key={u.code + i} cx={px(u.lon!)} cy={py(u.lat!)} r={i === 0 || i === units.length - 1 ? 7 : 4} fill="#fff" stroke={ROAD} strokeWidth={2} />
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full" preserveAspectRatio="xMidYMid meet" aria-label="노선도">
+        {layers.lines.map((l, i) => (
+          <polyline key={i} points={l.path.map(([la, lo]) => `${px(lo)},${py(la)}`).join(" ")} fill="none" stroke={l.color}
+                    strokeWidth={l.weight ?? 4} strokeDasharray={l.dashed ? "10 8" : undefined} strokeLinejoin="round" strokeLinecap="round" />
         ))}
-        {rail?.dep.lat && [rail.dep, rail.arr].map((st) => (
-          <g key={st.code}>
-            <circle cx={px(st.lon!)} cy={py(st.lat!)} r={7} fill={RAIL} stroke="#fff" strokeWidth={2} />
-            <text x={px(st.lon!) + 12} y={py(st.lat!) + 4} fontSize={16} fill="#393c41">{st.name}역</text>
+        {layers.markers.map((m, i) => (
+          <g key={i}>
+            <circle cx={px(m.lon)} cy={py(m.lat)} r={(m.size ?? 10) / 2 + 1} fill={m.ring ? "#fff" : m.color} stroke={m.ring ? m.color : "#fff"} strokeWidth={2} />
+            {m.label && <text x={px(m.lon) + 12} y={py(m.lat) + 4} fontSize={16} fill="#393c41">{m.label}</text>}
           </g>
         ))}
       </svg>

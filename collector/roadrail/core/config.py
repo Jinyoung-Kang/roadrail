@@ -24,7 +24,8 @@ class Settings(BaseSettings):
     quota_korail: int = 9000
     quota_kma: int = 9000
     quota_airkorea: int = 450
-    quota_kakao: int = 5000
+    quota_kakao: int = 5000          # 카카오모빌리티 길찾기
+    quota_kakao_local: int = 50000   # 카카오 로컬 검색 (공식 100,000/일)
 
     on_time_threshold_min: int = 5
     forecast_tau_min: int = 90
@@ -43,6 +44,7 @@ class Settings(BaseSettings):
         return {
             "EX": self.quota_ex, "KORAIL": self.quota_korail, "KMA": self.quota_kma,
             "AIRKOREA": self.quota_airkorea, "KAKAO": self.quota_kakao,
+            "KAKAO_LOCAL": self.quota_kakao_local,
         }[provider]
 
     def secrets(self) -> list[str]:

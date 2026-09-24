@@ -14,7 +14,7 @@ import java.util.*;
 /** 수집 상태 (FR-701, NFR-01/02/09). 완전성 95% 미만이면 warn. */
 @Service
 public class OpsService {
-    public static final List<String> PROVIDERS = List.of("EX", "KORAIL", "KMA", "AIRKOREA", "KAKAO");
+    public static final List<String> PROVIDERS = List.of("EX", "KORAIL", "KMA", "AIRKOREA", "KAKAO", "KAKAO_LOCAL");
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");  // BASIC_ISO_DATE 는 오프셋(+0900)까지 붙인다
     private final JdbcClient jdbc;
     private final StringRedisTemplate redis;

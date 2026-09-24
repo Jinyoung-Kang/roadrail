@@ -96,7 +96,8 @@ public class NowCardService {
                 SELECT sd.stn_nm, sa.stn_nm FROM ref.corridor_rail cr JOIN ref.station sd ON sd.stn_cd = cr.dep_stn_cd
                 JOIN ref.station sa ON sa.stn_cd = cr.arr_stn_cd WHERE cr.corridor_id = :c AND cr.direction = :d""")
                 .param("c", cid).param("d", dir).query((rs, i) -> new String[]{rs.getString(1), rs.getString(2)}).single();
-        RailDtos.NextTrains next = rail.nextTrains(cid, dir, depart, accessMin, 3);
+        var pair = rail.pairOf(cid, dir);
+        RailDtos.NextTrains next = rail.nextTrains(pair.dep(), pair.arr(), depart.plusMinutes(accessMin), 3);
         Rail railCard = new Rail(names[0], names[1], next.referenceDate(), next.basis(), next.trains());
         DecisionRule.Train train = null;
         if (!next.trains().isEmpty()) {

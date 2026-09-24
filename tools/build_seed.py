@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""코리도 시드 생성기 (FR-102, U-5).
+"""길 시드 생성기 (FR-102, U-5).
 
 도로공사 `updownIcList` 는 노선별 영업소를 **코드 순**으로 주므로 지리적 순서가 아니다.
 이 도구는
@@ -12,7 +12,7 @@
 결과는 seed/corridors.yaml 로 저장한다. 표준 라이브러리만 사용 (호스트에서 바로 실행).
 
     python3 tools/build_seed.py            # 전체 재생성
-    python3 tools/build_seed.py SEL-DJN    # 한 코리도만 다시 계산해 병합
+    python3 tools/build_seed.py SEL-DJN    # 한 길만 다시 계산해 병합
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EX = "https://data.ex.co.kr/openapi"
 KAKAO = "https://dapi.kakao.com/v2/local/search/keyword.json"
 
-# ---- 코리도 정의 (사람이 정하는 부분) -------------------------------------------------
+# ---- 길 정의 (사람이 정하는 부분) -------------------------------------------------
 # road: 사용할 노선 번호, 하행(DN) 기준 출발·도착 영업소
 # rail: 하행 기준 출발역·도착역 (코레일 역코드는 운행정보 응답에서 확인)
 # env : 출발·도착 지점 (역 좌표를 그대로 사용), 에어코리아 시도명
@@ -297,7 +297,7 @@ def main(only: list[str]) -> None:
         corridors=result,
     )
     (ROOT / "seed" / "corridors.json").write_text(json.dumps(doc, ensure_ascii=False, indent=1))
-    header = ("# 코리도 시드 (FR-102) — tools/build_seed.py 가 생성. 손으로 고쳐도 되며 적용은 멱등입니다.\n"
+    header = ("# 길 시드 (FR-102) — tools/build_seed.py 가 생성. 손으로 고쳐도 되며 적용은 멱등입니다.\n"
               "# road.<DIR>[]: 방향별 영업소 구간 체인, rail: 역 쌍, env: 날씨·대기 지점\n")
     out_path.write_text(header + to_yaml(doc) + "\n")
     print(f"완료: {out_path.relative_to(ROOT)}  (API 호출 {CALLS}건)")

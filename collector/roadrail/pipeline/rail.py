@@ -1,7 +1,8 @@
 """철도 일 배치 (FR-204, FR-301~303).
 
 하루치 전국 운행계획(≈900행) · 운행정보(≈10,500행)를 받아 영구 보관하고(ADR-003),
-열차 단위 정시성(P-v1)과 코리도 구간 운행(P-i1)을 계산한다. 하루 호출 수 ≈ 3건.
+열차 단위 정시성(P-v1)을 계산한다. 임의 역 쌍의 운행·지연(P-i1)은 조회 시점에
+SQL 함수 rail.od_trips 가 계산한다 (V6). 하루 호출 수 ≈ 3건.
 """
 from __future__ import annotations
 
@@ -9,7 +10,7 @@ import datetime as dt
 import logging
 from collections import defaultdict
 
-from ..analytics.punctuality import RULE_CORRIDOR, RULE_EXACT, corridor_trip, train_punctuality
+from ..analytics.punctuality import RULE_EXACT, train_punctuality
 from ..core import db
 from ..core.config import settings
 from ..core.timeutil import now_kst
@@ -56,7 +57,7 @@ async def rail_day(ctx: JobContext, day: dt.date) -> int:
 
 
 async def compute_day(day: dt.date, plan: list[dict] | None = None, info: list[dict] | None = None) -> int:
-    """이미 저장된(또는 넘겨받은) 하루치로 정시성 · 코리도 운행을 다시 계산 (재실행 멱등)."""
+    """이미 저장된(또는 넘겨받은) 하루치로 열차 정시성을 다시 계산 (재실행 멱등)."""
     thr = settings().on_time_threshold_min
     if plan is None:
         plan = await db.fetch("SELECT * FROM rail.run_plan WHERE run_ymd = %s", (day,))
@@ -80,20 +81,6 @@ async def compute_day(day: dt.date, plan: list[dict] | None = None, info: list[d
         [(t.run_ymd, t.trn_no, t.dep_stn_cd, t.arr_stn_cd, t.plan_dep_at, t.plan_arr_at, t.act_dep_at, t.act_arr_at,
           t.dep_delay_min, t.arr_delay_min, t.on_time, t.status, RULE_EXACT, thr) for t in tps.values()])
 
-    pairs = await db.fetch("SELECT corridor_id, direction, dep_stn_cd, arr_stn_cd FROM ref.corridor_rail")
-    trips = []
-    for pr in pairs:
-        for trn, st in stops.items():
-            ct = corridor_trip(st, pr["dep_stn_cd"], pr["arr_stn_cd"], tps.get(trn), thr)
-            if ct:
-                trips.append((ct.run_ymd, pr["corridor_id"], pr["direction"], ct.trn_no, ct.act_dep_at, ct.act_arr_at,
-                              ct.est_plan_dep_at, ct.est_plan_arr_at, ct.dep_delay_min, ct.arr_delay_min,
-                              ct.dep_basis, ct.arr_basis, ct.ride_min, ct.on_time, RULE_CORRIDOR))
-    await db.execute("DELETE FROM rail.corridor_trip WHERE run_ymd = %s", (day,))
-    await db.executemany("""
-        INSERT INTO rail.corridor_trip (run_ymd, corridor_id, direction, trn_no, act_dep_at, act_arr_at,
-          est_plan_dep_at, est_plan_arr_at, dep_delay_min, arr_delay_min, dep_basis, arr_basis, ride_min, on_time, calc_rule)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", trips)
     return len(tps)
 
 

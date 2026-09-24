@@ -1,4 +1,4 @@
-"""기준선: 같은 코리도·방향·요일·슬롯의 최근 8주 p50·p90 (FR-401). pandas."""
+"""기준선: 같은 길·방향·요일·슬롯의 최근 8주 p50·p90 (FR-401). pandas."""
 from __future__ import annotations
 
 import datetime as dt

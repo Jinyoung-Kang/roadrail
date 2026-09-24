@@ -96,7 +96,7 @@ public class RoadService {
         stats.put("filledShare", pts.isEmpty() ? null :
                 Math.round(pts.stream().filter(p -> !"OK".equals(p.quality())).count() * 1000.0 / pts.size()) / 1000.0);
         return new Series(cid, dir, agg, from, to, pts, rain, eta, stats,
-                "코리도 통행시간 = 영업소 구간 통행시간(1종·도착기준 5분)의 합. 결측 슬롯은 점이 없습니다. "
+                "길 통행시간 = 영업소 구간 통행시간(1종·도착기준 5분)의 합. 결측 슬롯은 점이 없습니다. "
                         + "강수는 단기예보(관측 아님)이며 상관 관계를 볼 뿐 인과가 아닙니다.");
     }
 

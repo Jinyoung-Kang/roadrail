@@ -5,7 +5,7 @@ import { getJson, HttpError, useApi } from "@/lib/api";
 import { DASH, mdhm, num, pct } from "@/lib/format";
 import type { OpsStatus } from "@/lib/types";
 
-const PROVIDER: Record<string, string> = { EX: "한국도로공사", KORAIL: "한국철도공사", KMA: "기상청", AIRKOREA: "에어코리아", KAKAO: "카카오", "-": "내부 계산" };
+const PROVIDER: Record<string, string> = { EX: "한국도로공사", KORAIL: "한국철도공사", KMA: "기상청", AIRKOREA: "에어코리아", KAKAO: "카카오 길찾기", KAKAO_LOCAL: "카카오 검색", "-": "내부 계산" };
 
 export default function Ops() {
   const s = useApi<OpsStatus>("/api/v1/ops/collect-status", 30_000);
@@ -35,7 +35,7 @@ export default function Ops() {
       <PageHero eyebrow="운영 · FR-701" title="수집 상태"
                 sub={d ? <>수집기 {d.collectorAlive ? <><span className="text-good">●</span> 동작 중</> : <><span className="text-crit">✕</span> 응답 없음</>} · heartbeat {mdhm(d.collectorHeartbeat)} · 30초마다 갱신</> : "불러오는 중"}>
         <SpecStrip>
-          <Spec value={road?.completeness24h == null ? DASH : (road.completeness24h * 100).toFixed(1)} unit={road?.completeness24h == null ? "" : "%"} label="도로 24h 슬롯 완전성 (목표 ≥95%)" />
+          <Spec value={road?.completeness24h == null ? DASH : (road.completeness24h * 100).toFixed(1)} unit={road?.completeness24h == null ? "" : "%"} label="고속도로 24h 슬롯 완전성 (목표 ≥95%)" />
           <Spec value={lag?.medianMin == null ? DASH : String(Math.round(lag.medianMin))} unit="분" label="도로공사 공개 지연 (중앙값)" />
           <Spec value={d ? String(d.volumes.calls_24h ?? DASH) : DASH} unit="건" label="외부 호출 (24h)" />
           <Spec value={d ? String(warnJobs) : DASH} unit="개" label="경고 작업" />
@@ -87,9 +87,9 @@ export default function Ops() {
         <Note>토큰은 이 브라우저 탭의 sessionStorage 에만 둡니다. 실행 요청은 Redis Stream(rr:commands) 을 거쳐 수집기가 처리하며, 실행 중이면 409 JOB_RUNNING 입니다.</Note>
       </Section>
 
-      <Section eyebrow="예산" title="공급자별 오늘 호출 예산" gray wide desc="작업은 시작할 때 예상 호출 수를 원자적으로 예약하고(Redis Lua), 남으면 환불합니다. 예산이 모자라면 호출 없이 SKIPPED_QUOTA 로 끝납니다.">
+      <Section eyebrow="예산" title="공급자별 오늘 호출 예산" gray wide desc="수집기와 API(어디서→어디로 조회 시점 호출)가 같은 Redis 예산을 원자적으로 예약합니다(Lua). 예산이 모자라면 호출하지 않습니다.">
         {d && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {d.quota.map((q) => {
               const used = q.limit ? q.used / q.limit : 0, res = q.limit ? q.reserved / q.limit : 0;
               return (

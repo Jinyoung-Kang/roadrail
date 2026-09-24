@@ -60,6 +60,7 @@ public final class ForecastModels {
             case "M0" -> "M0(기준선)";
             case "M1" -> "M1(기준선+편차)";
             case "persistence" -> "지속(최근 관측 유지)";
+            case "KAKAO" -> "카카오 미래 운행 정보(출발 시각 기준 경로)";
             default -> model;
         };
     }

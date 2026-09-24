@@ -37,4 +37,4 @@ def parse_station(body: dict) -> tuple[float, float] | None:
 
 
 async def keyword(ctx: JobContext, query: str) -> dict:
-    return await ctx.get_json("KAKAO", "local/keyword", KEYWORD, dict(query=query, size=5), headers=_h())
+    return await ctx.get_json("KAKAO_LOCAL", "local/keyword", KEYWORD, dict(query=query, size=5), headers=_h())

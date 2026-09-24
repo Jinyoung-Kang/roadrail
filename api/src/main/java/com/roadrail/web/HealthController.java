@@ -3,6 +3,8 @@ package com.roadrail.web;
 import com.roadrail.common.Times;
 import com.roadrail.web.dto.OpsDtos;
 import io.swagger.v3.oas.annotations.Operation;
+import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -27,7 +29,8 @@ public class HealthController {
     public ResponseEntity<OpsDtos.Health> health() {
         Map<String, String> c = new LinkedHashMap<>();
         c.put("db", check(() -> jdbc.sql("SELECT 1").query(Integer.class).single() == 1));
-        c.put("redis", check(() -> "PONG".equalsIgnoreCase(redis.getConnectionFactory().getConnection().ping())));
+        // execute(콜백)은 연결을 빌려 쓰고 반납한다 — getConnection() 을 직접 열면 닫지 않는 한 샌다
+        c.put("redis", check(() -> "PONG".equalsIgnoreCase(redis.execute((RedisCallback<String>) RedisConnection::ping))));
         c.put("collector", check(() -> redis.hasKey("rr:collector:heartbeat")));
         String status = c.get("db").equals("UP") ? (c.containsValue("DOWN") ? "DEGRADED" : "UP") : "DOWN";
         return ResponseEntity.status("DOWN".equals(status) ? 503 : 200).body(new OpsDtos.Health(status, c, Times.now()));

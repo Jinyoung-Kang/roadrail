@@ -14,3 +14,4 @@
 | [010](010-kakao-bounded-wait.md) | 카카오 ETA 비동기 + 최대 0.6초 대기 |
 | [011](011-out-of-scope-infra.md) | Kafka · ClickHouse · Kubernetes 미도입과 도입 조건 |
 | [012](012-road-quality-rule.md) | 도로 품질 규칙 Q-v2 · H-v1 |
+| [013](013-free-origin-destination.md) | 어디서 → 어디로: 전국 임의 지점 선택 |

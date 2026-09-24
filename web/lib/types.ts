@@ -59,12 +59,12 @@ export interface TrainStats { samples: number; verified: number; onTimeRate: num
 export interface TrainRun { trnNo: string; actDepAt: string; actArrAt: string; planDepAt: string | null; planArrAt: string | null;
   depDelayMin: number | null; arrDelayMin: number | null; depBasis: string; arrBasis: string; rideMin: number;
   onTime: boolean | null; stats30d: TrainStats | null }
-export interface Trains { corridorId: string; direction: Dir; date: string | null; depStation: string; arrStation: string;
+export interface Trains { depCode: string; arrCode: string; date: string | null; depStation: string; arrStation: string;
   trains: TrainRun[]; availableDates: string[]; note: string }
 export interface PunctualitySummary { samples: number; verified: number; unverified: number; onTimeRate: number | null;
   avgArrDelayMin: number | null; p90ArrDelayMin: number | null }
 export interface Punctuality {
-  corridorId: string; direction: Dir | null; from: string; to: string; groupBy: string; onTimeThresholdMin: number;
+  depCode: string; arrCode: string; depStation: string; arrStation: string; from: string; to: string; groupBy: string; onTimeThresholdMin: number;
   summary: PunctualitySummary; nationwideExact: PunctualitySummary;
   items: { key: string; samples: number; verified: number; onTimeRate: number | null; avgArrDelayMin: number | null;
     p90ArrDelayMin: number | null; avgRideMin: number | null; estimatedShare: number | null }[];
@@ -88,3 +88,24 @@ export interface OpsStatus {
   volumes: Record<string, number | string | null>;
 }
 export interface ApiError { code: string; message: string; traceId: string }
+
+// ---- 어디서 → 어디로 (자유 선택)
+export type PlaceKind = "REGION" | "STATION" | "PLACE" | "ADDRESS" | "CORRIDOR";
+export interface Place { name: string; address: string | null; lat: number; lon: number; kind: PlaceKind; stationCode: string | null }
+export interface Station { code: string; name: string; lat: number | null; lon: number | null; trains7d: number }
+export interface StationEnd { code: string; name: string; lat: number; lon: number; distanceKm: number; minutes: number; estimated: boolean }
+export interface Trip {
+  from: Place; to: Place; distanceKm: number; asOf: string; departAt: string; accessMin: number | null;
+  car: { durationSec: number | null; distanceM: number | null; departAt: string | null; path: [number, number][]; pending: boolean; source: string };
+  observed: { corridorId: string; corridorName: string; direction: Dir; travelSec: number; baselineP50Sec: number | null;
+    vsBaselinePct: number | null; slotTs: string; predictedSec: number | null; model: string; leadMin: number } | null;
+  rail: { dep: StationEnd | null; arr: StationEnd | null; referenceDate: string | null; basis: string | null;
+    nextTrains: NextTrain[]; pairsTried: number; note: string | null } | null;
+  env: Record<"origin" | "dest", EnvPoint>;
+  incidents: Incident[];
+  decision: Decision;
+  freshness: Record<string, string>;
+  caveat: string;
+  pending: boolean;
+  cache: string;
+}

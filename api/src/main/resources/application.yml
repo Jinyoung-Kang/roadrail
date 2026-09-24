@@ -58,6 +58,7 @@ management:
 roadrail:
   admin-token: ${ADMIN_TOKEN:}
   kakao-rest-api-key: ${KAKAO_REST_API_KEY:}
+  data-go-kr-key: ${DATA_GO_KR_KEY:}
   kakao-mobility-base-url: https://apis-navi.kakaomobility.com
   on-time-threshold-min: ${ON_TIME_THRESHOLD_MIN:5}
   decision-similar-min: ${DECISION_SIMILAR_MIN:10}
@@ -66,13 +67,14 @@ roadrail:
   forecast-tau-min: ${FORECAST_TAU_MIN:90}
   now-cache-seconds: 60
   # 도로공사 통행시간 공개 지연이 약 3시간이라 기획서의 30분 기준 대신 실측 기반 값 (docs/W1-smoke.md)
-  road-stale-minutes: 300
+  road-stale-minutes: 360
   quota:
     EX: ${QUOTA_EX:20000}
     KORAIL: ${QUOTA_KORAIL:9000}
     KMA: ${QUOTA_KMA:9000}
     AIRKOREA: ${QUOTA_AIRKOREA:450}
     KAKAO: ${QUOTA_KAKAO:5000}
+    KAKAO_LOCAL: ${QUOTA_KAKAO_LOCAL:50000}
 
 logging:
   level:

@@ -1,0 +1,86 @@
+package com.roadrail.web;
+
+import com.roadrail.common.ApiException;
+import com.roadrail.service.PlaceService;
+import com.roadrail.service.RailService;
+import com.roadrail.service.TripService;
+import com.roadrail.web.dto.RailDtos;
+import com.roadrail.web.dto.TripDtos;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/v1")
+@Validated
+@Tag(name = "trip", description = "어디서 → 어디로: 전국 임의의 두 지점 · 모든 기차역 쌍")
+public class TripController {
+    private final TripService trips;
+    private final PlaceService places;
+    private final RailService rail;
+
+    public TripController(TripService trips, PlaceService places, RailService rail) {
+        this.trips = trips;
+        this.places = places;
+        this.rail = rail;
+    }
+
+    @GetMapping("/places/search")
+    @Operation(summary = "어디서 · 어디로 검색 — 행정구역 · 기차역 · 장소 (전국)")
+    public TripDtos.PlaceSearch search(@RequestParam @Size(min = 1, max = 40) String q) {
+        if (q.isBlank()) throw ApiException.invalid("검색어를 입력하세요.");
+        return places.search(q);
+    }
+
+    @GetMapping("/stations")
+    @Operation(summary = "운행 중인 기차역 검색 (최근 7일 정차 편수 순)")
+    public List<RailDtos.Station> stations(@RequestParam(defaultValue = "") @Size(max = 20) String q,
+                                           @RequestParam(defaultValue = "20") @Min(1) @Max(300) int limit) {
+        return rail.stations(q, limit);
+    }
+
+    @GetMapping("/trip")
+    @Operation(summary = "어디서 → 어디로 판단 카드 — 카카오 경로(자동차) · 근처 역 직통 열차 · 날씨·대기 · R-DEC-01")
+    public ResponseEntity<TripDtos.Trip> trip(@RequestParam double fromLat, @RequestParam double fromLon,
+                                              @RequestParam @Size(max = 60) String fromName,
+                                              @RequestParam(required = false) String fromStation,
+                                              @RequestParam double toLat, @RequestParam double toLon,
+                                              @RequestParam @Size(max = 60) String toName,
+                                              @RequestParam(required = false) String toStation,
+                                              @RequestParam(defaultValue = "0") @Min(0) @Max(360) int departIn,
+                                              @RequestParam(required = false) @Min(0) @Max(180) Integer accessMin) {
+        var from = new TripDtos.Place(fromName, null, fromLat, fromLon, fromStation == null ? "PLACE" : "STATION", blank(fromStation));
+        var to = new TripDtos.Place(toName, null, toLat, toLon, toStation == null ? "PLACE" : "STATION", blank(toStation));
+        var t = trips.trip(from, to, departIn, accessMin);
+        return ResponseEntity.ok().header("X-Cache", t.cache()).body(t);
+    }
+
+    @GetMapping("/rail/od/punctuality")
+    @Operation(summary = "임의 역 쌍 정시율 — groupBy=train|dow|hour, thresholdMin")
+    public RailDtos.Punctuality odPunctuality(@RequestParam String dep, @RequestParam String arr,
+                                              @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                              @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+                                              @RequestParam(defaultValue = "train") String groupBy,
+                                              @RequestParam(required = false) Integer thresholdMin) {
+        return rail.punctuality(dep, arr, from, to, groupBy, thresholdMin);
+    }
+
+    @GetMapping("/rail/od/trains")
+    @Operation(summary = "임의 역 쌍 날짜별 열차 + 열차별 최근 30일 정시성")
+    public RailDtos.Trains odTrains(@RequestParam String dep, @RequestParam String arr,
+                                    @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        if (dep.equals(arr)) throw ApiException.invalid("출발역과 도착역이 같습니다.");
+        return rail.trains(dep, arr, date);
+    }
+
+    private static String blank(String s) { return s == null || s.isBlank() ? null : s; }
+}

@@ -1,4 +1,4 @@
-# 코리도 시드 (FR-102) — tools/build_seed.py 가 생성. 손으로 고쳐도 되며 적용은 멱등입니다.
+# 길 시드 (FR-102) — tools/build_seed.py 가 생성. 손으로 고쳐도 되며 적용은 멱등입니다.
 # road.<DIR>[]: 방향별 영업소 구간 체인, rail: 역 쌍, env: 날씨·대기 지점
 generatedAt: "2026-09-24T22:10:31+09:00"
 generator: "tools/build_seed.py"

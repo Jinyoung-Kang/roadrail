@@ -8,6 +8,7 @@ import java.util.Map;
 public record AppProperties(
         String adminToken,
         String kakaoRestApiKey,
+        String dataGoKrKey,
         String kakaoMobilityBaseUrl,
         int onTimeThresholdMin,
         int decisionSimilarMin,

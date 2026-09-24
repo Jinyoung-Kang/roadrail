@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 const LINKS = [
   { href: "/", label: "판단" },
   { href: "/road/SEL-DJN", label: "도로 분석", match: "/road" },
-  { href: "/rail/SEL-DJN", label: "철도 분석", match: "/rail" },
+  { href: "/rail", label: "철도 분석", match: "/rail" },
   { href: "/forecast", label: "예측 성능" },
   { href: "/ops", label: "수집 상태" },
 ];

@@ -16,11 +16,15 @@ public final class RailDtos {
 
     public record NextTrains(String referenceDate, String basis, List<NextTrain> trains) {}
 
+    public record Station(String code, String name, Double lat, Double lon, int trains7d) {}
+
+    public record StationNear(String code, String name, double lat, double lon, double distanceKm) {}
+
     public record TrainRun(String trnNo, OffsetDateTime actDepAt, OffsetDateTime actArrAt, OffsetDateTime planDepAt,
                            OffsetDateTime planArrAt, Double depDelayMin, Double arrDelayMin, String depBasis, String arrBasis,
                            double rideMin, Boolean onTime, TrainStats stats30d) {}
 
-    public record Trains(String corridorId, String direction, String date, String depStation, String arrStation,
+    public record Trains(String depCode, String arrCode, String depStation, String arrStation, String date,
                          List<TrainRun> trains, List<String> availableDates, String note) {}
 
     public record PunctualityItem(String key, int samples, int verified, Double onTimeRate, Double avgArrDelayMin,
@@ -31,7 +35,7 @@ public final class RailDtos {
     public record Summary(int samples, int verified, int unverified, Double onTimeRate, Double avgArrDelayMin,
                           Double p90ArrDelayMin) {}
 
-    public record Punctuality(String corridorId, String direction, String from, String to, String groupBy,
+    public record Punctuality(String depCode, String arrCode, String depStation, String arrStation, String from, String to, String groupBy,
                               int onTimeThresholdMin, Summary summary, List<PunctualityItem> items,
                               List<Bucket> histogram, Summary nationwideExact, Map<String, String> rules, String note) {}
 }

@@ -27,7 +27,7 @@ class ApiIT extends IntegrationTest {
     @BeforeEach
     void seed() {
         jdbc.execute("TRUNCATE ref.corridor, ref.toll_unit, ref.station CASCADE");
-        jdbc.execute("TRUNCATE ts.road_corridor_tt, ana.road_baseline, rail.corridor_trip, rail.train_punctuality, ops.backfill");
+        jdbc.execute("TRUNCATE ts.road_corridor_tt, ana.road_baseline, rail.run_plan, rail.run_info, rail.train_punctuality, ops.backfill");
         jdbc.execute("""
                 INSERT INTO ref.toll_unit (unit_code, unit_name, route_no, route_name, lat, lon) VALUES
                   ('101', '서울', '001', '경부선', 37.365, 127.102), ('115', '대전', '001', '경부선', 36.361, 127.448);
@@ -46,14 +46,20 @@ class ApiIT extends IntegrationTest {
         jdbc.execute("""
                 INSERT INTO ana.road_baseline (corridor_id, direction, dow, slot_idx, p50_sec, p90_sec, n, window_from, window_to)
                 SELECT 'SEL-DJN', 'DN', 0, s, 5580, 6400, 20, current_date - 56, current_date FROM generate_series(0, 287) s""");
-        // 같은 요일 지난주 열차 2편 (출발 23:58 은 대부분 시각 이후로 잡히도록)
+        // 같은 요일 지난주 열차 1편 S1 23:59 → S2 00:59(다음 날 아님: 23:59 출발 · 60분) — 운행계획 · 운행정보 · 정시성 원본
         LocalDate ref = LocalDate.now(KST).minusDays(7);
+        OffsetDateTime dep = ref.atTime(23, 58).atZone(KST).toOffsetDateTime();
+        jdbc.update("INSERT INTO rail.run_plan (run_ymd, trn_no, dep_stn_cd, arr_stn_cd, plan_dep_at, plan_arr_at) VALUES (?, '00199', 'S1', 'S2', ?, ?)",
+                ref, dep, dep.plusMinutes(57));
+        jdbc.update("INSERT INTO rail.run_info (run_ymd, trn_no, run_seq, stn_cd, stn_nm, dep_at) VALUES (?, '00199', 1, 'S1', '서울', ?)",
+                ref, dep.plusMinutes(1));
+        jdbc.update("INSERT INTO rail.run_info (run_ymd, trn_no, run_seq, stn_cd, stn_nm, arr_at) VALUES (?, '00199', 2, 'S2', '대전', ?)",
+                ref, dep.plusMinutes(61));
         jdbc.update("""
-                INSERT INTO rail.corridor_trip (run_ymd, corridor_id, direction, trn_no, act_dep_at, act_arr_at, est_plan_dep_at,
-                  est_plan_arr_at, dep_delay_min, arr_delay_min, dep_basis, arr_basis, ride_min, on_time, calc_rule)
-                VALUES (?, 'SEL-DJN', 'DN', '00199', ?, ?, ?, ?, 1, 3, 'EXACT', 'EST', 60, true, 'P-i1')""",
-                ref, ref.atTime(23, 59).atZone(KST).toOffsetDateTime(), ref.atTime(23, 59).atZone(KST).toOffsetDateTime().plusMinutes(60),
-                ref.atTime(23, 58).atZone(KST).toOffsetDateTime(), ref.atTime(23, 58).atZone(KST).toOffsetDateTime().plusMinutes(57));
+                INSERT INTO rail.train_punctuality (run_ymd, trn_no, dep_stn_cd, arr_stn_cd, plan_dep_at, plan_arr_at, act_dep_at,
+                  act_arr_at, dep_delay_min, arr_delay_min, on_time, status, calc_rule, threshold_min)
+                VALUES (?, '00199', 'S1', 'S2', ?, ?, ?, ?, 1, 4, true, 'OK', 'P-v1', 5)""",
+                ref, dep, dep.plusMinutes(57), dep.plusMinutes(1), dep.plusMinutes(61));
     }
 
     @Test
@@ -134,6 +140,38 @@ class ApiIT extends IntegrationTest {
                 .andExpect(jsonPath("$.components.db").value("UP"))
                 .andExpect(jsonPath("$.components.collector").value("DOWN"))
                 .andExpect(jsonPath("$.status").value("DEGRADED"));
+    }
+
+    @Test
+    void railOdAndStations() throws Exception {
+        LocalDate ref = LocalDate.now(KST).minusDays(7);
+        mvc.perform(get("/api/v1/rail/od/trains").param("dep", "S1").param("arr", "S2"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.date").value(ref.toString()))
+                .andExpect(jsonPath("$.trains[0].arrBasis").value("EXACT"))
+                .andExpect(jsonPath("$.trains[0].arrDelayMin").value(4.0));
+        mvc.perform(get("/api/v1/rail/od/punctuality").param("dep", "S1").param("arr", "S2")
+                        .param("from", ref.minusDays(1).toString()).param("to", ref.toString()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.summary.onTimeRate").value(1.0))
+                .andExpect(jsonPath("$.depStation").value("서울"));
+        mvc.perform(get("/api/v1/rail/od/trains").param("dep", "S1").param("arr", "S1")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/v1/stations").param("q", "대")).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("대전"));
+    }
+
+    @Test
+    void tripBetweenStationsWithoutKakaoKey() throws Exception {
+        // 카카오 키가 없으면 자동차 값 없이 기차만 — 결론 대신 근거와 함께 '비교할 수 없습니다'
+        mvc.perform(get("/api/v1/trip").param("fromLat", "37.55").param("fromLon", "126.97").param("fromName", "서울역")
+                        .param("fromStation", "S1").param("toLat", "36.33").param("toLon", "127.43").param("toName", "대전역")
+                        .param("toStation", "S2").param("departIn", "0"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.distanceKm").value(org.hamcrest.Matchers.closeTo(140.0, 10.0)))
+                .andExpect(jsonPath("$.rail.dep.name").value("서울"))
+                .andExpect(jsonPath("$.decision.reasons", not(empty())))
+                .andExpect(jsonPath("$.env.origin.name").value("서울역"));
+        mvc.perform(get("/api/v1/trip").param("fromLat", "10").param("fromLon", "10").param("fromName", "x")
+                        .param("toLat", "36.33").param("toLon", "127.43").param("toName", "y"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

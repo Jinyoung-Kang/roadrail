@@ -58,7 +58,7 @@ async def collect_air(ctx: JobContext) -> int:
 
 
 async def corridor_endpoints() -> list[dict]:
-    """코리도·방향별 도로 체인의 첫 영업소 → 마지막 영업소 좌표."""
+    """길·방향별 도로 체인의 첫 영업소 → 마지막 영업소 좌표."""
     return await db.fetch("""
         WITH ends AS (
           SELECT corridor_id, direction,

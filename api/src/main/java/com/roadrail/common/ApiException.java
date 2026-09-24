@@ -11,7 +11,7 @@ public class ApiException extends RuntimeException {
     public ErrorCode code() { return code; }
 
     public static ApiException corridorNotFound(String id) {
-        return new ApiException(ErrorCode.CORRIDOR_NOT_FOUND, "코리도 '" + id + "' 를 찾을 수 없습니다.");
+        return new ApiException(ErrorCode.CORRIDOR_NOT_FOUND, "길 '" + id + "' 를 찾을 수 없습니다.");
     }
 
     public static ApiException invalid(String message) {

@@ -30,7 +30,7 @@ ps: ## 컨테이너 · 헬스 상태
 logs: ## 수집기 · api 로그
 	$(COMPOSE) logs -f --tail=100 collector api
 
-seed: ## 코리도 seed 적용 (멱등 — 두 번째는 변경 0건)
+seed: ## 길 seed 적용 (멱등 — 두 번째는 변경 0건)
 	$(COMPOSE) exec collector roadrail seed
 
 collect-once: ## 작업 1회 실행: make collect-once JOB=road_travel_time
@@ -40,7 +40,7 @@ rail-backfill: ## 운행정보 기간 재수집 (관리 API 경유): make rail-b
 	@curl -s -X POST localhost:8300/api/v1/admin/backfill -H "X-Admin-Token: $(ADMIN_TOKEN)" -H 'Content-Type: application/json' \
 	  -d '{"provider":"KORAIL","job":"rail_daily","from":"$(FROM)","to":"$(TO)"}' | python3 -m json.tool
 
-reclassify: ## 도로 품질 규칙 재적용 + 코리도 합산 재계산 (API 호출 없음)
+reclassify: ## 도로 품질 규칙 재적용 + 길 합산 재계산 (API 호출 없음)
 	$(COMPOSE) exec collector roadrail reclassify-road
 
 smoke: ## 외부 API 5종 키 스모크 (호스트 Python 표준 라이브러리)

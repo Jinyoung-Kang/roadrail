@@ -3,7 +3,7 @@
 영업소 간 통행시간 API 는 오늘 하루치를 차종 → 시각 순으로 정렬해 99행씩 준다.
 그래서 구간마다 '지금까지 본 1종 행 수'(Redis ex:tail:*) 를 기억해 **꼬리 페이지만** 다시 받는다.
 (보통 구간당 1회 호출. 기획서 가정인 '5분 슬롯 × 호출 1회' 대신 '10분마다 꼬리 1~2페이지'.)
-받은 슬롯 범위만 코리도 합산을 다시 계산하므로 늦게 공개된 값도 자연스럽게 반영된다(멱등 UPSERT).
+받은 슬롯 범위만 길 합산을 다시 계산하므로 늦게 공개된 값도 자연스럽게 반영된다(멱등 UPSERT).
 """
 from __future__ import annotations
 
@@ -113,7 +113,7 @@ async def collect_travel_time(ctx: JobContext, full: bool = False, only: set[tup
 
 async def recompute_corridors(chains: dict[tuple[str, str], list[Segment]], tmin: dt.datetime, tmax: dt.datetime,
                               touched: set[tuple[str, str]] | None = None) -> int:
-    """[tmin, tmax] 슬롯의 코리도 합산을 다시 계산 (구간이 바뀐 코리도만)."""
+    """[tmin, tmax] 슬롯의 길 합산을 다시 계산 (구간이 바뀐 길만)."""
     s = settings()
     affected = {k: v for k, v in chains.items() if touched is None or any(seg.key in touched for seg in v)}
     if not affected:
@@ -145,7 +145,7 @@ async def recompute_corridors(chains: dict[tuple[str, str], list[Segment]], tmin
 
     out_rows, gaps, resolved = [], [], []
     for (cid, direction), segs in affected.items():
-        # 이 코리도의 공개 워터마크 = 구간 최신 슬롯 중 최댓값 (그 이후는 아직 공개 전)
+        # 이 길의 공개 워터마크 = 구간 최신 슬롯 중 최댓값 (그 이후는 아직 공개 전)
         wm = max((latest[s.key] for s in segs if s.key in latest), default=None)
         if wm is None:
             continue
@@ -166,7 +166,7 @@ async def recompute_corridors(chains: dict[tuple[str, str], list[Segment]], tmin
 
 
 async def sweep_gaps(day: dt.date) -> int:
-    """하루 시작 ~ 코리도 워터마크 사이에 아예 없는 슬롯을 결측으로 기록 (FR-203)."""
+    """하루 시작 ~ 길 워터마크 사이에 아예 없는 슬롯을 결측으로 기록 (FR-203)."""
     start = day_start(day)
     return await db.execute("""
         INSERT INTO ops.slot_gap (job_name, series_key, slot_ts, reason)
@@ -180,7 +180,7 @@ async def sweep_gaps(day: dt.date) -> int:
 
 
 async def backfill_gaps(ctx: JobContext) -> int:
-    """오늘 열린 결측 → 해당 코리도 구간을 처음부터 다시 받아 재합산. 지난 날짜는 API 가 주지 않으므로 SOURCE_EXPIRED."""
+    """오늘 열린 결측 → 해당 길 구간을 처음부터 다시 받아 재합산. 지난 날짜는 API 가 주지 않으므로 SOURCE_EXPIRED."""
     today = now_kst().date()
     start = day_start(today)
     await db.execute("""UPDATE ops.slot_gap SET reason = 'SOURCE_EXPIRED'
@@ -219,9 +219,9 @@ DIRECTION_RE = re.compile(r"[0-9A-Za-z가-힣]+\s*방향")
 
 def match_incident(inc: dict, corridor_routes: dict[str, set[str]], corridor_places: dict[str, set[str]],
                    corridor_main_route: dict[str, str]) -> list[str]:
-    """돌발 문자 → 코리도 매칭 규칙 M-v1 (FR-405).
-    홍보성(유형 15)은 매칭하지 않는다. 노선명이 코리도 구간의 노선과 같고,
-    본문에 코리도 영업소명(방향 표기 'OO방향' 제외)이 나오거나 그 노선이 코리도 주 노선이면 매칭."""
+    """돌발 문자 → 길 매칭 규칙 M-v1 (FR-405).
+    홍보성(유형 15)은 매칭하지 않는다. 노선명이 길 구간의 노선과 같고,
+    본문에 길 영업소명(방향 표기 'OO방향' 제외)이 나오거나 그 노선이 길 주 노선이면 매칭."""
     if inc.get("type_code") == PROMO_TYPE or not inc.get("route_name"):
         return []
     # 'OO방향' 은 위치가 아니라 진행 방향이므로 지운 뒤 영업소명을 찾는다
@@ -299,7 +299,7 @@ async def sync_toll_units(ctx: JobContext) -> int:
 
 
 async def reclassify_all(since: dt.datetime | None = None) -> tuple[int, int]:
-    """품질 규칙을 바꾼 뒤 저장된 원본 행의 quality 를 다시 매기고 코리도 합산을 다시 계산한다 (API 호출 없음)."""
+    """품질 규칙을 바꾼 뒤 저장된 원본 행의 quality 를 다시 매기고 길 합산을 다시 계산한다 (API 호출 없음)."""
     s = settings()
     chains = await load_chains()
     segs = unique_segments(chains)

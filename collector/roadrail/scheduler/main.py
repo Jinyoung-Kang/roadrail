@@ -51,7 +51,9 @@ async def heartbeat() -> None:
 
 
 async def consume_commands() -> None:
-    """관리 API → Redis Stream rr:commands → 작업 실행 (at-least-once, 처리 후 XACK)."""
+    """관리 API → Redis Stream rr:commands → 작업 실행. 작업이 **끝난 뒤** XACK (at-least-once).
+    기동 시 한 번만 미처리(pending) 메시지를 다시 처리한다 — 실행 중 재기동으로 잃은 명령 복구.
+    (매 반복마다 pending 을 읽으면 아직 실행 중인 명령이 다시 배달되어 중복 실행된다.)"""
     r = rds.client()
     consumer = "collector-1"
     try:
@@ -59,16 +61,18 @@ async def consume_commands() -> None:
     except ResponseError as e:
         if "BUSYGROUP" not in str(e):
             raise
+    stream_id = "0"
     while True:
         try:
-            # 먼저 이전에 받고 처리하지 못한(pending) 메시지, 그다음 새 메시지
-            for stream_id in ("0", ">"):
-                resp = await r.xreadgroup(rds.COMMAND_GROUP, consumer, {rds.COMMANDS: stream_id}, count=10,
-                                          block=5000 if stream_id == ">" else None)
-                for _, messages in resp or []:
-                    for msg_id, fields in messages:
-                        await handle_command(fields)
-                        await r.xack(rds.COMMANDS, rds.COMMAND_GROUP, msg_id)
+            resp = await r.xreadgroup(rds.COMMAND_GROUP, consumer, {rds.COMMANDS: stream_id}, count=10,
+                                      block=None if stream_id == "0" else 5000)
+            messages = [m for _, ms in resp or [] for m in ms]
+            for msg_id, fields in messages:
+                spawn(handle_and_ack(msg_id, fields))
+            if stream_id == "0" and not messages:
+                stream_id = ">"  # pending 을 다 넘겼으면 새 메시지만
+            elif stream_id == "0":
+                stream_id = messages[-1][0]  # 다음 pending 묶음
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
@@ -76,13 +80,20 @@ async def consume_commands() -> None:
             await asyncio.sleep(3)
 
 
+async def handle_and_ack(msg_id: str, fields: dict) -> None:
+    try:
+        await handle_command(fields)
+    finally:
+        await rds.client().xack(rds.COMMANDS, rds.COMMAND_GROUP, msg_id)
+
+
 async def handle_command(fields: dict) -> None:
     kind = fields.get("type")
     log(logger, "명령 수신", **fields)
     if kind == "run_job" and fields.get("job") in JOBS:
-        spawn(run_job(fields["job"], "ADMIN"))
+        await run_job(fields["job"], "ADMIN")
     elif kind == "backfill" and fields.get("backfillId"):
-        spawn(run_backfill(fields["backfillId"]))
+        await run_backfill(fields["backfillId"])
     else:
         log(logger, "알 수 없는 명령", logging.WARNING, **fields)
 
@@ -116,6 +127,7 @@ async def startup_kick() -> None:
                             VALUES (%s, 'KORAIL', 'rail_daily', %s, %s, %s)""", (bid, start, end, planned))
         log(logger, "초기 철도 백필", from_=str(start), to=str(end), planned=planned)
         await run_backfill(bid)
+    await run_job("station_geocode", "STARTUP")  # 새로 나온 역만 (없으면 호출 0)
     await run_job("baseline_daily", "STARTUP")
     await run_job("backtest_daily", "STARTUP")
 

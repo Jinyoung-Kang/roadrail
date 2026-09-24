@@ -1,4 +1,4 @@
-"""코리도 seed 적용 (FR-102). 멱등: 같은 seed 를 다시 적용하면 변경 0건."""
+"""길 seed 적용 (FR-102). 멱등: 같은 seed 를 다시 적용하면 변경 0건."""
 from __future__ import annotations
 
 import logging

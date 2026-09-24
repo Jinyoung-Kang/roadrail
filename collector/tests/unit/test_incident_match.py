@@ -18,7 +18,7 @@ def test_main_route_matches_without_place():
 
 
 def test_place_mention_matches_secondary_route_corridor():
-    # 경부선은 서울–강릉의 보조 노선: 코리도 영업소(서울)가 위치로 언급되면 매칭
+    # 경부선은 서울–강릉의 보조 노선: 길 영업소(서울)가 위치로 언급되면 매칭
     assert match_incident(inc("경부선", "서울TG 부근 정체"), ROUTES, PLACES, MAIN) == ["SEL-DJN", "SEL-GNG"]
 
 

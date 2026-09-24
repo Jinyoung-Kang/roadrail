@@ -37,7 +37,7 @@ public class QueryController {
     }
 
     @GetMapping("/rail/punctuality")
-    @Operation(summary = "정시율 집계 (FR-302~303) — groupBy=train|dow|hour, thresholdMin")
+    @Operation(summary = "정시율 집계 — 길의 역 쌍 (FR-302~303). 임의 역 쌍은 /rail/od/punctuality")
     public RailDtos.Punctuality punctuality(@RequestParam String corridorId,
                                             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
@@ -45,11 +45,12 @@ public class QueryController {
                                             @RequestParam(defaultValue = "train") String groupBy,
                                             @RequestParam(required = false) Integer thresholdMin) {
         corridors.require(corridorId);
-        return rail.punctuality(corridorId, dir == null ? null : CorridorService.dir(dir), from, to, groupBy, thresholdMin);
+        var pair = rail.pairOf(corridorId, dir == null ? "DN" : CorridorService.dir(dir));
+        return rail.punctuality(pair.dep(), pair.arr(), from, to, groupBy, thresholdMin);
     }
 
     @GetMapping("/incidents")
-    @Operation(summary = "돌발 문자 안내 (FR-405) — corridorId 매칭, since 이후")
+    @Operation(summary = "돌발 문자 안내 (FR-405) — 길(corridorId) 매칭, since 이후")
     public EnvDtos.Incidents incidents(@RequestParam(required = false) String corridorId,
                                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime since,
                                        @RequestParam(defaultValue = "50") @Min(1) @Max(200) int limit) {
