@@ -93,7 +93,10 @@ async def rail_daily(ctx: JobContext) -> int:
     todo = [d for d in days if d not in have or d == today - dt.timedelta(days=1)]
     total = 0
     for d in todo:
-        total += await rail_day(ctx, d)
+        n = await rail_day(ctx, d)
+        if n == 0 and d == today - dt.timedelta(days=1):
+            ctx.note(f"{d} 운행정보 아직 공개 전(0건) — 다음 실행(05:30 · 09:30 · 15:30)에서 다시 받습니다")
+        total += n
     return total
 
 

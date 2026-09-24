@@ -12,7 +12,7 @@ public final class RouteDtos {
     /** 같은 이름의 연속 구간을 합친 도로 */
     public record RoadRun(String name, String type, int distanceM, int durationSec, Double speedKmh, String traffic) {}
 
-    public record RouteSummary(String label, Integer durationSec, Integer distanceM, Integer tollFare, Integer taxiFare,
+    public record RouteSummary(String label, Integer durationSec, Integer distanceM,
                                List<double[]> path, List<Share> byType, List<RoadRun> roads, List<RoadRun> slow) {}
 
     public record ProfilePoint(OffsetDateTime departAt, int offsetMin, Integer durationSec) {}

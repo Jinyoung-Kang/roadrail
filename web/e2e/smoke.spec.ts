@@ -8,7 +8,7 @@ test("판단 화면: 출발지 → 도착지 · 판단 요약 · 스펙 · 근�
   await expect(page.getByText(/빠를 것으로 보입니다|비슷합니다|비교할 수 없습니다|비교합니다/).first()).toBeVisible();
   await expect(page.getByText("자동차", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("판단 근거 · R-DEC-01")).toBeVisible();
-  await expect(page.getByText("데이터 시각")).toBeVisible();
+  await expect(page.getByText("데이터 시각", { exact: true })).toBeVisible();
 });
 
 test("판단 화면: ⇄ 로 출발지·도착지를 바꾼다", async ({ page }) => {
@@ -39,11 +39,30 @@ test("판단 화면: 검색 칸은 처음엔 비어 있고 입력한 단어로�
   for (const name of await page.getByRole("listbox").getByRole("option").allInnerTexts()) expect(name).toContain("수원");
 });
 
+test("메인: 서비스 소개 — 한 문장 정의 · 3단계 · 다른 메뉴", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: /소개/ }).click();
+  const about = page.locator("#about");
+  await expect(about.getByRole("heading", { name: /차로 갈까, 기차로 갈까/ })).toBeInViewport();
+  await expect(about.getByText("같은 출발 시각으로 비교")).toBeVisible();
+  await expect(about.getByRole("link", { name: /철도 분석/ })).toHaveAttribute("href", "/rail");
+});
+
+test("판단 근거: 돌발 경고가 있으면 무슨 안내인지 목록으로 보인다", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("판단 근거 · R-DEC-01")).toBeVisible({ timeout: 15_000 });
+  const warn = page.getByText(/경로 주변 돌발 안내 \d+건/);
+  if (await warn.count() === 0) return;  // 지금 안내가 없으면 여기까지
+  const list = page.getByRole("list", { name: "돌발 안내 목록" });
+  await expect(list.getByRole("listitem").first()).toBeVisible();
+  await expect(list.getByText(/발송/).first()).toBeVisible();
+});
+
 test("판단 화면: 자동차·기차 카드 — 도착 예정 · 시간 구성 · 선로 지도 출처", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("도착 예정").first()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("img", { name: /시간 구성: .*탑승/ })).toBeVisible();
-  await expect(page.getByText(/선로 © OpenStreetMap contributors/)).toBeAttached();
+  await expect(page.getByText("선로 © OpenStreetMap contributors (ODbL)", { exact: true })).toBeAttached();
 });
 
 test("도로 분석: 전국 어디든 — 출발 시각별 · 도로 구성", async ({ page }) => {
@@ -84,7 +103,7 @@ test("고속도로 실측 분석(길): 추이 차트와 히트맵", async ({ pag
 
 test("철도 분석: 임의 역 쌍 — 역 검색으로 바꾼다", async ({ page }) => {
   await page.goto("/rail?dep=3900023&arr=3900073");
-  await expect(page.getByText(/정시율 \(도착 ≤5분\)/)).toBeVisible();
+  await expect(page.getByText(/정시율 \(도착 ≤5분\)/)).toBeVisible({ timeout: 15_000 });
   await page.getByRole("combobox", { name: "도착역" }).fill("부산");
   await page.getByRole("option", { name: /^부산역/ }).first().click();
   await expect(page).toHaveURL(/arr=3900114/);
@@ -92,15 +111,19 @@ test("철도 분석: 임의 역 쌍 — 역 검색으로 바꾼다", async ({ pa
   await expect(page.getByRole("heading", { name: "정시율 랭킹" })).toBeVisible();
 });
 
-test("철도 분석: 역 선택 목록은 가나다순 · 열차 종류와 OO발 OO행", async ({ page }) => {
+test("철도 분석: 역 선택 목록은 가나다순 · 차종은 TAGO 시간표 값만 · OO발 OO행", async ({ page }) => {
   await page.goto("/rail?dep=3900023&arr=3900114");
   await page.getByRole("combobox", { name: "출발역" }).click();
+  await expect(page.getByRole("listbox").getByRole("option").nth(100)).toBeAttached({ timeout: 15_000 });
   const names = (await page.getByRole("listbox").getByRole("option").allInnerTexts()).map((t) => t.split("\n")[0].replace(/역$/, ""));  // 광주 < 광주송정
   expect(names.length).toBeGreaterThan(100);
   expect(names).toEqual([...names].sort());
   await page.keyboard.press("Escape");
   await expect(page.getByText(/서울발 부산행/).first()).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText(/^(KTX|SRT|ITX-새마을|무궁화호)/).first()).toBeVisible();
+  // 차종은 TAGO 시간표에서 온 배지로만 나온다 (번호로 추정한 값 없음)
+  const kinds = page.getByText(/^(KTX|SRT|ITX|무궁화호|새마을호|누리로|통근열차)/);
+  const n = await kinds.count();
+  expect(await page.getByTitle("TAGO 열차 시간표의 그날 배정 차종").count()).toBe(n);
 });
 
 test("수집 상태: 작업 표 · 예산 · 오류 상세와 복사", async ({ page, context }) => {

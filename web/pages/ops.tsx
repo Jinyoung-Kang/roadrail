@@ -6,7 +6,7 @@ import { DASH, mdhm, num, pct } from "@/lib/format";
 import type { OpsFailure, OpsStatus } from "@/lib/types";
 
 const PROVIDER: Record<string, string> = { EX: "한국도로공사", KORAIL: "한국철도공사", KMA: "기상청", AIRKOREA: "에어코리아", KAKAO: "카카오 길찾기",
-  KAKAO_LOCAL: "카카오 검색", TAGO: "TAGO 지하철", OSM: "OpenStreetMap", "-": "내부 계산" };
+  KAKAO_LOCAL: "카카오 검색", TAGO: "TAGO 지하철", TAGO_TRAIN: "TAGO 열차", OSM: "OpenStreetMap", "-": "내부 계산" };
 
 /** 클립보드 복사 — http 로 연 경우(보안 컨텍스트 아님)에는 textarea 선택 복사로 대신 */
 async function copyText(text: string): Promise<boolean> {
@@ -37,7 +37,7 @@ function CopyButton({ text, label = "복사" }: { text: string; label?: string }
 }
 
 const failureText = (f: OpsFailure) =>
-  `#${f.runId} ${f.job} · ${f.status} · ${f.startedAt} ~ ${f.finishedAt ?? "-"}\n${f.detail ?? f.message ?? ""}`;
+  `#${f.runId} ${f.job} · ${f.status} · ${f.startedAt} ~ ${f.finishedAt ?? "(종료 기록 없음)"}${f.resolvedAt ? ` · 이후 정상 ${f.resolvedAt}` : ""}\n${f.detail ?? f.message ?? ""}`;
 
 function FailureLog({ f, open }: { f: OpsFailure; open: boolean }) {
   return (
@@ -45,7 +45,8 @@ function FailureLog({ f, open }: { f: OpsFailure; open: boolean }) {
       <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4 hover:bg-mist">
         <StatusBadge status={f.status} />
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium">{f.job} <span className="font-normal text-muted">· 실행 #{f.runId} · {f.trigger}</span></span>
+          <span className="block text-sm font-medium">{f.job} <span className="font-normal text-muted">· 실행 #{f.runId} · {f.trigger}</span>
+            {f.resolvedAt && <span className="ml-2 rounded bg-[#e8f6ef] px-1.5 py-0.5 text-[11px] font-medium text-ink2"><span className="text-good" aria-hidden>●</span> 이후 정상 실행 {mdhm(f.resolvedAt)}</span>}</span>
           <span className="block truncate text-xs text-muted">{mdhm(f.startedAt)} · {f.message ?? "메시지 없음"}</span>
         </span>
         <span className="text-xs text-muted" aria-hidden>펼치기 ▾</span>
@@ -84,6 +85,7 @@ export default function Ops() {
   const lag = d?.publicationLag.find((l) => l.series === "road_travel_time");
   const warnJobs = d?.jobs.filter((j) => j.warn).length ?? 0;
   const failures = d?.failures ?? [];
+  const open = failures.filter((f) => !f.resolvedAt).length;
   const failed: Record<string, number> = {};
   for (const f of failures) failed[f.job] ??= f.runId;  // 작업별 가장 최근 오류 실행
 
@@ -149,14 +151,15 @@ export default function Ops() {
       </Section>
 
       {d && (
-        <Section id="failures" eyebrow="오류 상세" title={failures.length ? `최근 24시간 오류 ${failures.length}건` : "최근 24시간 오류 없음"} wide
-                 desc="실패 · 부분 성공 · 예산 부족으로 끝난 실행의 전체 내용입니다. 문의하거나 원인을 찾을 때 복사해서 붙여 넣으세요.">
+        <Section id="failures" eyebrow="오류 상세" wide
+                 title={failures.length ? `최근 24시간 오류 ${failures.length}건${open ? ` · 해결 안 됨 ${open}건` : " · 모두 이후 정상"}` : "최근 24시간 오류 없음"}
+                 desc="실패 · 부분 성공 · 예산 부족으로 끝난 실행의 전체 내용입니다. 해결 안 된 것부터 보이며, 같은 작업이 그 뒤 정상 종료했으면 '이후 정상'으로 표시합니다.">
           {failures.length === 0 ? <p className="text-center text-sm text-muted"><span className="text-good">●</span> 모든 작업이 정상 종료했습니다.</p> : (
             <>
               <div className="mb-4 flex justify-end">
                 <CopyButton text={failures.map(failureText).join("\n\n" + "─".repeat(40) + "\n\n")} label={`전체 ${failures.length}건 복사`} />
               </div>
-              <div className="space-y-3">{failures.map((f, i) => <FailureLog key={f.runId} f={f} open={i === 0} />)}</div>
+              <div className="space-y-3">{failures.map((f, i) => <FailureLog key={f.runId} f={f} open={i === 0 && !f.resolvedAt} />)}</div>
             </>
           )}
         </Section>

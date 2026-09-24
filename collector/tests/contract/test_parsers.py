@@ -75,3 +75,18 @@ def test_kakao(fixtures_dir):
     assert r and r["duration_sec"] > 3600 and r["distance_m"] > 100_000
     lat, lon = kakao.parse_station(load(fixtures_dir, "kakao", "keyword"))
     assert 36.3 < lat < 36.4 and 127.4 < lon < 127.5  # 대전역
+
+
+def test_sms_location_uses_latitude_and_altitude_as_longitude():
+    # 실측(2026-09-25): '남경주부근(68K)-남경주부근(71K)' → latitude 35.724019 · altitude 129.296973 (경주 남쪽)
+    from roadrail.providers import ex
+    base = {"accDate": "2026.09.25", "accHour": "04:12:40", "roadNM": "동해선", "smsText": "(1차로) 노면보강 공사",
+            "accTypeCode": "02", "accType": "작업", "accProcessNM": "진행"}
+    got = ex.parse_sms({"realTimeSMSList": [
+        {**base, "latitude": 35.724019, "altitude": 129.296973, "accPointNM": "남경주부근(68K)-남경주부근(71K)"},
+        {**base, "smsText": "b", "latitude": None, "altitude": None, "accPointNM": "/"},
+        {**base, "smsText": "c", "latitude": 0, "altitude": 0, "accPointNM": " "},
+    ]})
+    assert (got[0]["lat"], got[0]["lon"], got[0]["point_name"]) == (35.724019, 129.296973, "남경주부근(68K)-남경주부근(71K)")
+    assert (got[1]["lat"], got[1]["point_name"]) == (None, None)   # 좌표 없음 → 위치를 추정하지 않음
+    assert got[2]["lat"] is None                                     # 국내 범위 밖 → 버림

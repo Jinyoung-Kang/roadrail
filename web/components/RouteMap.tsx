@@ -8,7 +8,8 @@ let loader: Promise<any> | null = null;
 export const ROAD = "#2a78d6", RAIL = "#eb6834";
 
 export interface MapLine { path: [number, number][]; color: string; dashed?: boolean; weight?: number }
-export interface MapMarker { lat: number; lon: number; label?: string; color: string; ring?: boolean; size?: number }
+/** warn = 돌발 안내 (삼각형) */
+export interface MapMarker { lat: number; lon: number; label?: string; color: string; ring?: boolean; size?: number; warn?: boolean }
 export interface MapLayers { lines: MapLine[]; markers: MapMarker[] }
 
 function loadKakao(): Promise<any> {
@@ -30,8 +31,10 @@ function loadKakao(): Promise<any> {
 }
 
 /** 선(경로)과 점(출발·도착·역)을 그리는 지도. 히어로 배경(interactive=false)과 탐색용 지도 공용. */
-export default function RouteMap({ layers, interactive = false, className = "", padBottom = 0, label = "노선 지도" }: {
+export default function RouteMap({ layers, interactive = false, className = "", padBottom = 0, label = "노선 지도", focus = null }: {
   layers: MapLayers | null; interactive?: boolean; className?: string; padBottom?: number; label?: string;
+  /** 바뀔 때마다(n 증가) 그 지점으로 확대·이동 — 예: 돌발 안내 '지도에서 보기' */
+  focus?: { lat: number; lon: number; n: number } | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -72,7 +75,9 @@ export default function RouteMap({ layers, interactive = false, className = "", 
         const p = new kakao.maps.LatLng(m.lat, m.lon);
         bounds.extend(p);
         const size = m.size ?? 10;
-        const dot = `<span style="display:inline-block;width:${size}px;height:${size}px;border-radius:50%;background:${m.ring ? "#fff" : m.color};border:2px solid ${m.ring ? m.color : "#fff"};box-shadow:0 0 0 1px rgba(0,0,0,.08)"></span>`;
+        const dot = m.warn
+          ? `<span style="display:inline-block;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:12px solid ${m.color};filter:drop-shadow(0 0 1px #fff)"></span>`
+          : `<span style="display:inline-block;width:${size}px;height:${size}px;border-radius:50%;background:${m.ring ? "#fff" : m.color};border:2px solid ${m.ring ? m.color : "#fff"};box-shadow:0 0 0 1px rgba(0,0,0,.08)"></span>`;
         new kakao.maps.CustomOverlay({ map, position: p, yAnchor: m.label ? 1.25 : 0.5,
           content: m.label
             ? `<div style="font:500 12px Pretendard,system-ui;padding:4px 8px;border-radius:4px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.18);color:#171a20;white-space:nowrap;display:flex;align-items:center;gap:6px">${dot}${m.label}</div>`
@@ -88,6 +93,13 @@ export default function RouteMap({ layers, interactive = false, className = "", 
     return () => { cancelled = true; cleanup(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, interactive, padBottom]);
+
+  useEffect(() => {
+    const m = mapRef.current, k = typeof window !== "undefined" ? window.kakao : null;
+    if (!focus || !m || !k?.maps) return;
+    m.setLevel(7);
+    m.panTo(new k.maps.LatLng(focus.lat, focus.lon));
+  }, [focus?.n]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   if (failed || !KEY) return <SvgRoute layers={layers} className={className} note={failed ?? "카카오 JS 키 없음"} />;
   // 카카오 SDK 가 컨테이너를 position: relative 로 바꾸므로 배치는 바깥 래퍼가, 쌓임 맥락은 isolate 가 맡는다

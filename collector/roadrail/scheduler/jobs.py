@@ -172,7 +172,7 @@ async def recover_after_restart(providers: list[str]) -> int:
     수집기는 한 대만 띄운다는 전제(docker-compose). 반환: 정리한 실행 수.
     """
     runs = await db.fetch("""
-        UPDATE ops.job_run SET status = 'FAILED', finished_at = coalesce(finished_at, now()), message = %s,
+        UPDATE ops.job_run SET status = 'FAILED', message = %s,
                detail = coalesce(detail, format('작업: %%s · 트리거: %%s · 상태: FAILED\n시작 %%s 이후 수집기가 종료되어 끝을 기록하지 못함',
                                                 job_name, trigger, to_char(started_at AT TIME ZONE 'Asia/Seoul', 'MM-DD HH24:MI:SS')))
         WHERE status = 'RUNNING' RETURNING job_name""", (ABORTED_MESSAGE,))

@@ -156,7 +156,7 @@ class ApiIT extends IntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.date").value(ref.toString()))
                 .andExpect(jsonPath("$.trains[0].arrBasis").value("EXACT"))
                 .andExpect(jsonPath("$.trains[0].arrDelayMin").value(4.0))
-                .andExpect(jsonPath("$.trains[0].meta.kind").value("KTX"))
+                .andExpect(jsonPath("$.trains[0].meta.kind").doesNotExist())
                 .andExpect(jsonPath("$.trains[0].meta.label").value("서울발 대전행"));
         mvc.perform(get("/api/v1/rail/od/punctuality").param("dep", "S1").param("arr", "S2")
                         .param("from", ref.minusDays(1).toString()).param("to", ref.toString()))

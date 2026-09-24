@@ -132,18 +132,22 @@ export function Note({ children }: { children: React.ReactNode }) {
   return <p className="mt-4 text-xs leading-relaxed text-muted">{children}</p>;
 }
 
-/** 열차 번호 + 추정 종류 + 'OO발 OO행'. compact 면 한 줄 */
-export function TrainName({ trnNo, meta, compact = false }: { trnNo: string; meta?: import("@/lib/types").TrainMeta | null; compact?: boolean }) {
+/**
+ * 열차 번호 + 차종 + 'OO발 OO행'.
+ * 차종(grade)은 TAGO 열차 시간표에 적힌 그날의 배정 차종일 때만 — 없으면 번호만 (추정하지 않는다).
+ */
+export function TrainName({ trnNo, meta, grade, compact = false }: {
+  trnNo: string; meta?: import("@/lib/types").TrainMeta | null; grade?: string | null; compact?: boolean;
+}) {
   const no = trnNo.replace(/^0+/, "");
-  const kind = meta?.kind;
-  const hs = kind ? /^(KTX|SRT)/.test(kind) : false;
-  const name = kind ? `${kind} ${no}` : `${no}열차`;
-  if (compact) return <span>{name}{meta && <span className="text-muted"> · {meta.label}</span>}</span>;
+  const hs = grade ? /^(KTX|SRT)/.test(grade) : false;
+  if (compact) return <span>{grade ? `${grade} ${no}` : `${no}열차`}{meta && <span className="text-muted"> · {meta.label}</span>}</span>;
   return (
     <span className="block">
       <span className="flex items-center gap-2 whitespace-nowrap">
-        {kind && <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${hs ? "bg-rail/10 text-[#b3471b]" : "bg-cloud text-ink2"}`}>{kind}</span>}
-        <span className="font-medium tabular">{no}</span>
+        {grade && <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${hs ? "bg-rail/10 text-[#9c3d12]" : "bg-cloud text-ink2"}`}
+                        title="TAGO 열차 시간표의 그날 배정 차종">{grade}</span>}
+        <span className="font-medium tabular">{grade ? no : `${no}열차`}</span>
       </span>
       {meta && <span className="mt-0.5 block whitespace-nowrap text-xs text-muted">{meta.label}</span>}
     </span>

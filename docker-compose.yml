@@ -64,6 +64,7 @@ services:
     build:
       context: .
       dockerfile: collector/Dockerfile
+    stop_grace_period: 75s   # 종료 신호 뒤 실행 중인 작업이 끝나기를 최대 60초 기다린다
     env_file: .env
     environment:
       DATABASE_URL: postgresql://roadrail:roadrail@db:5432/roadrail

@@ -8,7 +8,7 @@ class DecisionRuleTest {
     static final DecisionRule.Params P = new DecisionRule.Params(10, 60, 20);
 
     static DecisionRule.Train train(int wait, int ride, Double delay) {
-        return new DecisionRule.Train("00101", "17:28", wait, ride, delay, 0.91, 28, false);
+        return new DecisionRule.Train("00101", "17:28", wait, ride, delay, 0.91, 28);
     }
 
     @Test
@@ -45,7 +45,7 @@ class DecisionRuleTest {
     void warningsForRainIncidentAndDust() {
         var env = new DecisionRule.Env(70, 20, 1, 3);
         var r = DecisionRule.decide(new DecisionRule.Car(6000, "M1", 0.0, 0, ""), train(5, 60, 1.0), env, 2, P);
-        assertThat(r.warnings()).containsExactly("강수확률 70% — 도로 지연 가능성", "초미세먼지 나쁨", "길 관련 돌발 안내 2건");
+        assertThat(r.warnings()).containsExactly("강수확률 70% — 도로 지연 가능성", "초미세먼지 나쁨", "경로 주변 돌발 안내 2건");
     }
 
     @Test

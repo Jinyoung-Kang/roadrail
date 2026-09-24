@@ -1,5 +1,9 @@
 import { RAIL, ROAD, type MapLayers } from "@/components/RouteMap";
-import type { Corridor, Dir, Trip } from "./types";
+import type { Corridor, Dir, Incident, Trip } from "./types";
+
+export const WARN = "#e8a100";
+/** 좌표가 있는 돌발 안내만 (좌표가 없으면 지도에 두지 않는다) */
+export const locatedIncidents = (t: Trip | null) => (t?.incidents ?? []).filter((i): i is Incident & { lat: number; lon: number } => i.lat != null && i.lon != null);
 
 /** 길(수집 중인 도시 쌍): 영업소 체인(파랑) + 역 쌍(주황 점선) */
 export function corridorLayers(c: Corridor | null | undefined, dir: Dir, withUnits = false): MapLayers | null {
@@ -22,7 +26,7 @@ export function corridorLayers(c: Corridor | null | undefined, dir: Dir, withUni
  * 기차 구간은 OpenStreetMap 선로를 따라 그린 실제 경로(실선). 선로 경로가 없는 구간만 역과 역을 잇는 점선.
  */
 export function tripLayers(t: Trip | null, from?: { lat: number; lon: number; name: string } | null,
-                           to?: { lat: number; lon: number; name: string } | null): MapLayers | null {
+                           to?: { lat: number; lon: number; name: string } | null, withIncidents = false): MapLayers | null {
   const a = t?.from ?? from, b = t?.to ?? to;
   if (!a || !b) return null;
   const lines: MapLayers["lines"] = [];
@@ -44,6 +48,9 @@ export function tripLayers(t: Trip | null, from?: { lat: number; lon: number; na
         markers.push({ lat: l.toLat, lon: l.toLon!, label: i < j.legs.length - 1 ? `${l.toName} 환승` : `${l.toName}역`, color: RAIL });
       }
     });
+  }
+  if (withIncidents) {
+    for (const i of locatedIncidents(t)) markers.push({ lat: i.lat, lon: i.lon, label: i.typeName || "돌발", color: WARN, warn: true });
   }
   return { lines, markers };
 }

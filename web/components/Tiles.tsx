@@ -1,6 +1,6 @@
 import Link from "next/link";
-import type { Decision, EnvPoint, Journey, NextSubway, Trip } from "@/lib/types";
-import { DASH, dur, durMin, hm, MODEL_LABEL, num, pct, pm25Label, signedPct } from "@/lib/format";
+import type { Decision, EnvPoint, Incident, Journey, NextSubway, Trip } from "@/lib/types";
+import { DASH, dur, durMin, hm, mdhm, MODEL_LABEL, num, pct, pm25Label, signedPct } from "@/lib/format";
 import { encodePlace } from "@/lib/places";
 import { TrainName } from "@/components/ui";
 
@@ -86,10 +86,7 @@ export function CarTile({ trip }: { trip: Trip }) {
         { k: "직선 거리", v: `${num(trip.distanceKm, 0)}km` },
       ]} />
       {drive != null && total != null && (
-        <TimeBar max={barMax(trip)} segments={[
-          { label: "운전", min: drive, className: "bg-road" },
-          { label: "IC 접근", min: Math.max(total - drive, 0), className: "bg-road/40" },
-        ]} />
+        <TimeBar max={barMax(trip)} segments={[{ label: "운전", min: drive, className: "bg-road" }]} />
       )}
       {o ? (
         <div className="mt-6 rounded ring-1 ring-line">
@@ -117,7 +114,7 @@ export function CarTile({ trip }: { trip: Trip }) {
   );
 }
 
-const MODE: Record<string, string> = { WALK: "도보 추정", CAR: "차량 · 카카오 실제 경로", INPUT: "입력값", ESTIMATE: "차량 · 직선거리 추정" };
+const MODE: Record<string, string> = { WALK: "도보 추정", CAR: "차량 · 카카오 실제 경로", INPUT: "입력값" };
 
 function Dot({ tone }: { tone: "ink" | "rail" | "muted" }) {
   const c = tone === "rail" ? "bg-rail" : tone === "ink" ? "bg-ink" : "bg-white ring-faint";
@@ -156,10 +153,10 @@ export function JourneyTimeline({ j, trip }: { j: Journey; trip: Trip }) {
         <p className="font-medium">{l.fromName}역 {i === 0 ? "승차" : "갈아타기"}{i > 0 && <span className="font-normal text-muted"> · {gap}분 대기</span>}</p>
         <div className="mt-1.5 rounded bg-mist px-3 py-2">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <TrainName trnNo={l.trnNo} meta={l.meta} />
+            <TrainName trnNo={l.trnNo} meta={l.meta} grade={l.grade} />
           </div>
           <p className="mt-1 text-xs text-muted tabular">
-            {durMin(l.rideMin)} 탑승 · {l.onTimeRate30d == null ? "정시율 —" : `정시 ${pct(l.onTimeRate30d)}`} · 평균 지연 {num(l.avgArrDelayMin30d)}분{l.delayEstimated && " ⚠"}
+            {durMin(l.rideMin)} 탑승 · {l.onTimeRate30d == null ? "정시율 —" : `정시 ${pct(l.onTimeRate30d)}`} · 평균 지연 {num(l.avgArrDelayMin30d)}분
             {l.samples ? ` · 최근 30일 ${l.samples}회` : ""}
           </p>
         </div>
@@ -249,7 +246,8 @@ export function TrainTile({ trip }: { trip: Trip }) {
                       <span className="font-medium tabular">{hm(x.departAt)} → {hm(x.arriveAt)}</span>
                       <span className="ml-2 text-xs text-muted">{x.legs[0].fromName}→{x.legs[x.legs.length - 1].toName}
                         {x.transfers ? ` · ${x.legs.slice(1).map((l) => l.fromName).join("·")} 환승` : " · 직통"}
-                        {x.legs[0].meta ? ` · ${x.legs[0].meta.kind}` : ""}</span>
+                        {x.legs[0].grade ? ` · ${x.legs[0].grade}` : ""}
+</span>
                     </span>
                     <span className="shrink-0 text-xs text-ink2 tabular">총 {durMin(x.totalMin)}</span>
                   </li>
@@ -268,7 +266,7 @@ export function TrainTile({ trip }: { trip: Trip }) {
         </div>
       )}
       {j && r?.referenceDate && (
-        <p className="mt-3 text-xs leading-relaxed text-muted">시간표 기준 {r.referenceDate} ({r.basis}) · 근처 역 {r.originCandidates}×{r.destCandidates}곳 조합 · 승차 여유 {r.boardingBufferMin}분 · 최소 환승 {r.transferMin}분 · 열차 종류는 번호 체계로 추정. {r.note}</p>
+        <p className="mt-3 text-xs leading-relaxed text-muted">시간표 기준 {r.referenceDate} ({r.basis}) — 앞으로의 시간표는 공개 데이터에 없어 최근 같은 요일의 실제 시간표(코레일 운행계획 · TAGO)를 씁니다{j.legs.some((l) => !l.timetable) && " · ⚠ 일부 구간은 시간표를 받지 못해 보간한 시각"} · 근처 역 {r.originCandidates}×{r.destCandidates}곳 조합 · 승차 여유 {r.boardingBufferMin}분 · 최소 환승 {r.transferMin}분 · {r.note}</p>
       )}
       {j && (
         <div className="mt-auto flex flex-wrap justify-center gap-x-5 pt-6">
@@ -283,8 +281,35 @@ export function TrainTile({ trip }: { trip: Trip }) {
   );
 }
 
-export function Evidence({ decision, freshness, caveat, cache, asOf }: {
+/**
+ * 돌발 안내 한 건 — 도로공사 문자 안내 그대로(유형 · 노선 · 방향 · 안내 구간 · 본문 · 발송 시각).
+ * 위치는 응답에 좌표가 있을 때만 '지도에서 보기' — 없으면 '위치 정보 없음'(추정하지 않음).
+ */
+export function IncidentItem({ i, onLocate }: { i: Incident; onLocate?: (i: Incident) => void }) {
+  const located = i.lat != null && i.lon != null;
+  return (
+    <li className="rounded bg-white px-4 py-3 ring-1 ring-black/5">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <span className="rounded bg-[#fff1cc] px-1.5 py-0.5 text-[11px] font-medium text-ink">{i.typeName || "돌발"}</span>
+        <span className="font-medium text-ink">{i.routeName}</span>
+        {i.direction && <span className="text-ink2">{i.direction}</span>}
+        {i.process && <span className="text-xs text-muted">· {i.process}</span>}
+      </div>
+      {i.pointName && <p className="mt-1 text-xs text-ink2">구간 {i.pointName}</p>}
+      <p className="mt-1 text-sm leading-relaxed text-ink2">{i.content}</p>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+        <span>{mdhm(i.sentAt)} 발송{i.routeKm != null ? ` · 안내 지점이 자동차 경로에서 ${num(i.routeKm)}km` : located ? "" : " · 위치 정보 없음 (수집 중인 길과 같은 노선)"}</span>
+        {located && onLocate && (
+          <button type="button" onClick={() => onLocate(i)} className="font-medium text-accent hover:underline">지도에서 보기 ↓</button>
+        )}
+      </div>
+    </li>
+  );
+}
+
+export function Evidence({ decision, freshness, caveat, cache, asOf, incidents = [], onLocate }: {
   decision: Decision; freshness: Record<string, string>; caveat: string; cache: string; asOf: string;
+  incidents?: Incident[]; onLocate?: (i: Incident) => void;
 }) {
   const labels: Record<string, string> = { kakao: "카카오 경로", road: "고속도로 실측", rail: "열차 정시성", weather: "단기예보", air: "대기질" };
   return (
@@ -303,8 +328,13 @@ export function Evidence({ decision, freshness, caveat, cache, asOf }: {
         {decision.warnings.length > 0 && (
           <ul className="mt-5 space-y-2">
             {decision.warnings.map((w) => (
-              <li key={w} className="flex items-center gap-2 rounded bg-[#fff7e6] px-3 py-2 text-sm text-ink2">
-                <span className="text-warn" aria-hidden>▲</span><span className="sr-only">경고: </span>{w}
+              <li key={w} className="rounded bg-[#fff7e6] px-3 py-2 text-sm text-ink2">
+                <p className="flex items-center gap-2"><span className="text-warn" aria-hidden>▲</span><span className="sr-only">경고: </span>{w}</p>
+                {w.includes("돌발") && incidents.length > 0 && (
+                  <ul className="mb-1 mt-2 space-y-2" aria-label="돌발 안내 목록">
+                    {incidents.map((i) => <IncidentItem key={i.sentAt + i.content} i={i} onLocate={onLocate} />)}
+                  </ul>
+                )}
               </li>
             ))}
           </ul>

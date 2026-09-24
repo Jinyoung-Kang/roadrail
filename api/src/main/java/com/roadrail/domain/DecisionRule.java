@@ -11,7 +11,7 @@ import java.util.Locale;
  * 자동차 = 도로 예측(출발 시점, 기본 M1) + IC 접근 시간(기본 0)
  * 기차   = 역 대기(출발 + 역 접근 이후 첫 열차까지) + 역 접근 시간 + 계획 소요 + 최근 30일 평균 도착 지연
  * |차이| &lt; 10분 → "비슷함", 아니면 빠른 쪽
- * 경고: 강수확률 ≥ 60%, 길 돌발 1건 이상, 초미세먼지 나쁨(등급 3) 이상
+ * 경고: 강수확률 ≥ 60%, 경로 주변(자동차 경로 2km 안 · 수집 중인 길) 돌발 1건 이상, 초미세먼지 나쁨(등급 3) 이상
  * </pre>
  */
 public final class DecisionRule {
@@ -19,13 +19,13 @@ public final class DecisionRule {
 
     public record Car(Integer travelSec, String model, Double vsBaselinePct, int accessMin, String dataAge) {}
 
-    /** egressMin = 도착역에서 목적지까지 (길 판단에서는 0, 어디서→어디로 판단에서는 거리 기반 추정) */
+    /** egressMin = 도착역에서 목적지까지 (길 판단에서는 0, 출발지→도착지 판단에서는 카카오 실제 경로 · 1km 미만 도보) */
     public record Train(String trnNo, String planDep, int waitMin, int rideMin, Double avgArrDelayMin30d,
-                        Double onTimeRate30d, int samples, boolean delayEstimated, int egressMin) {
+                        Double onTimeRate30d, int samples, int egressMin) {
 
         public Train(String trnNo, String planDep, int waitMin, int rideMin, Double avgArrDelayMin30d,
-                     Double onTimeRate30d, int samples, boolean delayEstimated) {
-            this(trnNo, planDep, waitMin, rideMin, avgArrDelayMin30d, onTimeRate30d, samples, delayEstimated, 0);
+                     Double onTimeRate30d, int samples) {
+            this(trnNo, planDep, waitMin, rideMin, avgArrDelayMin30d, onTimeRate30d, samples, 0);
         }
     }
 
@@ -59,11 +59,10 @@ public final class DecisionRule {
         if (train != null) {
             double delay = train.avgArrDelayMin30d() == null ? 0 : Math.max(train.avgArrDelayMin30d(), 0);
             trainMin = (int) Math.round(p.accessMin() + train.waitMin() + train.rideMin() + delay + train.egressMin());
-            reasons.add(String.format(Locale.ROOT, "기차: 열차 %s · %s 출발 · 역까지 %d분 + 대기 %d분 + 탑승%s %s + 평균 지연 %.1f분%s%s",
+            reasons.add(String.format(Locale.ROOT, "기차: 열차 %s · %s 출발 · 역까지 %d분 + 대기 %d분 + 탑승%s %s + 평균 지연 %.1f분%s",
                     train.trnNo().replaceFirst("^0+", ""), train.planDep(), p.accessMin(), train.waitMin(),
                     train.trnNo().contains("환승") ? "·환승" : "", fmtMin(train.rideMin()), delay,
-                    train.egressMin() > 0 ? " + 역에서 " + train.egressMin() + "분" : "",
-                    train.delayEstimated() ? " (⚠ 중간역 지연 추정)" : ""));
+                    train.egressMin() > 0 ? " + 역에서 " + train.egressMin() + "분" : ""));
             if (train.onTimeRate30d() != null) {
                 reasons.add(String.format(Locale.ROOT, "해당 열차의 최근 30일 정시율 %.0f%% (표본 %d회)",
                         train.onTimeRate30d() * 100, train.samples()));
@@ -76,7 +75,7 @@ public final class DecisionRule {
             int gradeMax = Math.max(nz(env.pm25GradeOrigin()), nz(env.pm25GradeDest()));
             if (gradeMax >= 3) warnings.add("초미세먼지 " + (gradeMax >= 4 ? "매우나쁨" : "나쁨"));
         }
-        if (incidentCount > 0) warnings.add("길 관련 돌발 안내 " + incidentCount + "건");
+        if (incidentCount > 0) warnings.add("경로 주변 돌발 안내 " + incidentCount + "건");
 
         if (carMin == null || trainMin == null) {
             String missing = carMin == null && trainMin == null ? "도로·철도" : carMin == null ? "도로" : "철도";

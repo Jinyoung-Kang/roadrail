@@ -11,7 +11,7 @@ export interface Corridor {
 
 export interface NextTrain {
   trnNo: string; planDepAt: string; planArrAt: string; planDep: string; planArr: string; planRideMin: number;
-  avgArrDelayMin30d: number | null; onTimeRate30d: number | null; samples: number; delayEstimated: boolean;
+  avgArrDelayMin30d: number | null; onTimeRate30d: number | null; samples: number;
 }
 export interface Decision {
   rule: string; verdict: "CAR" | "TRAIN" | "SIMILAR" | "UNKNOWN"; summary: string;
@@ -19,8 +19,10 @@ export interface Decision {
 }
 export interface EnvPoint { name: string; pop: number | null; pty: string | null; tmp: number | null; sky: string | null;
   pm25: number | null; pm25Grade: number | null; khaiGrade: number | null }
+/** 도로공사 실시간 문자 안내 — lat·lon·pointName 은 응답에 있을 때만, routeKm 은 안내 좌표가 자동차 경로 2km 안일 때만 */
 export interface Incident { sentAt: string; typeCode: string; typeName: string; routeName: string; direction: string;
-  process: string; content: string; corridorIds: string[] }
+  process: string; content: string; corridorIds: string[]; lat: number | null; lon: number | null; pointName: string | null;
+  lastSeenAt: string | null; routeKm: number | null }
 export interface NowCard {
   corridorId: string; corridorName: string; direction: Dir; asOf: string; departAt: string; accessMin: number;
   carAccessMin: number; status: "OK" | "STALE_DATA";
@@ -55,12 +57,12 @@ export interface Forecast {
   note: string;
 }
 export interface TrainStats { samples: number; verified: number; onTimeRate: number | null; avgArrDelayMin: number | null;
-  p90ArrDelayMin: number | null; avgRideMin: number | null; delayEstimated: boolean }
-/** kind = 열차 번호 체계로 추정한 종류 (KTX · SRT · ITX-새마을 · 무궁화호 …), label = 'OO발 OO행' */
-export interface TrainMeta { kind: string; origin: string; terminus: string; label: string }
+  p90ArrDelayMin: number | null; avgRideMin: number | null }
+/** 운행계획의 시발·종착역 — label = 'OO발 OO행'. 차종(grade)은 TAGO 시간표에서 따로 온다 */
+export interface TrainMeta { origin: string; terminus: string; label: string }
 export interface TrainRun { trnNo: string; actDepAt: string; actArrAt: string; planDepAt: string | null; planArrAt: string | null;
   depDelayMin: number | null; arrDelayMin: number | null; depBasis: string; arrBasis: string; rideMin: number;
-  onTime: boolean | null; stats30d: TrainStats | null; meta: TrainMeta | null }
+  onTime: boolean | null; stats30d: TrainStats | null; meta: TrainMeta | null; grade: string | null }
 export interface Trains { depCode: string; arrCode: string; date: string | null; depStation: string; arrStation: string;
   trains: TrainRun[]; availableDates: string[]; note: string }
 export interface PunctualitySummary { samples: number; verified: number; unverified: number; onTimeRate: number | null;
@@ -69,8 +71,10 @@ export interface Punctuality {
   depCode: string; arrCode: string; depStation: string; arrStation: string; from: string; to: string; groupBy: string; onTimeThresholdMin: number;
   summary: PunctualitySummary; nationwideExact: PunctualitySummary;
   items: { key: string; samples: number; verified: number; onTimeRate: number | null; avgArrDelayMin: number | null;
-    p90ArrDelayMin: number | null; avgRideMin: number | null; estimatedShare: number | null; meta: TrainMeta | null }[];
+    p90ArrDelayMin: number | null; avgRideMin: number | null; meta: TrainMeta | null; grade: string | null }[];
   histogram: { label: string; count: number }[]; rules: Record<string, string>; note: string;
+  /** TAGO 시간표를 아직 다 받지 못함 → 잠시 뒤 다시 부르면 보간 추정(⚠)이 줄어든다 */
+  timetablePending: boolean;
 }
 export interface EnvResp { corridorId: string; note: string; points: { role: string; name: string; sido: string; baseAt: string | null;
   hourly: { at: string; tmp: number | null; pop: number | null; pty: string | null; sky: string | null }[];
@@ -91,7 +95,7 @@ export interface OpsStatus {
   volumes: Record<string, number | string | null>;
 }
 export interface OpsFailure { runId: number; job: string; trigger: string; startedAt: string; finishedAt: string | null;
-  status: string; message: string | null; detail: string | null }
+  status: string; message: string | null; detail: string | null; resolvedAt: string | null }
 export interface ApiError { code: string; message: string; traceId: string }
 
 // ---- 출발지 → 도착지 (자유 선택)
@@ -99,17 +103,19 @@ export type PlaceKind = "REGION" | "STATION" | "PLACE" | "ADDRESS" | "CORRIDOR";
 export interface Place { name: string; address: string | null; lat: number; lon: number; kind: PlaceKind; stationCode: string | null }
 export interface Station { code: string; name: string; lat: number | null; lon: number | null; trains7d: number }
 export interface TransferEnd { stationCode: string; stationName: string; lat: number; lon: number; straightKm: number; minutes: number;
-  distanceM: number | null; mode: "WALK" | "CAR" | "INPUT" | "ESTIMATE" }
+  distanceM: number | null; mode: "WALK" | "CAR" | "INPUT" }
 export interface JourneyLeg { trnNo: string; fromCode: string; fromName: string; toCode: string; toName: string; dep: string; arr: string;
-  rideMin: number; onTimeRate30d: number | null; avgArrDelayMin30d: number | null; samples: number; delayEstimated: boolean;
+  rideMin: number; onTimeRate30d: number | null; avgArrDelayMin30d: number | null; samples: number;
   fromLat: number | null; fromLon: number | null; toLat: number | null; toLon: number | null;
-  meta: TrainMeta | null; path: [number, number][]; pathOnTrack: boolean }
+  meta: TrainMeta | null; path: [number, number][]; pathOnTrack: boolean;
+  /** 기준일 TAGO 시간표의 배정 차종 · timetable = 출발·도착 시각이 실제 시간표 값 */
+  grade: string | null; timetable: boolean }
 export interface Journey { access: TransferEnd; legs: JourneyLeg[]; egress: TransferEnd; departAt: string; arriveAt: string;
   waitMin: number; transfers: number; totalMin: number; expectedDelayMin: number | null }
 export interface NextSubway { line: string; toward: string; times: string[] }
 export interface RailPlan { journeys: Journey[]; referenceDate: string | null; basis: string | null; originCandidates: number;
   destCandidates: number; boardingBufferMin: number; transferMin: number; note: string | null;
-  subwayAtDeparture: NextSubway[]; subwayAtArrival: NextSubway[] }
+  subwayAtDeparture: NextSubway[]; subwayAtArrival: NextSubway[]; pending: boolean }
 export interface Trip {
   from: Place; to: Place; distanceKm: number; asOf: string; departAt: string; accessMin: number | null;
   car: { durationSec: number | null; distanceM: number | null; departAt: string | null; path: [number, number][]; pending: boolean; source: string };
@@ -127,8 +133,8 @@ export interface Trip {
 
 // ---- 도로 분석 (전국 임의 두 지점, 카카오 경로)
 export interface RoadRun { name: string; type: string; distanceM: number; durationSec: number; speedKmh: number | null; traffic: string }
-export interface RouteSummary { label: string; durationSec: number | null; distanceM: number | null; tollFare: number | null;
-  taxiFare: number | null; path: [number, number][]; byType: { type: string; distanceM: number; durationSec: number; share: number }[];
+export interface RouteSummary { label: string; durationSec: number | null; distanceM: number | null;
+  path: [number, number][]; byType: { type: string; distanceM: number; durationSec: number; share: number }[];
   roads: RoadRun[]; slow: RoadRun[] }
 export interface ProfilePoint { departAt: string; offsetMin: number; durationSec: number | null }
 export interface RouteAnalysis { from: Place; to: Place; straightKm: number; departAt: string; recommended: RouteSummary;

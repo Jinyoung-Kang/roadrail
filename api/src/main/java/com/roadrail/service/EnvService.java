@@ -72,17 +72,71 @@ public class EnvService {
 
     public Incidents incidents(String cid, OffsetDateTime since, int limit) {
         String where = cid == null ? "sent_at >= :s" : "sent_at >= :s AND :c = ANY(corridor_ids)";
-        var q = jdbc.sql("""
-                SELECT sent_at, type_code, type_name, route_name, direction_txt, process_name, content, corridor_ids
-                FROM ts.road_incident WHERE %s AND coalesce(type_code, '') <> '15'
+        var q = jdbc.sql("SELECT " + INCIDENT_COLS + """
+                 FROM ts.road_incident WHERE %s AND coalesce(type_code, '') <> '15'
                 ORDER BY sent_at DESC LIMIT :l""".formatted(where)).param("s", since).param("l", limit);
         if (cid != null) q = q.param("c", cid);
-        List<Incident> items = q.query((rs, i) -> new Incident(Times.kst(rs.getObject(1, OffsetDateTime.class)),
-                rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6), rs.getString(7),
-                Arrays.asList((String[]) rs.getArray(8).getArray()))).list();
+        List<Incident> items = q.query((rs, i) -> incident(rs)).list();
         return new Incidents(cid, since, items,
                 "도로공사 실시간 문자 안내. 길 매칭 규칙 M-v1: 노선명 일치 + (길 영업소명 언급 또는 길 주 노선). "
-                        + "corridorIds 가 비어 있으면 '전체'. 이벤트/홍보(유형 15)는 제외.");
+                        + "corridorIds 가 비어 있으면 '전체'. 이벤트/홍보(유형 15)는 제외. 좌표(lat·lon)는 응답에 있을 때만.");
+    }
+
+    static final String INCIDENT_COLS =
+            "sent_at, type_code, type_name, route_name, direction_txt, process_name, content, corridor_ids, lat, lon, point_name, last_seen_at";
+
+    static Incident incident(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new Incident(Times.kst(rs.getObject("sent_at", OffsetDateTime.class)), rs.getString("type_code"),
+                rs.getString("type_name"), rs.getString("route_name"), rs.getString("direction_txt"), rs.getString("process_name"),
+                rs.getString("content"), Arrays.asList((String[]) rs.getArray("corridor_ids").getArray()),
+                (Double) rs.getObject("lat"), (Double) rs.getObject("lon"), rs.getString("point_name"),
+                Times.kst(rs.getObject("last_seen_at", OffsetDateTime.class)), null);
+    }
+
+    /** 문자 안내 목록을 5분마다 받으므로, 20분 안에 목록에서 본 안내를 '지금 안내 중'으로 본다 */
+    static final String ACTIVE = "last_seen_at > now() - interval '20 minutes' AND coalesce(type_code, '') <> '15'";
+    static final double ROUTE_KM = 2.0;
+
+    /**
+     * 판단 카드용 — 지금 안내 중인 문자 중
+     * ① 안내 좌표가 자동차 경로에서 2km 안 (경로 위) ② 좌표는 없지만 수집 중인 길에 매칭(M-v1) — 좌표가 있는데 경로에서 먼 것은 뺀다.
+     */
+    public List<Incident> routeIncidents(List<double[]> path, String corridorId, int limit) {
+        List<Incident> out = new ArrayList<>();
+        if (path != null && path.size() >= 2) {
+            double s = 90, w = 180, n = -90, e = -180;
+            for (double[] p : path) { s = Math.min(s, p[0]); n = Math.max(n, p[0]); w = Math.min(w, p[1]); e = Math.max(e, p[1]); }
+            double pad = 0.03;  // 약 3km
+            jdbc.sql("SELECT " + INCIDENT_COLS + " FROM ts.road_incident WHERE " + ACTIVE
+                            + " AND lat BETWEEN :s AND :n AND lon BETWEEN :w AND :e")
+                    .param("s", s - pad).param("n", n + pad).param("w", w - pad).param("e", e + pad)
+                    .query((rs, i) -> incident(rs)).list()
+                    .forEach(inc -> {
+                        double km = distanceToPathKm(inc.lat(), inc.lon(), path);
+                        if (km <= ROUTE_KM) out.add(inc.withRouteKm(Math.round(km * 10) / 10.0));
+                    });
+            out.sort(Comparator.comparing(Incident::sentAt).reversed());
+        }
+        if (corridorId != null) {
+            jdbc.sql("SELECT " + INCIDENT_COLS + " FROM ts.road_incident WHERE " + ACTIVE
+                            + " AND lat IS NULL AND :c = ANY(corridor_ids) ORDER BY sent_at DESC LIMIT 10")
+                    .param("c", corridorId).query((rs, i) -> incident(rs)).list().forEach(out::add);
+        }
+        return out.size() > limit ? out.subList(0, limit) : out;
+    }
+
+    /** 점과 꺾은선 사이 최단 거리(km) — 짧은 거리라 위도 보정한 평면 근사 */
+    static double distanceToPathKm(double lat, double lon, List<double[]> path) {
+        double kx = 111.32 * Math.cos(Math.toRadians(lat)), ky = 110.57, best = Double.MAX_VALUE;
+        for (int i = 0; i + 1 < path.size(); i++) {
+            double ax = (path.get(i)[1] - lon) * kx, ay = (path.get(i)[0] - lat) * ky;
+            double bx = (path.get(i + 1)[1] - lon) * kx, by = (path.get(i + 1)[0] - lat) * ky;
+            double dx = bx - ax, dy = by - ay, len = dx * dx + dy * dy;
+            double t = len == 0 ? 0 : Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len));
+            double px = ax + t * dx, py = ay + t * dy;
+            best = Math.min(best, Math.sqrt(px * px + py * py));
+        }
+        return best;
     }
 
     static Integer toInt(Object o) { return o == null ? null : ((Number) o).intValue(); }

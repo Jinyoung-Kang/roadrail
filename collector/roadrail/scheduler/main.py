@@ -21,13 +21,30 @@ from ..providers.base import CONCURRENCY
 from .jobs import JOBS, new_id, recover_after_restart, run_backfill, run_job
 
 logger = logging.getLogger(__name__)
-_tasks: set[asyncio.Task] = set()
+_tasks: set[asyncio.Task] = set()   # 상주 작업(heartbeat · 명령 소비) + 작업 실행
+_jobs: set[asyncio.Task] = set()    # 그중 작업 실행 — 종료 때 끝나기를 기다린다
+DRAIN_S = 60                        # docker-compose stop_grace_period(75s) 안에서
 
 
-def spawn(coro) -> None:
+def spawn(coro, job: bool = True) -> None:
     t = asyncio.create_task(coro)
     _tasks.add(t)
     t.add_done_callback(_tasks.discard)
+    if job:
+        _jobs.add(t)
+        t.add_done_callback(_jobs.discard)
+
+
+async def scheduled(name: str) -> None:
+    """APScheduler 가 부르는 작업도 종료 대기 대상에 넣는다 (넣지 않으면 DB 가 먼저 닫혀 RUNNING 이 남는다)."""
+    t = asyncio.current_task()
+    if t is not None:
+        _jobs.add(t)
+    try:
+        await run_job(name)
+    finally:
+        if t is not None:
+            _jobs.discard(t)
 
 
 async def wait_for_schema(timeout_s: int = 300) -> None:
@@ -82,10 +99,14 @@ async def consume_commands() -> None:
 
 
 async def handle_and_ack(msg_id: str, fields: dict) -> None:
+    """끝난 뒤에만 XACK. 종료로 취소되면 ACK 하지 않아 다음 기동 때 pending 으로 다시 실행된다."""
     try:
         await handle_command(fields)
-    finally:
-        await rds.client().xack(rds.COMMANDS, rds.COMMAND_GROUP, msg_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception:  # noqa: BLE001 — 잘못된 명령이 무한히 재배달되지 않게 ACK 한다
+        logger.exception("명령 실패", extra={"fields": fields})
+    await rds.client().xack(rds.COMMANDS, rds.COMMAND_GROUP, msg_id)
 
 
 async def handle_command(fields: dict) -> None:
@@ -105,7 +126,7 @@ async def schedule_jobs(sched: AsyncIOScheduler) -> int:
     for r in rows:
         if r["job_name"] not in JOBS:
             continue
-        sched.add_job(run_job, CronTrigger.from_crontab(r["cron"], timezone=KST), args=[r["job_name"]],
+        sched.add_job(scheduled, CronTrigger.from_crontab(r["cron"], timezone=KST), args=[r["job_name"]],
                       id=r["job_name"], max_instances=1, coalesce=True, misfire_grace_time=120)
         n += 1
     return n
@@ -150,17 +171,23 @@ async def main() -> None:
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
-    spawn(heartbeat())
-    spawn(consume_commands())
+    spawn(heartbeat(), job=False)
+    consumer = asyncio.create_task(consume_commands())
+    _tasks.add(consumer)
     if s.scheduler_enabled:
         spawn(startup_kick())
     await stop.wait()
+    # 종료: 새 작업을 받지 않고(스케줄러 · 명령 소비 중지) 실행 중인 작업이 끝나기를 DRAIN_S 초까지 기다린다.
+    # 그래도 남은 작업은 취소 → '중단'으로 기록하고 잠금을 푼 뒤 연결을 닫는다.
     sched.shutdown(wait=False)
+    consumer.cancel()
+    if _jobs:
+        log(logger, "종료 대기", running=len(_jobs), max_s=DRAIN_S)
+        await asyncio.wait(list(_jobs), timeout=DRAIN_S)
     for t in list(_tasks):
         t.cancel()
-    # 취소된 작업이 '중단' 기록과 잠금 해제를 마칠 시간을 준다 (docker stop 유예 10초 안에서)
     if _tasks:
-        await asyncio.wait(list(_tasks), timeout=7)
+        await asyncio.wait(list(_tasks), timeout=5)
     await db.close()
     await rds.close()
 

@@ -14,8 +14,8 @@ import { useCorridors } from "@/lib/useCorridors";
 
 const DEPART = [0, 60, 120, 180].map((v) => ({ value: v, label: v === 0 ? "지금" : `+${v / 60}시간` }));
 /* 도로 종류 — 범주형 팔레트 슬롯 순서 고정 (dataviz 기본: 파랑 · 청록 · 주황 · 회색) */
-const TYPE_COLOR: Record<string, string> = { 고속도로: "#2a78d6", 도시고속도로: "#1baf7a", 국도: "#eb6834", 일반도로: "#898781" };
-const TYPE_NOTE = "국도 구간이 도로명(예: 경수대로)으로 표기되면 일반도로로 집계됩니다.";
+const TYPE_COLOR: Record<string, string> = { 고속도로: "#2a78d6", "그 외 도로": "#898781" };
+const TYPE_NOTE = "카카오 경로에는 도로 등급이 없어, 이름에 '고속도로'가 있는 구간만 고속도로로 구분합니다. 국도·지방도·시내 도로는 '그 외 도로'로 함께 표시합니다.";
 const TRAFFIC: Record<string, { cls: string; icon: string }> = {
   원활: { cls: "text-good", icon: "●" }, 서행: { cls: "text-warn", icon: "▲" }, 지체: { cls: "text-serious", icon: "▲" },
   정체: { cls: "text-crit", icon: "■" }, 사고: { cls: "text-crit", icon: "✕" }, "정보 없음": { cls: "text-faint", icon: "·" },
@@ -63,7 +63,7 @@ export default function RoadIndex() {
   const a = useApi<RouteAnalysis>(url);
   const d = a.data && from && a.data.from.name === from.name && a.data.to.name === to?.name ? a.data : null;
   const rec = d?.recommended, avo = d?.avoidMotorway;
-  const motorway = rec?.byType.filter((b) => b.type === "고속도로" || b.type === "도시고속도로").reduce((s, b) => s + b.share, 0);
+  const motorway = rec?.byType.filter((b) => b.type === "고속도로").reduce((s, b) => s + b.share, 0);
   const recP = durParts(rec?.durationSec != null ? rec.durationSec / 60 : null);
   const avoP = durParts(avo?.durationSec != null ? avo.durationSec / 60 : null);
   const layers: MapLayers | null = d ? {
@@ -82,7 +82,7 @@ export default function RoadIndex() {
 
   return (
     <Layout title={`${from?.name ?? ""}→${to?.name ?? ""} 도로 분석`}>
-      <PageHero eyebrow="도로 분석 · 전국 어디든 (고속도로 · 국도 · 일반도로)" title={from && to ? `${from.name} → ${to.name}` : " "}
+      <PageHero eyebrow="도로 분석 · 전국 어디든" title={from && to ? `${from.name} → ${to.name}` : " "}
                 sub={<>카카오 미래 운행 정보로 본 {hm(d?.departAt)} 출발 경로 · 직선 {num(d?.straightKm, 0)}km</>}>
         <div className="flex flex-col items-center justify-center gap-2 sm:flex-row">
           {picker("출발지", from, "from")}
@@ -141,7 +141,7 @@ export default function RoadIndex() {
             <div className="grid gap-6 lg:grid-cols-2">
               {[rec, avo].map((r) => r && (
                 <div key={r.label} className="tile p-6">
-                  <p className="text-sm font-medium">{r.label} <span className="font-normal text-muted">· {dur(r.durationSec)} · {r.distanceM ? num(r.distanceM / 1000, 0) : DASH}km{r.tollFare ? ` · 통행료 ${r.tollFare.toLocaleString()}원` : ""}</span></p>
+                  <p className="text-sm font-medium">{r.label} <span className="font-normal text-muted">· {dur(r.durationSec)} · {r.distanceM ? num(r.distanceM / 1000, 0) : DASH}km</span></p>
                   <div className="mt-4"><TypeBar r={r} /></div>
                   {r.slow.length > 0 && (
                     <div className="mt-5">

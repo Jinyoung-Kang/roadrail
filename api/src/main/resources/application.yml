@@ -76,6 +76,7 @@ roadrail:
     KAKAO: ${QUOTA_KAKAO:5000}
     KAKAO_LOCAL: ${QUOTA_KAKAO_LOCAL:50000}
     TAGO: ${QUOTA_TAGO:9000}
+    TAGO_TRAIN: ${QUOTA_TAGO_TRAIN:9000}   # TAGO 열차정보 (개발계정 10,000/일)
     OSM: ${QUOTA_OSM:60}
 
 logging:

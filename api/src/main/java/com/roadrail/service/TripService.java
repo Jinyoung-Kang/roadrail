@@ -134,7 +134,8 @@ public class TripService {
         envMap.put("origin", origin != null ? origin : new NowDtos.PointEnv(from.name(), null, null, null, null, null, null, null));
         envMap.put("dest", dest != null ? dest : new NowDtos.PointEnv(to.name(), null, null, null, null, null, null, null));
 
-        List<EnvDtos.Incident> inc = obs == null ? List.of() : env.incidents(obs.corridorId(), now.minusHours(6), 5).items();
+        // 돌발: 자동차 경로 2km 안(안내 좌표) + 수집 중인 길에 매칭된 좌표 없는 안내 — 지금 안내 중인 것만
+        List<EnvDtos.Incident> inc = env.routeIncidents(car.path(), obs == null ? null : obs.corridorId(), 8);
 
         // ---- 판단 R-DEC-01
         DecisionRule.Car dcar = null;
@@ -150,8 +151,7 @@ public class TripService {
             var lastLeg = j.legs().getLast();
             dtrain = new DecisionRule.Train(journeyLabel(j), j.departAt().format(com.roadrail.common.Times.HM), j.waitMin(),
                     (int) Duration.between(j.departAt(), j.arriveAt()).toMinutes(), lastLeg.avgArrDelayMin30d(),
-                    lastLeg.onTimeRate30d(), lastLeg.samples(), j.legs().stream().anyMatch(JourneyDtos.Leg::delayEstimated),
-                    j.egress().minutes());
+                    lastLeg.onTimeRate30d(), lastLeg.samples(), j.egress().minutes());
         }
         var p = new DecisionRule.Params(props.decisionSimilarMin(), props.decisionPopWarn(), acc);
         var o = envMap.get("origin");
@@ -178,10 +178,10 @@ public class TripService {
         fresh.put("air", "시도 측정소 최근 측정");
         String caveat = "자동차는 카카오 경로 예측(출발 시각 기준)입니다. 기차는 코레일 여객열차의 환승 경로(최소 환승 "
                 + RailJourneyService.TRANSFER_MIN + "분, 승차 여유 " + RailJourneyService.BOARDING_BUFFER_MIN + "분)이며, 역까지·역에서는 "
-                + (accessMin == null ? "카카오 실제 운전 경로(1km 미만은 도보 추정)" : "역까지 입력값 " + accessMin + "분 · 역에서는 카카오 실제 경로")
+                + (accessMin == null ? "카카오 실제 운전 경로(1km 미만만 도보 추정, 경로를 얻지 못한 역은 제외)" : "역까지 입력값 " + accessMin + "분 · 역에서는 카카오 실제 경로")
                 + "입니다. 지하철·버스 환승은 포함하지 않습니다. 참고 정보이며 교통 안내 서비스가 아닙니다.";
         return new Trip(from, to, km, now, depart, accessMin, car, obs, railOpt, envMap, inc, decision, fresh, caveat,
-                pending || envPending, "MISS");
+                pending || envPending || (railOpt != null && railOpt.pending()), "MISS");
     }
 
     /** 두 지점이 수집 중인 길의 끝(출발·도착 도시 역)과 각각 30km 안이면 그 길 · 방향 */

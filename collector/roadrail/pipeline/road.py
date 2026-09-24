@@ -264,13 +264,15 @@ async def collect_incidents(ctx: JobContext) -> int:
         page += 1
     routes, places, main = await corridor_route_index()
     rows = [(i["msg_hash"], i["sent_at"], i["type_code"], i["type_name"], i["route_no"], i["route_name"],
-             i["direction_txt"], i["process_name"], i["content"], match_incident(i, routes, places, main)) for i in items]
+             i["direction_txt"], i["process_name"], i["content"], match_incident(i, routes, places, main),
+             i["lat"], i["lon"], i["point_name"]) for i in items]
+    # 응답 목록 = 지금 안내 중인 문자. last_seen_at 이 최근이면 '안내 중'으로 본다.
     await db.executemany("""
         INSERT INTO ts.road_incident (msg_hash, sent_at, type_code, type_name, route_no, route_name, direction_txt,
-                                      process_name, content, corridor_ids)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                      process_name, content, corridor_ids, lat, lon, point_name)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (msg_hash) DO UPDATE SET last_seen_at = now(), process_name = EXCLUDED.process_name,
-          corridor_ids = EXCLUDED.corridor_ids""", rows)
+          corridor_ids = EXCLUDED.corridor_ids, lat = EXCLUDED.lat, lon = EXCLUDED.lon, point_name = EXCLUDED.point_name""", rows)
     ctx.rows += len(rows)
     return len(rows)
 

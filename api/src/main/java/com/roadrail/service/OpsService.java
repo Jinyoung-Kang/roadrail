@@ -14,7 +14,7 @@ import java.util.*;
 /** 수집 상태 (FR-701, NFR-01/02/09). 완전성 95% 미만이면 warn. */
 @Service
 public class OpsService {
-    public static final List<String> PROVIDERS = List.of("EX", "KORAIL", "KMA", "AIRKOREA", "KAKAO", "KAKAO_LOCAL", "TAGO", "OSM");
+    public static final List<String> PROVIDERS = List.of("EX", "KORAIL", "KMA", "AIRKOREA", "KAKAO", "KAKAO_LOCAL", "TAGO", "TAGO_TRAIN", "OSM");
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");  // BASIC_ISO_DATE 는 오프셋(+0900)까지 붙인다
     private final JdbcClient jdbc;
     private final StringRedisTemplate redis;
@@ -101,7 +101,7 @@ public class OpsService {
 
     /**
      * 최근 24시간 오류 실행 (작업별 최신 3건, 최대 20건). 전체 내용은 수집기가 실행 끝에 ops.job_run.detail 에 남긴다.
-     * detail 이 없는 실행(V8 이전 · 수집기가 강제 종료된 RUNNING 정리분)은 메시지와 그 시간대의 실패한 외부 호출로 만든다.
+     * detail 이 없는 실행(V8 이전)은 메시지와 그 시간대의 실패한 외부 호출로 만든다. 해결 안 된 것부터.
      */
     List<Failure> failures() {
         return jdbc.sql("""
@@ -118,14 +118,17 @@ public class OpsService {
                                   WHERE c.called_at BETWEEN r.started_at AND coalesce(r.finished_at, r.started_at + interval '1 hour')
                                     AND (c.error IS NOT NULL OR c.http_status IS DISTINCT FROM 200)
                                   ORDER BY c.called_at LIMIT 50) c))) AS detail,
+                         (SELECT min(ok.finished_at) FROM ops.job_run ok
+                          WHERE ok.job_name = r.job_name AND ok.run_id > r.run_id AND ok.status = 'OK') AS resolved_at,
                          row_number() OVER (PARTITION BY r.job_name ORDER BY r.run_id DESC) AS rn
                   FROM ops.job_run r
                   WHERE r.started_at > now() - interval '24 hours' AND r.status IN ('FAILED', 'PARTIAL', 'SKIPPED_QUOTA')) x
-                WHERE rn <= 3 ORDER BY run_id DESC LIMIT 20""")
+                WHERE rn <= 3 ORDER BY resolved_at IS NOT NULL, run_id DESC LIMIT 20""")
                 .query((rs, i) -> new Failure(rs.getLong("run_id"), rs.getString("job_name"), rs.getString("trigger"),
                         Times.kst(rs.getObject("started_at", OffsetDateTime.class)),
                         Times.kst(rs.getObject("finished_at", OffsetDateTime.class)), rs.getString("status"),
-                        rs.getString("message"), rs.getString("detail"))).list();
+                        rs.getString("message"), rs.getString("detail"),
+                        Times.kst(rs.getObject("resolved_at", OffsetDateTime.class)))).list();
     }
 
     /**

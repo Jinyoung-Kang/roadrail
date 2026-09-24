@@ -15,7 +15,7 @@ from ..scheduler.quota import Allowance, QuotaBudget
 logger = logging.getLogger(__name__)
 
 CONCURRENCY = {"EX": 4, "KORAIL": 2, "KMA": 4, "AIRKOREA": 2, "KAKAO": 4, "KAKAO_LOCAL": 4, "OSM": 1}
-TIMEOUT = {"EX": 15.0, "KORAIL": 60.0, "KMA": 10.0, "AIRKOREA": 10.0, "KAKAO": 10.0, "KAKAO_LOCAL": 10.0, "OSM": 240.0}
+TIMEOUT = {"EX": 15.0, "KORAIL": 60.0, "KMA": 10.0, "AIRKOREA": 25.0, "KAKAO": 10.0, "KAKAO_LOCAL": 10.0, "OSM": 240.0}
 _semaphores: dict[str, asyncio.Semaphore] = {}
 
 

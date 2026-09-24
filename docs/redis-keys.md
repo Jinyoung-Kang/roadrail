@@ -19,5 +19,6 @@
 | `kma:{nx}:{ny}:{base}` | 조회 시점 단기예보 (수집 대상이 아닌 격자) | api | api | 3시간 |
 | `air:{sido}` | 조회 시점 대기질 (수집 대상이 아닌 시도) | api | api | 50분 |
 | `rr:osm:tile:{0-3}` | OSM 선로 구역 응답 (zlib + base64, way id · 노드 · 좌표) — 공개 미러가 느릴 때 다시 실행하면 못 받은 구역만 받음 | collector | collector | 3일 |
+| `tago:train:nodes` | TAGO 열차정보 역명 → 역 ID (전국 16개 시도 목록) — 역 쌍 시간표를 부를 때 씀 | api | api | 7일 |
 
 날짜는 모두 KST. `{P}` ∈ EX · KORAIL · KMA · AIRKOREA · KAKAO(길찾기) · KAKAO_LOCAL(검색) · TAGO(지하철정보).

@@ -265,3 +265,43 @@ async def test_cancelled_job_is_recorded_as_aborted_and_unlocked(seeded, monkeyp
     run = await db.fetchone("SELECT status, message FROM ops.job_run WHERE job_name = 'maintenance' ORDER BY run_id DESC LIMIT 1")
     assert run["status"] == "FAILED" and run["message"] == jobs.ABORTED_MESSAGE
     assert await rds.client().get(rds.lock_key("maintenance")) is None
+
+
+async def test_rail_geometry_skips_when_fresh_on_schedule(seeded):
+    # 매일 05:00 확인하되 28일 안에 계산했으면 호출 없이 건너뛴다
+    from roadrail.pipeline import rail_geometry
+    await db.execute("""INSERT INTO ref.rail_link (dep_stn_cd, arr_stn_cd, path, length_km, straight_km)
+                        VALUES ('A', 'B', '[[37,127],[36,127]]', 111, 111)""")
+    ctx = ctx_with(lambda req: (_ for _ in ()).throw(AssertionError("호출하면 안 됨")))
+    ctx.trigger = "SCHEDULE"
+    assert await rail_geometry.build_rail_links(ctx) == 0
+    assert ctx.calls == 0 and "건너뜀" in ctx.notes[0]
+
+
+async def test_od_trips_prefers_timetable_over_interpolation(seeded):
+    """중간역 쌍: TAGO 시간표(rail.tt_plan)가 있으면 보간(EST) 대신 실제 계획 시각과 정확 비교(TT) · 차종 반환 (V11)."""
+    d = dt.date(2026, 9, 22)
+
+    def t(h, m):
+        return dt.datetime(2026, 9, 22, h, m, tzinfo=KST)
+    plan = dict(run_ymd=d, trn_no="00101", dep_stn_cd="SEL", arr_stn_cd="BSN", plan_dep_at=t(5, 13), plan_arr_at=t(7, 50))
+    stops = [dict(run_ymd=d, trn_no="00101", run_seq=1, stn_cd="SEL", arr_at=None, dep_at=t(5, 14)),
+             dict(run_ymd=d, trn_no="00101", run_seq=2, stn_cd="DJN", arr_at=t(6, 12), dep_at=t(6, 15)),
+             dict(run_ymd=d, trn_no="00101", run_seq=3, stn_cd="DGU", arr_at=t(7, 0), dep_at=t(7, 2)),
+             dict(run_ymd=d, trn_no="00101", run_seq=4, stn_cd="BSN", arr_at=t(7, 57), dep_at=None)]
+    await insert_info(stops)
+    await rail.compute_day(d, [plan], stops)
+    before = (await db.fetch("SELECT * FROM rail.od_trips('DJN', 'DGU', %s, %s)", (d, d)))[0]
+    assert (before["dep_basis"], before["arr_basis"], before["grade"]) == ("EST", "EST", None)
+    # 시간표: 대전 06:10 출발 · 동대구 06:52 도착 → 실제 06:15 · 07:00 은 각각 5분 · 8분 지연
+    await db.execute("""INSERT INTO rail.tt_plan (dep_stn_cd, arr_stn_cd, dep_date, trn_no, plan_dep_at, plan_arr_at, grade)
+                        VALUES ('DJN', 'DGU', %s, '00101', %s, %s, 'KTX-산천')""", (d, t(6, 10), t(6, 52)))
+    got = (await db.fetch("SELECT * FROM rail.od_trips('DJN', 'DGU', %s, %s)", (d, d)))[0]
+    assert (got["dep_basis"], got["arr_basis"], got["grade"]) == ("TT", "TT", "KTX-산천")
+    assert float(got["dep_delay_min"]) == 5.0 and float(got["arr_delay_min"]) == 8.0
+    assert got["est_plan_arr_at"] == t(6, 52)
+    # 시발역은 코레일 운행계획과의 정확 비교(EXACT)가 우선
+    await db.execute("""INSERT INTO rail.tt_plan (dep_stn_cd, arr_stn_cd, dep_date, trn_no, plan_dep_at, plan_arr_at, grade)
+                        VALUES ('SEL', 'DGU', %s, '00101', %s, %s, 'KTX')""", (d, t(5, 13), t(6, 52)))
+    got = (await db.fetch("SELECT * FROM rail.od_trips('SEL', 'DGU', %s, %s)", (d, d)))[0]
+    assert (got["dep_basis"], got["arr_basis"]) == ("EXACT", "TT")

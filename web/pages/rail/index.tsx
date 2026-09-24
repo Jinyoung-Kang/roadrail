@@ -34,6 +34,14 @@ export default function RailPage() {
   const byHour = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "hour" })}` : null);
   const trains = useApi<Trains>(base ? `/api/v1/rail/od/trains?${qs({ dep, arr, date })}` : null);
 
+  // 처음 보는 역 쌍은 TAGO 시간표를 받는 동안 일부를 보간(⚠)으로 계산한다 → 받는 대로 다시 계산
+  const ttPending = !!(byTrain.data?.timetablePending || byDow.data?.timetablePending || byHour.data?.timetablePending);
+  useEffect(() => {
+    if (!ttPending) return;
+    const id = setTimeout(() => { byTrain.reload(); byDow.reload(); byHour.reload(); trains.reload(); }, 4000);
+    return () => clearTimeout(id);
+  }, [ttPending, byTrain.data, byDow.data, byHour.data]);  // eslint-disable-line react-hooks/exhaustive-deps
+
   const s = byTrain.data?.summary;
   const nat = byTrain.data?.nationwideExact;
   const depName = byTrain.data?.depStation ?? trains.data?.depStation;
@@ -68,6 +76,8 @@ export default function RailPage() {
             <Spec value={num(s?.p90ArrDelayMin)} unit="분" label="도착 지연 p90" />
             <Spec value={s ? s.verified.toLocaleString() : DASH} unit="회" label={`검증 운행 (확인 불가 ${s?.unverified ?? DASH})`} />
           </SpecStrip>
+          {ttPending && <p className="mt-6 text-xs text-muted" role="status"><span className="mr-1 inline-block h-3 w-3 animate-spin rounded-full border-2 border-line border-t-ink align-[-2px]" aria-hidden />
+            TAGO 열차 시간표를 받는 중 — 받는 대로 다시 계산합니다 (그동안 시간표가 없는 중간역 운행은 확인 불가로 제외)</p>}
           {nat && <p className="mt-6 text-xs text-muted">비교: 같은 기간 전국 여객열차 종착역 기준(정확 비교 P-v1) 정시율 {pct(nat.onTimeRate, 1)} · 평균 지연 {num(nat.avgArrDelayMin)}분 · {nat.verified.toLocaleString()}회</p>}
         </div>
       </PageHero>
@@ -95,19 +105,19 @@ export default function RailPage() {
         {byTrain.data && <Note>{byTrain.data.note} {Object.entries(byTrain.data.rules).map(([k, v]) => `${k}: ${v}`).join(" · ")}</Note>}
       </Section>
 
-      <Section eyebrow="열차별" title="정시율 랭킹" gray wide desc="표본이 많은 열차부터. ⚠ 는 중간역 지연을 보간 추정한 비율이 있는 열차입니다. 열차 종류는 코레일 열차 번호 체계로 추정한 값입니다(API 에 종류 정보가 없음).">
+      <Section eyebrow="열차별" title="정시율 랭킹" gray wide desc="표본이 많은 열차부터. 차종은 TAGO 열차 시간표에 적힌 최근 운행일의 배정 차종입니다. 운행 = 계획 시각과 비교한 운행 / 전체 운행 (시간표가 없는 날의 중간역 운행은 확인 불가로 제외).">
         {byTrain.data && byTrain.data.items.length === 0 && <Empty>이 기간 운행 기록이 없습니다.</Empty>}
         {byTrain.data && byTrain.data.items.length > 0 && (
           <div className="tile overflow-x-auto">
             <table className="w-full">
               <thead><tr>
                 <th className="th">열차</th><th className="th text-right">운행</th><th className="th text-right">정시율</th>
-                <th className="th text-right">평균 지연</th><th className="th text-right">p90</th><th className="th text-right">평균 소요</th><th className="th text-right">추정 비율</th>
+                <th className="th text-right">평균 지연</th><th className="th text-right">p90</th><th className="th text-right">평균 소요</th>
               </tr></thead>
               <tbody>
                 {byTrain.data.items.slice(0, 40).map((i) => (
                   <tr key={i.key} className="hover:bg-mist">
-                    <td className="td"><TrainName trnNo={i.key} meta={i.meta} /></td>
+                    <td className="td"><TrainName trnNo={i.key} meta={i.meta} grade={i.grade} /></td>
                     <td className="td text-right">{i.verified}/{i.samples}</td>
                     <td className="td text-right">
                       <span className="inline-flex items-center gap-2">
@@ -118,7 +128,6 @@ export default function RailPage() {
                     <td className="td text-right">{num(i.avgArrDelayMin)}분</td>
                     <td className="td text-right">{num(i.p90ArrDelayMin)}분</td>
                     <td className="td text-right">{durMin(i.avgRideMin)}</td>
-                    <td className="td text-right">{i.estimatedShare ? `⚠ ${pct(i.estimatedShare)}` : "정확"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -133,6 +142,11 @@ export default function RailPage() {
                   options={(trains.data?.availableDates ?? []).map((d) => ({ value: d, label: d }))} />
         </div>
         <ErrorBox error={trains.error} />
+        {trains.data && trains.data.trains.length > 0 && trains.data.trains.filter((t) => t.arrDelayMin == null).length >= trains.data.trains.length / 2 && (
+          <p className="mb-4 rounded bg-mist px-4 py-3 text-center text-xs text-muted">
+            이 날짜는 TAGO 열차 시간표가 제공되지 않아 중간역의 계획 시각을 알 수 없습니다 — 계획·지연은 '—' 로 두고 추정하지 않습니다.
+          </p>
+        )}
         {trains.data && (trains.data.trains.length ? (
           <div className="tile overflow-x-auto">
             <table className="w-full">
@@ -143,10 +157,11 @@ export default function RailPage() {
               <tbody>
                 {(all ? trains.data.trains : trains.data.trains.slice(0, 40)).map((t) => (
                   <tr key={t.trnNo} className="hover:bg-mist">
-                    <td className="td"><TrainName trnNo={t.trnNo} meta={t.meta} /></td>
-                    <td className="td">{hm(t.planDepAt)}{t.depBasis === "EST" && " ⚠"}</td><td className="td">{hm(t.actDepAt)}</td>
-                    <td className="td">{hm(t.planArrAt)}{t.arrBasis === "EST" && " ⚠"}</td><td className="td">{hm(t.actArrAt)}</td>
-                    <td className="td text-right">{num(t.depDelayMin)}분</td><td className="td text-right">{num(t.arrDelayMin)}분</td>
+                    <td className="td"><TrainName trnNo={t.trnNo} meta={t.meta} grade={t.grade} /></td>
+                    <td className="td">{hm(t.planDepAt)}</td><td className="td">{hm(t.actDepAt)}</td>
+                    <td className="td">{hm(t.planArrAt)}</td><td className="td">{hm(t.actArrAt)}</td>
+                    <td className="td text-right">{t.depDelayMin == null ? DASH : `${num(t.depDelayMin)}분`}</td>
+                    <td className="td text-right">{t.arrDelayMin == null ? DASH : `${num(t.arrDelayMin)}분`}</td>
                     <td className="td text-right">{durMin(t.rideMin)}</td>
                     <td className="td">{t.onTime === null ? DASH : t.onTime ? <span><span className="text-good">●</span> 정시</span> : <span><span className="text-crit">✕</span> 지연</span>}</td>
                     <td className="td text-right">{pct(t.stats30d?.onTimeRate)}</td>

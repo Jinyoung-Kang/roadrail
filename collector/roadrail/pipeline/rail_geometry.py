@@ -1,21 +1,33 @@
 """실제 선로 경로 (rail_geometry 작업) — OSM 선로를 받아 역 쌍별 경로를 ref.rail_link 에 저장."""
 from __future__ import annotations
 
+import datetime as dt
 import json
 import logging
 from collections import defaultdict
 
 from ..analytics.rail_graph import RailGraph, hav, simplify
 from ..core import db
+from ..core.timeutil import now_kst
 from ..providers import osm
 from ..providers.base import JobContext
 
 logger = logging.getLogger(__name__)
+REFRESH_DAYS = 28
 MAX_RATIO = 3.6  # 선로 길이 / 직선 — 이보다 크면 잘못 붙은 것으로 보고 버린다 (실측 최대 3.44: 태백–도계 루프 터널)
 
 
 async def build_rail_links(ctx: JobContext, source_file: str | None = None) -> int:
-    ways = osm.ways_from_file(source_file) if source_file else await osm.rail_ways(ctx)
+    have = await db.fetchone("SELECT count(*) AS n, max(computed_at) AS at FROM ref.rail_link")
+    if not source_file and ctx.trigger == "SCHEDULE" and have["n"] and have["at"] > now_kst() - dt.timedelta(days=REFRESH_DAYS):
+        ctx.note(f"선로 경로 {have['n']}쌍 최신 ({have['at']:%m-%d} 계산) — 건너뜀")
+        return 0
+    try:
+        ways = osm.ways_from_file(source_file) if source_file else await osm.rail_ways(ctx)
+    except Exception:
+        if have["n"]:
+            ctx.note(f"기존 선로 경로 {have['n']}쌍은 그대로 둡니다 — 내일 05:00 에 다시 시도")
+        raise
     g = RailGraph(ways)
     stations = await db.fetch("SELECT stn_cd, lat, lon FROM ref.station WHERE lat IS NOT NULL")
     unsnapped = [s["stn_cd"] for s in stations if not g.add_station(s["stn_cd"], s["lat"], s["lon"])]

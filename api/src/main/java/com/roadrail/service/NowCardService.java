@@ -104,7 +104,7 @@ public class NowCardService {
             var t = next.trains().getFirst();
             int wait = (int) Math.max(Duration.between(depart.plusMinutes(accessMin), t.planDepAt()).toMinutes(), 0);
             train = new DecisionRule.Train(t.trnNo(), t.planDep(), wait, t.planRideMin(), t.avgArrDelayMin30d(),
-                    t.onTimeRate30d(), t.samples(), t.delayEstimated());
+                    t.onTimeRate30d(), t.samples());
         }
 
         // ---- 환경

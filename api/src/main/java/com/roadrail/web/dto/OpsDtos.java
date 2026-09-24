@@ -23,9 +23,12 @@ public final class OpsDtos {
 
     public record Lag(String series, Double medianMin, Double p90Min, int n) {}
 
-    /** 최근 24시간 실패·부분 성공·예산 부족 실행과 그 전체 내용(작업 메모 · 실패한 외부 호출 · 스택 트레이스, 키 마스킹) */
+    /**
+     * 최근 24시간 실패·부분 성공·예산 부족 실행과 그 전체 내용(작업 메모 · 실패한 외부 호출 · 스택 트레이스, 키 마스킹).
+     * resolvedAt = 같은 작업이 그 뒤 처음 정상(OK) 종료한 시각 (없으면 null = 아직 해결 안 됨).
+     */
     public record Failure(long runId, String job, String trigger, OffsetDateTime startedAt, OffsetDateTime finishedAt,
-                          String status, String message, String detail) {}
+                          String status, String message, String detail, OffsetDateTime resolvedAt) {}
 
     public record Status(OffsetDateTime asOf, boolean collectorAlive, OffsetDateTime collectorHeartbeat,
                          List<Job> jobs, List<Quota> quota, List<Run> recentRuns, List<ApiError> recentErrors,

@@ -17,3 +17,4 @@
 | [013](013-free-origin-destination.md) | 어디서 → 어디로: 전국 임의 지점 선택 |
 | [014](014-rail-transfers-and-real-access.md) | 기차 환승 경로(CSA) · 역까지 실제 경로 · 전국 도로 분석 |
 | [015](015-rail-track-geometry-osm.md) | 기차 경로를 실제 선로로 (OpenStreetMap · 역 쌍 최단 선로) |
+| [016](016-data-provenance-and-tago-timetable.md) | 추정 대신 실제 값 — TAGO 열차 시간표(차종 · 역별 계획 시각)와 추정치 정리 |

@@ -1,16 +1,17 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import About from "@/components/About";
 import Layout from "@/components/Layout";
 import RouteMap from "@/components/RouteMap";
 import SearchPicker from "@/components/SearchPicker";
 import { CarTile, EnvRow, Evidence, TrainTile } from "@/components/Tiles";
-import { Empty, ErrorBox, Loading, Section, Segmented, Select, Spec, SpecStrip } from "@/components/ui";
+import { ErrorBox, Loading, Section, Segmented, Select, Spec, SpecStrip } from "@/components/ui";
 import { qs, useApi } from "@/lib/api";
-import { DASH, durParts, hm, mdhm, num } from "@/lib/format";
-import { tripLayers } from "@/lib/layers";
+import { DASH, durParts, hm, num } from "@/lib/format";
+import { locatedIncidents, tripLayers, WARN } from "@/lib/layers";
 import { corridorEnds, decodePlace, encodePlace, KIND_LABEL } from "@/lib/places";
-import type { Place, Trip } from "@/lib/types";
+import type { Incident, Place, Trip } from "@/lib/types";
 import { useCorridors } from "@/lib/useCorridors";
 
 const DEPART = [0, 30, 60, 120, 180].map((v) => ({ value: v, label: v === 0 ? "지금" : `+${v >= 60 ? `${v / 60}시간` : `${v}분`}` }));
@@ -50,6 +51,15 @@ export default function Home() {
   const car = durParts(d?.carTotalMin ?? (t?.car.durationSec ? t.car.durationSec / 60 : null));
   const train = durParts(d?.trainTotalMin);
   const layers = useMemo(() => tripLayers(t, from, to), [t, from, to]);
+  const mapLayers = useMemo(() => tripLayers(t, from, to, true), [t, from, to]);
+  const located = locatedIncidents(t);
+  // 돌발 안내 '지도에서 보기' → 아래 지도로 내려가 그 지점으로 확대
+  const [focus, setFocus] = useState<{ lat: number; lon: number; n: number } | null>(null);
+  const locate = (i: Incident) => {
+    if (i.lat == null || i.lon == null) return;
+    setFocus((f) => ({ lat: i.lat!, lon: i.lon!, n: (f?.n ?? 0) + 1 }));
+    document.getElementById("map")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   const picker = (label: string, value: Place | null, key: "from" | "to") => (
     <SearchPicker<Place> label={label} placeholder="지역 · 역 · 장소 검색" value={value?.name ?? ""} className="w-full sm:w-[300px]"
       search={(term) => `/api/v1/places/search?q=${encodeURIComponent(term)}`}
@@ -66,6 +76,9 @@ export default function Home() {
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[44%] bg-gradient-to-t from-white via-white/90 to-transparent" />
 
         <div className="relative mx-auto max-w-[1200px] px-4 pt-[13vh] text-center">
+          <a href="#about" className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1 text-[12px] text-ink2 ring-1 ring-black/5 backdrop-blur hover:bg-white">
+            <b className="font-medium text-ink">로드레일</b> · 공공데이터로 비교하는 자동차 vs 기차 <span className="text-muted">소개 ↓</span>
+          </a>
           <p className="eyebrow">{hm(t?.departAt)} 출발 기준 · 직선 {num(t?.distanceKm, 0)}km</p>
           <h1 className="mt-2 text-[34px] sm:text-[48px] font-medium tracking-tight text-ink">
             {from?.name ?? " "} <span className="text-faint">→</span> {to?.name ?? " "}
@@ -100,6 +113,8 @@ export default function Home() {
         </div>
       </section>
 
+      <About />
+
       {/* ---------- 비교 */}
       <Section id="compare" eyebrow="자동차와 기차" title="같은 출발 시각, 두 가지 선택" gray
                desc="자동차는 도로(고속도로·국도·일반도로) 기준 카카오 경로 예측, 기차는 가까운 역에서 목적지 가까운 역까지 코레일 환승 경로와 최근 30일 실제 운행으로 계산합니다.">
@@ -109,39 +124,28 @@ export default function Home() {
       </Section>
 
       <Section id="evidence" eyebrow="R-DEC-01" title="왜 이렇게 판단했나요">
-        {t ? <Evidence decision={t.decision} freshness={t.freshness} caveat={t.caveat} cache={t.cache} asOf={t.asOf} /> : <Loading />}
+        {t ? <Evidence decision={t.decision} freshness={t.freshness} caveat={t.caveat} cache={t.cache} asOf={t.asOf}
+                       incidents={t.incidents} onLocate={locate} /> : <Loading />}
       </Section>
 
       <Section eyebrow="날씨 · 대기" title="출발지와 도착지" gray>
         {t ? <EnvRow env={t.env} /> : <Loading />}
       </Section>
 
-      {t?.observed && (
-        <Section eyebrow="돌발 안내" title={`${t.observed.corridorName} 길 · 최근 6시간`}>
-          {t.incidents.length === 0 ? <Empty>매칭된 돌발 안내가 없습니다.</Empty> : (
-            <ul className="space-y-3">
-              {t.incidents.map((i) => (
-                <li key={i.sentAt + i.content} className="tile flex gap-4 p-5">
-                  <div className="w-24 flex-none text-sm tabular text-muted">{mdhm(i.sentAt)}</div>
-                  <div>
-                    <div className="text-sm font-medium">{i.routeName} · {i.typeName} <span className="font-normal text-muted">{i.direction} · {i.process}</span></div>
-                    <p className="mt-1 text-sm text-ink2">{i.content}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-      )}
-
       <section id="map" className="relative h-[560px] scroll-mt-16 bg-cloud">
-        <RouteMap layers={layers} interactive className="absolute inset-0 h-full w-full" label="경로 지도 (확대·이동 가능)" />
+        <RouteMap layers={mapLayers} interactive focus={focus} className="absolute inset-0 h-full w-full" label="경로 지도 (확대·이동 가능)" />
         <div className="pointer-events-none absolute left-4 top-4 sm:left-8 sm:top-8 rounded bg-white/95 px-4 py-3 shadow-tile">
           <p className="text-sm font-medium">{from?.name} → {to?.name}</p>
           <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-[3px] w-5 bg-road" />자동차 경로 (카카오) {t?.car.distanceM ? `${num(t.car.distanceM / 1000, 0)}km` : ""}</p>
           <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-[3px] w-5 bg-rail" />기차 선로 {t?.rail?.journeys[0] ? t.rail.journeys[0].legs.map((l, i) => (i === 0 ? `${l.fromName}→${l.toName}` : `→${l.toName}`)).join("") : "없음"}</p>
           {t?.rail?.journeys[0]?.legs.some((l) => !l.pathOnTrack) && (
             <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-0 w-5 border-t-[3px] border-dashed border-rail" />선로 형상이 없는 구간 (역 사이 직선)</p>
+          )}
+          {located.length > 0 && (
+            <p className="mt-1 flex items-center gap-2 text-xs text-muted">
+              <span className="inline-block h-0 w-0 border-x-[6px] border-b-[10px] border-x-transparent" style={{ borderBottomColor: WARN }} />
+              돌발 안내 {located.length}건 (도로공사 안내 좌표)
+            </p>
           )}
         </div>
         <p className="pointer-events-none absolute bottom-8 left-2 rounded bg-white/85 px-2 py-0.5 text-[11px] text-muted">선로 © OpenStreetMap contributors (ODbL)</p>

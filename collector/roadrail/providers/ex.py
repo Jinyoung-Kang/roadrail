@@ -115,6 +115,16 @@ async def traffic_all(ctx: JobContext) -> dict:
                               dict(key=_key(), type="json", tmType="2"))
 
 
+def sms_point(r: dict) -> tuple[float | None, float | None]:
+    """문자 안내 좌표. 응답의 `altitude` 에는 **경도**가 들어 있다(값 124~132 · 안내 구간명과 위치 일치를 실측 확인).
+    국내 범위를 벗어나거나 비어 있으면 (None, None) — 위치를 추정하지 않는다."""
+    try:
+        lat, lon = float(r.get("latitude")), float(r.get("altitude"))
+    except (TypeError, ValueError):
+        return None, None
+    return (lat, lon) if 33 <= lat <= 39 and 124 <= lon <= 132 else (None, None)
+
+
 def parse_sms(body: dict) -> list[dict]:
     out = []
     for r in body.get("realTimeSMSList") or []:
@@ -126,7 +136,10 @@ def parse_sms(body: dict) -> list[dict]:
         except (KeyError, ValueError, TypeError):
             continue
         h = hashlib.sha256(f"{r.get('accDate')}|{r.get('accHour')}|{r.get('roadNM')}|{text}".encode()).hexdigest()
+        lat, lon = sms_point(r)
+        point = (r.get("accPointNM") or "").strip()
         out.append(dict(msg_hash=h, sent_at=d, type_code=(r.get("accTypeCode") or "").strip() or None,
+                        lat=lat, lon=lon, point_name=point if point not in ("", "/") else None,
                         type_name=(r.get("accType") or "").strip() or None,
                         route_no=(r.get("nosunNM") or "").strip() or None,
                         route_name=(r.get("roadNM") or "").strip() or None,

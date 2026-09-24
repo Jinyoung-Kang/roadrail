@@ -159,7 +159,7 @@ public class KakaoMobilityClient {
     public record Route(int durationSec, int distanceM, Integer tollFare, Integer taxiFare, String departAt,
                         List<double[]> path, List<Road> roads) {}
 
-    /** 출발 시각 기준 경로 상세. avoid = null | "motorway" (고속도로 회피 → 국도·일반도로 위주). 결과 20분 캐시. */
+    /** 출발 시각 기준 경로 상세. avoid = null | "motorway" (고속도로 회피). 결과 20분 캐시. */
     public Route route(double oLat, double oLon, double dLat, double dLon, OffsetDateTime departAt, String avoid, boolean detail) {
         if (props.kakaoRestApiKey() == null || props.kakaoRestApiKey().isBlank()) return null;
         OffsetDateTime t = departAt.withMinute(departAt.getMinute() - departAt.getMinute() % 10).withSecond(0).withNano(0);
