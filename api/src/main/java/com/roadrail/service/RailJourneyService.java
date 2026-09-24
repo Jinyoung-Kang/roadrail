@@ -28,8 +28,13 @@ public class RailJourneyService {
     private final KakaoMobilityClient kakao;
     private final TagoSubwayClient tago;
     private final ExecutorService exec = Executors.newVirtualThreadPerTaskExecutor();
-    /** 기준 운행일 → 연결 목록 (하루 약 1만 개). 하루 단위로 교체 */
-    private final Map<LocalDate, List<RailRouter.Connection>> dayCache = new ConcurrentHashMap<>();
+    /** 기준 운행일 → 연결 목록 (하루 약 1만 개) + 열차별 정차역 순서. 하루 단위로 교체 */
+    record Day(List<RailRouter.Connection> connections, Map<String, List<String>> stopsByTrip) {}
+
+    private final Map<LocalDate, Day> dayCache = new ConcurrentHashMap<>();
+    /** (출발역, 도착역) → OSM 선로 경로 [[lat, lon], …] (ref.rail_link, 10분마다 · 비어 있으면 30초마다 다시 읽음) */
+    private volatile Map<String, List<double[]>> links = Map.of();
+    private volatile long linksLoadedAt = 0;
 
     public RailJourneyService(JdbcClient jdbc, RailService rail, KakaoMobilityClient kakao, TagoSubwayClient tago) {
         this.jdbc = jdbc;
@@ -43,14 +48,71 @@ public class RailJourneyService {
 
     static int carEstimateMin(double km) { return (int) Math.max(5, Math.round(km * 1.3 / 25 * 60)); }
 
-    List<RailRouter.Connection> connectionsFor(LocalDate refDate) {
+    Day day(LocalDate refDate) {
         if (dayCache.size() > 6) dayCache.clear();
         return dayCache.computeIfAbsent(refDate, d -> {
             List<RailRouter.Stop> stops = jdbc.sql("SELECT trn_no, run_seq, stn_cd, arr_at, dep_at FROM rail.day_stops(:d)")
                     .param("d", d).query((rs, i) -> new RailRouter.Stop(rs.getString(1), rs.getInt(2), rs.getString(3),
                             epoch(rs.getObject(4, OffsetDateTime.class)), epoch(rs.getObject(5, OffsetDateTime.class)))).list();
-            return RailRouter.connections(stops);
+            Map<String, List<RailRouter.Stop>> byTrip = new HashMap<>();
+            for (var st : stops) byTrip.computeIfAbsent(st.trip(), k -> new ArrayList<>()).add(st);
+            Map<String, List<String>> seq = new HashMap<>();
+            byTrip.forEach((k, v) -> seq.put(k, v.stream().sorted(Comparator.comparingInt(RailRouter.Stop::seq)).map(RailRouter.Stop::stn).toList()));
+            return new Day(RailRouter.connections(stops), seq);
         });
+    }
+
+    List<RailRouter.Connection> connectionsFor(LocalDate refDate) { return day(refDate).connections(); }
+
+    Map<String, List<double[]>> links() {
+        if (System.currentTimeMillis() - linksLoadedAt > (links.isEmpty() ? 30_000 : 600_000)) {
+            Map<String, List<double[]>> m = new HashMap<>();
+            jdbc.sql("SELECT dep_stn_cd, arr_stn_cd, path::text FROM ref.rail_link").query(rs -> {
+                m.put(rs.getString(1) + ">" + rs.getString(2), parsePath(rs.getString(3)));
+            });
+            links = m;
+            linksLoadedAt = System.currentTimeMillis();
+        }
+        return links;
+    }
+
+    static List<double[]> parsePath(String json) {
+        List<double[]> out = new ArrayList<>();
+        var mt = java.util.regex.Pattern.compile("\\[\\s*([-0-9.]+)\\s*,\\s*([-0-9.]+)\\s*\\]").matcher(json);
+        while (mt.find()) out.add(new double[]{Double.parseDouble(mt.group(1)), Double.parseDouble(mt.group(2))});
+        return out;
+    }
+
+    /**
+     * 열차가 실제로 정차하는 역 순서대로, 역 쌍마다 OSM 선로 경로를 이어 붙인다.
+     * 선로 경로가 없는 역 쌍(OSM 에 선로가 없거나 역을 못 붙인 경우)은 두 역을 직선으로 잇고 onTrack=false.
+     */
+    record TrackPath(List<double[]> path, boolean onTrack) {}
+
+    TrackPath legPath(LocalDate refDate, String trn, String from, String to) {
+        List<String> seq = day(refDate).stopsByTrip().getOrDefault(trn, List.of());
+        int i = seq.indexOf(from);
+        int j = i < 0 ? -1 : seq.subList(i + 1, seq.size()).indexOf(to);
+        List<String> stops = i < 0 || j < 0 ? List.of(from, to) : seq.subList(i, i + 1 + j + 1);
+        Map<String, List<double[]>> lk = links();
+        List<double[]> out = new ArrayList<>();
+        boolean onTrack = true;
+        for (int k = 0; k + 1 < stops.size(); k++) {
+            String a = stops.get(k), b = stops.get(k + 1);
+            List<double[]> p = lk.get(a + ">" + b);
+            if (p == null && lk.containsKey(b + ">" + a)) {
+                p = new ArrayList<>(lk.get(b + ">" + a));
+                Collections.reverse(p);
+            }
+            if (p == null) {
+                onTrack = false;
+                double[] ca = coords(a), cb = coords(b);
+                p = ca == null || cb == null ? List.of() : List.of(ca, cb);
+            }
+            if (!out.isEmpty() && !p.isEmpty()) p = p.subList(1, p.size());
+            out.addAll(p);
+        }
+        return new TrackPath(out, onTrack);
     }
 
     private static Long epoch(OffsetDateTime t) { return t == null ? null : t.toEpochSecond(); }
@@ -68,7 +130,7 @@ public class RailJourneyService {
                 refOut.add(ref.get().getKey().toString());
             }
             for (var c : connectionsFor(ref.get().getKey())) {
-                all.add(new RailRouter.Connection(c.trip() + "@" + k, c.from(), c.to(), c.dep() + shift, c.arr() + shift));
+                all.add(new RailRouter.Connection(c.trip() + "@" + ref.get().getKey(), c.from(), c.to(), c.dep() + shift, c.arr() + shift));
             }
         }
         all.sort(Comparator.comparingLong(RailRouter.Connection::dep));
@@ -158,6 +220,8 @@ public class RailJourneyService {
     private Journey toJourney(RailRouter.Journey j, Map<String, Transfer> acc, Map<String, Transfer> eg, Map<String, String> names,
                               OffsetDateTime depart, LocalDate refDate, boolean withStats) {
         List<Leg> legs = new ArrayList<>();
+        Map<String, RailDtos.TrainMeta> meta = rail.trainMeta(j.legs().stream().map(l -> l.trip().substring(0, l.trip().indexOf('@'))).toList(),
+                refDate.minusDays(7), refDate.plusDays(1));
         List<CompletableFuture<Map<String, RailDtos.TrainStats>>> stats = new ArrayList<>();
         for (var l : j.legs()) {
             String trn = l.trip().substring(0, l.trip().indexOf('@'));
@@ -173,10 +237,13 @@ public class RailJourneyService {
             OffsetDateTime dep = OffsetDateTime.ofInstant(Instant.ofEpochSecond(l.dep()), Times.KST);
             OffsetDateTime arr = OffsetDateTime.ofInstant(Instant.ofEpochSecond(l.arr()), Times.KST);
             double[] fc = coords(l.from()), tc = coords(l.to());
+            LocalDate legRef = LocalDate.parse(l.trip().substring(l.trip().indexOf('@') + 1));
+            TrackPath tp = legPath(legRef, trn, l.from(), l.to());
             legs.add(new Leg(trn, l.from(), name(l.from(), names), l.to(), name(l.to(), names), dep, arr,
                     (int) Duration.between(dep, arr).toMinutes(), s == null ? null : s.onTimeRate(),
                     s == null ? null : s.avgArrDelayMin(), s == null ? 0 : s.samples(), s != null && s.delayEstimated(),
-                    fc == null ? null : fc[0], fc == null ? null : fc[1], tc == null ? null : tc[0], tc == null ? null : tc[1]));
+                    fc == null ? null : fc[0], fc == null ? null : fc[1], tc == null ? null : tc[0], tc == null ? null : tc[1],
+                    meta.get(trn), tp.path(), tp.onTrack()));
             if (i == j.legs().size() - 1 && s != null) lastDelay = s.avgArrDelayMin();
         }
         Transfer a = acc.get(j.originStn()), e = eg.get(j.destStn());

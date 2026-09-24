@@ -1,6 +1,7 @@
 package com.roadrail.web.dto;
 
 import com.roadrail.external.TagoSubwayClient;
+import com.roadrail.web.dto.RailDtos;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -15,7 +16,8 @@ public final class JourneyDtos {
 
     public record Leg(String trnNo, String fromCode, String fromName, String toCode, String toName, OffsetDateTime dep,
                       OffsetDateTime arr, int rideMin, Double onTimeRate30d, Double avgArrDelayMin30d, int samples,
-                      boolean delayEstimated, Double fromLat, Double fromLon, Double toLat, Double toLon) {}
+                      boolean delayEstimated, Double fromLat, Double fromLon, Double toLat, Double toLon,
+                      RailDtos.TrainMeta meta, List<double[]> path, boolean pathOnTrack) {}
 
     public record Journey(Transfer access, List<Leg> legs, Transfer egress, OffsetDateTime departAt, OffsetDateTime arriveAt,
                           int waitMin, int transfers, int totalMin, Double expectedDelayMin) {}

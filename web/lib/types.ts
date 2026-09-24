@@ -56,9 +56,11 @@ export interface Forecast {
 }
 export interface TrainStats { samples: number; verified: number; onTimeRate: number | null; avgArrDelayMin: number | null;
   p90ArrDelayMin: number | null; avgRideMin: number | null; delayEstimated: boolean }
+/** kind = 열차 번호 체계로 추정한 종류 (KTX · SRT · ITX-새마을 · 무궁화호 …), label = 'OO발 OO행' */
+export interface TrainMeta { kind: string; origin: string; terminus: string; label: string }
 export interface TrainRun { trnNo: string; actDepAt: string; actArrAt: string; planDepAt: string | null; planArrAt: string | null;
   depDelayMin: number | null; arrDelayMin: number | null; depBasis: string; arrBasis: string; rideMin: number;
-  onTime: boolean | null; stats30d: TrainStats | null }
+  onTime: boolean | null; stats30d: TrainStats | null; meta: TrainMeta | null }
 export interface Trains { depCode: string; arrCode: string; date: string | null; depStation: string; arrStation: string;
   trains: TrainRun[]; availableDates: string[]; note: string }
 export interface PunctualitySummary { samples: number; verified: number; unverified: number; onTimeRate: number | null;
@@ -67,7 +69,7 @@ export interface Punctuality {
   depCode: string; arrCode: string; depStation: string; arrStation: string; from: string; to: string; groupBy: string; onTimeThresholdMin: number;
   summary: PunctualitySummary; nationwideExact: PunctualitySummary;
   items: { key: string; samples: number; verified: number; onTimeRate: number | null; avgArrDelayMin: number | null;
-    p90ArrDelayMin: number | null; avgRideMin: number | null; estimatedShare: number | null }[];
+    p90ArrDelayMin: number | null; avgRideMin: number | null; estimatedShare: number | null; meta: TrainMeta | null }[];
   histogram: { label: string; count: number }[]; rules: Record<string, string>; note: string;
 }
 export interface EnvResp { corridorId: string; note: string; points: { role: string; name: string; sido: string; baseAt: string | null;
@@ -82,14 +84,17 @@ export interface OpsStatus {
   recentRuns: { runId: number; job: string; trigger: string; startedAt: string; finishedAt: string | null; status: string;
     calls: number; rows: number; message: string | null }[];
   recentErrors: { calledAt: string; provider: string; endpoint: string; httpStatus: number | null; error: string | null }[];
+  failures: OpsFailure[];
   backfills: { backfillId: string; provider: string; job: string; from: string; to: string; plannedCalls: number; doneDays: number;
     status: string; requestedAt: string; finishedAt: string | null }[];
   publicationLag: { series: string; medianMin: number | null; p90Min: number | null; n: number }[];
   volumes: Record<string, number | string | null>;
 }
+export interface OpsFailure { runId: number; job: string; trigger: string; startedAt: string; finishedAt: string | null;
+  status: string; message: string | null; detail: string | null }
 export interface ApiError { code: string; message: string; traceId: string }
 
-// ---- 어디서 → 어디로 (자유 선택)
+// ---- 출발지 → 도착지 (자유 선택)
 export type PlaceKind = "REGION" | "STATION" | "PLACE" | "ADDRESS" | "CORRIDOR";
 export interface Place { name: string; address: string | null; lat: number; lon: number; kind: PlaceKind; stationCode: string | null }
 export interface Station { code: string; name: string; lat: number | null; lon: number | null; trains7d: number }
@@ -97,7 +102,8 @@ export interface TransferEnd { stationCode: string; stationName: string; lat: nu
   distanceM: number | null; mode: "WALK" | "CAR" | "INPUT" | "ESTIMATE" }
 export interface JourneyLeg { trnNo: string; fromCode: string; fromName: string; toCode: string; toName: string; dep: string; arr: string;
   rideMin: number; onTimeRate30d: number | null; avgArrDelayMin30d: number | null; samples: number; delayEstimated: boolean;
-  fromLat: number | null; fromLon: number | null; toLat: number | null; toLon: number | null }
+  fromLat: number | null; fromLon: number | null; toLat: number | null; toLon: number | null;
+  meta: TrainMeta | null; path: [number, number][]; pathOnTrack: boolean }
 export interface Journey { access: TransferEnd; legs: JourneyLeg[]; egress: TransferEnd; departAt: string; arriveAt: string;
   waitMin: number; transfers: number; totalMin: number; expectedDelayMin: number | null }
 export interface NextSubway { line: string; toward: string; times: string[] }

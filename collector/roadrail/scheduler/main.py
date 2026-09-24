@@ -17,7 +17,8 @@ from ..core.timeutil import KST, now_kst
 from ..pipeline import rail
 from ..pipeline.analysis import ensure_partitions
 from ..pipeline.seed import apply_seed
-from .jobs import JOBS, new_id, run_backfill, run_job
+from ..providers.base import CONCURRENCY
+from .jobs import JOBS, new_id, recover_after_restart, run_backfill, run_job
 
 logger = logging.getLogger(__name__)
 _tasks: set[asyncio.Task] = set()
@@ -128,6 +129,8 @@ async def startup_kick() -> None:
         log(logger, "초기 철도 백필", from_=str(start), to=str(end), planned=planned)
         await run_backfill(bid)
     await run_job("station_geocode", "STARTUP")  # 새로 나온 역만 (없으면 호출 0)
+    if not await db.fetchone("SELECT 1 AS x FROM ref.rail_link LIMIT 1"):
+        spawn(run_job("rail_geometry", "STARTUP"))  # 선로 경로가 없으면 한 번 (OSM, 수 분)
     await run_job("baseline_daily", "STARTUP")
     await run_job("backtest_daily", "STARTUP")
 
@@ -138,6 +141,7 @@ async def main() -> None:
     await wait_for_schema()
     await apply_seed()
     await ensure_partitions()
+    await recover_after_restart(list(CONCURRENCY))
     sched = AsyncIOScheduler(timezone=KST)
     n = await schedule_jobs(sched) if s.scheduler_enabled else 0
     sched.start()
@@ -154,6 +158,9 @@ async def main() -> None:
     sched.shutdown(wait=False)
     for t in list(_tasks):
         t.cancel()
+    # 취소된 작업이 '중단' 기록과 잠금 해제를 마칠 시간을 준다 (docker stop 유예 10초 안에서)
+    if _tasks:
+        await asyncio.wait(list(_tasks), timeout=7)
     await db.close()
     await rds.close()
 

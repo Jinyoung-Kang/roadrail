@@ -6,6 +6,7 @@
   roadrail rail-backfill FROM TO       운행정보 기간 재수집 (YYYY-MM-DD)
   roadrail recompute-rail FROM TO      저장된 운행정보로 정시성 재계산 (API 호출 없음)
   roadrail reclassify-road             도로 품질 규칙 재적용 + 길 합산 재계산 (API 호출 없음)
+  roadrail rail-geometry [FILE]        역 쌍 선로 경로 다시 계산 (FILE: 미리 받은 Overpass JSON — 호출 없음)
 """
 from __future__ import annotations
 
@@ -35,6 +36,8 @@ async def _run(argv: list[str]) -> int:
             await db.execute("""INSERT INTO ops.backfill (backfill_id, provider, job_name, from_date, to_date, planned_calls)
                                 VALUES (%s, 'KORAIL', 'rail_daily', %s, %s, %s)""", (bid, start, end, planned))
             print(await run_backfill(bid))
+        elif cmd == "rail-geometry" and len(argv) in (1, 2):
+            print(await run_job("rail_geometry", "ADMIN", **({"source_file": argv[1]} if len(argv) == 2 else {})))
         elif cmd == "reclassify-road":
             from .pipeline.road import reclassify_all
             changed, slots = await reclassify_all()

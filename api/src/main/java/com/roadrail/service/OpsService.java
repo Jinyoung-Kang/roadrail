@@ -14,7 +14,7 @@ import java.util.*;
 /** 수집 상태 (FR-701, NFR-01/02/09). 완전성 95% 미만이면 warn. */
 @Service
 public class OpsService {
-    public static final List<String> PROVIDERS = List.of("EX", "KORAIL", "KMA", "AIRKOREA", "KAKAO", "KAKAO_LOCAL", "TAGO");
+    public static final List<String> PROVIDERS = List.of("EX", "KORAIL", "KMA", "AIRKOREA", "KAKAO", "KAKAO_LOCAL", "TAGO", "OSM");
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");  // BASIC_ISO_DATE 는 오프셋(+0900)까지 붙인다
     private final JdbcClient jdbc;
     private final StringRedisTemplate redis;
@@ -60,6 +60,7 @@ public class OpsService {
                 ORDER BY called_at DESC LIMIT 10""")
                 .query((rs, i) -> new ApiError(Times.kst(rs.getObject(1, OffsetDateTime.class)), rs.getString(2),
                         rs.getString(3), (Integer) rs.getObject(4), rs.getString(5))).list();
+        List<Failure> failures = failures();
         List<Backfill> backfills = jdbc.sql("""
                 SELECT backfill_id, provider, job_name, from_date::text, to_date::text, planned_calls, done_days, status,
                        requested_at, finished_at FROM ops.backfill ORDER BY requested_at DESC LIMIT 5""")
@@ -95,7 +96,36 @@ public class OpsService {
                 });
         String hb = safe(() -> redis.opsForValue().get("rr:collector:heartbeat"));
         return new Status(now, hb != null, hb == null ? null : OffsetDateTime.parse(hb), jobs, quotas(), runs, errors,
-                backfills, lag, vol);
+                failures, backfills, lag, vol);
+    }
+
+    /**
+     * 최근 24시간 오류 실행 (작업별 최신 3건, 최대 20건). 전체 내용은 수집기가 실행 끝에 ops.job_run.detail 에 남긴다.
+     * detail 이 없는 실행(V8 이전 · 수집기가 강제 종료된 RUNNING 정리분)은 메시지와 그 시간대의 실패한 외부 호출로 만든다.
+     */
+    List<Failure> failures() {
+        return jdbc.sql("""
+                SELECT * FROM (
+                  SELECT r.run_id, r.job_name, r.trigger, r.started_at, r.finished_at, r.status, r.message,
+                         coalesce(r.detail, concat_ws(E'\n',
+                           format('작업: %s · 트리거: %s · 상태: %s', r.job_name, r.trigger, r.status),
+                           format('호출 %s건 · 저장 %s행', r.calls, r.rows),
+                           '메시지: ' || coalesce(r.message, '-'),
+                           (SELECT E'\n[이 시간대의 실패한 외부 호출]\n' || string_agg(format('%s %s %s · HTTP %s · %s',
+                                     to_char(c.called_at AT TIME ZONE 'Asia/Seoul', 'HH24:MI:SS'), c.provider, c.endpoint,
+                                     coalesce(c.http_status::text, '-'), coalesce(c.error, '-')), E'\n' ORDER BY c.called_at)
+                            FROM (SELECT * FROM ops.api_call c
+                                  WHERE c.called_at BETWEEN r.started_at AND coalesce(r.finished_at, r.started_at + interval '1 hour')
+                                    AND (c.error IS NOT NULL OR c.http_status IS DISTINCT FROM 200)
+                                  ORDER BY c.called_at LIMIT 50) c))) AS detail,
+                         row_number() OVER (PARTITION BY r.job_name ORDER BY r.run_id DESC) AS rn
+                  FROM ops.job_run r
+                  WHERE r.started_at > now() - interval '24 hours' AND r.status IN ('FAILED', 'PARTIAL', 'SKIPPED_QUOTA')) x
+                WHERE rn <= 3 ORDER BY run_id DESC LIMIT 20""")
+                .query((rs, i) -> new Failure(rs.getLong("run_id"), rs.getString("job_name"), rs.getString("trigger"),
+                        Times.kst(rs.getObject("started_at", OffsetDateTime.class)),
+                        Times.kst(rs.getObject("finished_at", OffsetDateTime.class)), rs.getString("status"),
+                        rs.getString("message"), rs.getString("detail"))).list();
     }
 
     /**

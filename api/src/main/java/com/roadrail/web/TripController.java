@@ -59,10 +59,11 @@ public class TripController {
     }
 
     @GetMapping("/stations")
-    @Operation(summary = "운행 중인 기차역 검색 (최근 7일 정차 편수 순)")
+    @Operation(summary = "운행 중인 기차역 검색 (sort=trains: 정확 일치·정차 편수 순, sort=name: 가나다순)")
     public List<RailDtos.Station> stations(@RequestParam(defaultValue = "") @Size(max = 20) String q,
-                                           @RequestParam(defaultValue = "20") @Min(1) @Max(300) int limit) {
-        return rail.stations(q, limit);
+                                           @RequestParam(defaultValue = "20") @Min(1) @Max(400) int limit,
+                                           @RequestParam(defaultValue = "trains") @jakarta.validation.constraints.Pattern(regexp = "trains|name") String sort) {
+        return rail.stations(q, limit, "name".equals(sort));
     }
 
     @GetMapping("/trip")

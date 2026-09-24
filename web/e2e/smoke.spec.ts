@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 // 스택이 떠 있는 상태(make up)에서 실행: make e2e
-test("판단 화면: 어디서 → 어디로 · 판단 요약 · 스펙 · 근거", async ({ page }) => {
+test("판단 화면: 출발지 → 도착지 · 판단 요약 · 스펙 · 근거", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("서울역");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("대전역");
@@ -11,22 +11,39 @@ test("판단 화면: 어디서 → 어디로 · 판단 요약 · 스펙 · 근�
   await expect(page.getByText("데이터 시각")).toBeVisible();
 });
 
-test("판단 화면: ⇄ 로 어디서·어디로를 바꾼다", async ({ page }) => {
+test("판단 화면: ⇄ 로 출발지·도착지를 바꾼다", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("서울역");
-  await page.getByRole("button", { name: "어디서와 어디로 바꾸기" }).click();
+  await page.getByRole("button", { name: "출발지와 도착지 바꾸기" }).click();
   await expect(page).toHaveURL(/from=%EB%8C%80%EC%A0%84/);  // 대전
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(/대전역\s*→\s*서울역/);
 });
 
 test("판단 화면: 전국 어디든 검색해서 고른다", async ({ page }) => {
   await page.goto("/");
-  const to = page.getByRole("combobox", { name: "어디로" });
+  const to = page.getByRole("combobox", { name: "도착지" });
   await to.fill("전주");
   await expect(page.getByRole("option").first()).toBeVisible({ timeout: 10_000 });
   await page.getByRole("option", { name: /전주시/ }).first().click();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("전주시");
   await expect(page.getByText(/빠를 것으로 보입니다|비슷합니다|비교할 수 없습니다|비교합니다/).first()).toBeVisible({ timeout: 15_000 });
+});
+
+test("판단 화면: 검색 칸은 처음엔 비어 있고 입력한 단어로만 찾는다", async ({ page }) => {
+  await page.goto("/");
+  const from = page.getByRole("combobox", { name: "출발지" });
+  await from.click();
+  await expect(page.getByRole("listbox")).toHaveCount(0);  // 추천·즐겨찾기 목록을 띄우지 않는다
+  await from.fill("수원");
+  await expect(page.getByRole("option").first()).toBeVisible({ timeout: 10_000 });
+  for (const name of await page.getByRole("listbox").getByRole("option").allInnerTexts()) expect(name).toContain("수원");
+});
+
+test("판단 화면: 자동차·기차 카드 — 도착 예정 · 시간 구성 · 선로 지도 출처", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("도착 예정").first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("img", { name: /시간 구성: .*탑승/ })).toBeVisible();
+  await expect(page.getByText(/선로 © OpenStreetMap contributors/)).toBeAttached();
 });
 
 test("도로 분석: 전국 어디든 — 출발 시각별 · 도로 구성", async ({ page }) => {
@@ -75,10 +92,29 @@ test("철도 분석: 임의 역 쌍 — 역 검색으로 바꾼다", async ({ pa
   await expect(page.getByRole("heading", { name: "정시율 랭킹" })).toBeVisible();
 });
 
-test("수집 상태: 작업 표와 예산", async ({ page }) => {
+test("철도 분석: 역 선택 목록은 가나다순 · 열차 종류와 OO발 OO행", async ({ page }) => {
+  await page.goto("/rail?dep=3900023&arr=3900114");
+  await page.getByRole("combobox", { name: "출발역" }).click();
+  const names = (await page.getByRole("listbox").getByRole("option").allInnerTexts()).map((t) => t.split("\n")[0].replace(/역$/, ""));  // 광주 < 광주송정
+  expect(names.length).toBeGreaterThan(100);
+  expect(names).toEqual([...names].sort());
+  await page.keyboard.press("Escape");
+  await expect(page.getByText(/서울발 부산행/).first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/^(KTX|SRT|ITX-새마을|무궁화호)/).first()).toBeVisible();
+});
+
+test("수집 상태: 작업 표 · 예산 · 오류 상세와 복사", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/ops");
   await expect(page.getByText("road_travel_time").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "공급자별 오늘 호출 예산" })).toBeVisible();
+  const heading = page.getByRole("heading", { name: /최근 24시간 오류/ });
+  await expect(heading).toBeVisible();
+  if (/없음/.test(await heading.innerText())) return;  // 오류가 없으면 여기까지
+  await page.getByRole("button", { name: /전체 \d+건 복사/ }).click();
+  await expect(page.getByRole("button", { name: /복사됨/ })).toBeVisible();
+  const text = await page.evaluate(() => navigator.clipboard.readText());
+  expect(text).toMatch(/작업: \w+ · 트리거/);
 });
 
 test("모바일: 메뉴 드로어", async ({ page }) => {

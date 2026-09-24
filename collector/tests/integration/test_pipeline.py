@@ -208,3 +208,60 @@ async def test_api_call_log_masks_key(seeded, monkeypatch):
     await road.collect_travel_time(ctx, full=True)
     assert ctx.api_calls and all("SECRET123" not in json.dumps(c, ensure_ascii=False) for c in ctx.api_calls)
     assert all('"key": "***"' in c[3] for c in ctx.api_calls)
+
+
+async def test_timeout_is_named_and_shows_in_run_detail(seeded):
+    # httpx 시간 초과는 str(e) 가 비어 있다 → 예외 이름이 오류 메시지와 오류 상세에 남아야 한다
+    from roadrail.providers.base import ProviderError
+    from roadrail.scheduler.jobs import run_detail
+
+    def handler(request):
+        raise httpx.ReadTimeout("")
+
+    ctx = ctx_with(handler)
+    with pytest.raises(ProviderError) as ei:
+        await ctx.get_json("AIRKOREA", "getCtprvnRltmMesureDnsty", "https://example.test/air", {"sidoName": "강원"}, retries=0)
+    assert "ReadTimeout" in str(ei.value)
+    detail = run_detail("air_quality_sido", "SCHEDULE", "PARTIAL", "PARTIAL: 강원", None, ctx)
+    assert "[실패한 외부 호출 1건]" in detail and "ReadTimeout" in detail
+
+
+async def test_restart_recovers_stale_runs_locks_and_reservations(seeded):
+    # 강제 종료된 이전 프로세스의 흔적: RUNNING 실행 · 잠금 · 환불 못 한 예약
+    from roadrail.scheduler.jobs import ABORTED_MESSAGE, recover_after_restart
+    await db.execute("INSERT INTO ops.job_run (job_name, trigger, status) VALUES ('kakao_eta', 'SCHEDULE', 'RUNNING')")
+    await db.execute("UPDATE ops.collect_job SET last_status = 'RUNNING' WHERE job_name = 'kakao_eta'")
+    r = rds.client()
+    day = now_kst().strftime("%Y%m%d")
+    await r.set(rds.lock_key("kakao_eta"), "old", ex=1800)
+    await r.set(rds.quota_key("KAKAO", day), 40)
+    await r.set(f"quota:used:KAKAO:{day}", 25)
+    assert await recover_after_restart(["KAKAO"]) == 1
+    run = await db.fetchone("SELECT status, message, detail FROM ops.job_run WHERE job_name = 'kakao_eta' ORDER BY run_id DESC LIMIT 1")
+    assert run["status"] == "FAILED" and run["message"] == ABORTED_MESSAGE and "끝을 기록하지 못함" in run["detail"]
+    assert (await db.fetchone("SELECT last_status FROM ops.collect_job WHERE job_name = 'kakao_eta'"))["last_status"] == "FAILED"
+    assert await r.get(rds.lock_key("kakao_eta")) is None
+    assert int(await r.get(rds.quota_key("KAKAO", day))) == 25
+
+
+async def test_cancelled_job_is_recorded_as_aborted_and_unlocked(seeded, monkeypatch):
+    # SIGTERM 으로 작업이 취소되면 'OK' 가 아니라 중단으로 기록하고 잠금을 푼다
+    import asyncio
+
+    from roadrail.scheduler import jobs
+
+    started = asyncio.Event()
+
+    async def slow(ctx):
+        started.set()
+        await asyncio.sleep(60)
+
+    monkeypatch.setitem(jobs.JOBS, "maintenance", jobs.JobSpec(slow, jobs._const({})))
+    task = asyncio.create_task(jobs.run_job("maintenance", "ADMIN"))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    run = await db.fetchone("SELECT status, message FROM ops.job_run WHERE job_name = 'maintenance' ORDER BY run_id DESC LIMIT 1")
+    assert run["status"] == "FAILED" and run["message"] == jobs.ABORTED_MESSAGE
+    assert await rds.client().get(rds.lock_key("maintenance")) is None

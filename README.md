@@ -1,12 +1,12 @@
 # 로드레일 (RoadRail)
 
 **고속도로·열차 이동 판단 & 정시성 분석.**
-**어디서 → 어디로**를 전국 어디든(지역 · 기차역 · 장소) 검색해 고르면, 자동차는 도로(고속도로 · 국도 · 일반도로) 기준 카카오 경로 예측으로,
+**출발지 → 도착지**를 전국 어디든(지역 · 기차역 · 장소) 검색해 고르면, 자동차는 도로(고속도로 · 국도 · 일반도로) 기준 카카오 경로 예측으로,
 기차는 가까운 역까지 실제 경로 → 코레일 **환승 경로** → 목적지 가까운 역으로 계산하고 최근 30일 실제 운행 · 날씨 · 대기질을 모아
 **"지금 차로 갈까, 기차로 갈까"를 근거와 함께** 보여 주는 로컬 시계열 분석 서비스입니다.
 자주 오가는 **길** 8개는 고속도로 영업소 간 통행시간을 5분 슬롯으로 계속 쌓아 평소 대비 정체·예측까지 보여 줍니다.
 
-> 용어 — **길**: 자주 오가는 도시 쌍(예: 서울–대전). 코드에서는 `corridor`. **어디서 / 어디로**: 출발지 / 도착지.
+> 용어 — **길**: 자주 오가는 도시 쌍(예: 서울–대전). 코드에서는 `corridor`.
 
 > ⚠ 공공데이터 기반 **참고 정보**이며 교통 안내(내비게이션) 서비스가 아닙니다. 모든 수치에는 데이터 시각과 표본 수를 함께 표시하고, 값이 없으면 '—' 로 표시합니다.
 
@@ -14,7 +14,7 @@
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/trip.png" alt="어디서 어디로"><br><sub><b>어디서 → 어디로</b> · 전주시 → 부산역: 카카오 자동차 경로 + 기차 여정(전주역 → 오송 환승 → 부산역, 역까지 실제 경로 · 도착역 지하철 시각)</sub></td>
+<td width="50%"><img src="docs/images/trip.png" alt="출발지 도착지"><br><sub><b>출발지 → 도착지</b> · 전주시 → 부산역: 카카오 자동차 경로 + 기차 여정(전주역 → 오송 환승 → 부산역, 역까지 실제 경로 · 도착역 지하철 시각)</sub></td>
 <td width="50%"><img src="docs/images/rail.png" alt="철도 분석"><br><sub><b>철도 분석</b> · 전국 모든 역 쌍: 서울역→대전역 최근 30일 정시율 · 지연 분포 · 요일·시간대별 · 열차 랭킹</sub></td>
 </tr>
 <tr>
@@ -70,13 +70,13 @@ open http://localhost:3300
 |---|---|---|
 | `EX_API_KEY` | 고속도로 공공데이터 포털 (data.ex.co.kr) | 영업소 간 통행시간 · 전국 교통량 · 문자 안내 · 톨게이트 |
 | `DATA_GO_KR_KEY` | 공공데이터포털 일반 인증키 (Decoding) | 코레일 열차운행정보 v2 · 기상청 단기예보 · 에어코리아 · 국토교통부(TAGO) 지하철정보 (각각 활용신청) |
-| `KAKAO_REST_API_KEY` | 카카오 REST 키 | 어디서·어디로 검색 · 역 좌표 보정(로컬) · 미래 운행 정보 길찾기(모빌리티) |
+| `KAKAO_REST_API_KEY` | 카카오 REST 키 | 출발지·도착지 검색 · 역 좌표 보정(로컬) · 미래 운행 정보 길찾기(모빌리티) |
 | `NEXT_PUBLIC_KAKAO_JS_KEY` | 카카오 JavaScript 키 (플랫폼 Web 도메인에 `http://localhost:3300`) | 지도. 없으면 SVG 노선도로 대체 |
 | `ADMIN_TOKEN` | `make up` 이 자동 생성 | 관리 API (`X-Admin-Token`) |
 
 | 주소 | 내용 |
 |---|---|
-| http://localhost:3300 | 화면: 판단(어디서 → 어디로) · 도로 분석(전국 · 길별 고속도로 실측) · 철도 분석(모든 역 쌍) · 예측 성능 · 수집 상태 |
+| http://localhost:3300 | 화면: 판단(출발지 → 도착지) · 도로 분석(전국 · 길별 고속도로 실측) · 철도 분석(모든 역 쌍) · 예측 성능 · 수집 상태 |
 | http://localhost:8300/docs | API 문서 (springdoc Swagger UI) |
 
 그 밖의 명령: `make ps` · `make logs` · `make collect-once JOB=road_travel_time` · `make rail-backfill FROM=… TO=…` · `make reclassify` · `make test` · `make e2e` · `make psql` · `make reset`
@@ -88,7 +88,7 @@ open http://localhost:3300
 ```mermaid
 flowchart TB
   subgraph web["web · Next.js 15 (Pages Router · React 18 · TS · Tailwind · Recharts · 카카오 지도) :3300"]
-    pages["판단(어디서 → 어디로) · 도로 분석 · 철도 분석 · 예측 성능 · 수집 상태"]
+    pages["판단(출발지 → 도착지) · 도로 분석 · 철도 분석 · 예측 성능 · 수집 상태"]
   end
   subgraph api["api · Java 21 · Spring Boot 4.1 :8300 — 스키마(Flyway) 소유"]
     q["검색 · 판단 R-DEC-01 · 예측(M0/M1/지속) · 철도 역 쌍(od_trips)"]
@@ -152,7 +152,7 @@ sequenceDiagram
 
 ## 3. 길과 데이터
 
-**어디서 → 어디로**는 전국 어디든 됩니다. 아래 8개 **길**은 여기에 더해 고속도로 실측(평소 대비 정체 · 예측 · 백테스트)을 계속 모읍니다 —
+**출발지 → 도착지**는 전국 어디든 됩니다. 아래 8개 **길**은 여기에 더해 고속도로 실측(평소 대비 정체 · 예측 · 백테스트)을 계속 모읍니다 —
 구간 체인 수집이 호출 예산을 쓰는 상주 작업이기 때문입니다. 두 지점이 길의 끝과 30km 안에서 겹치면 판단 카드에 실측이 근거로 붙습니다.
 
 | 길 | 고속도로 (하행 체인) | 철도 |
@@ -179,7 +179,10 @@ sequenceDiagram
 | `air_quality_sido` | 에어코리아 | 매시 15분 | 시도 7 × 24 = 168 (**한도 500**, 예산 450) |
 | `kakao_eta` | 카카오 길찾기 | 매시 20분 | 16 × 24 = 384 (교차검증용) |
 | `station_geocode` | 카카오 검색 | 매주 월 05:30 | 좌표 없는 새 역만 (첫 기동 276) |
+| `rail_geometry` | OpenStreetMap (Overpass) | 매월 1일 05:00 · 첫 기동 | 4 (구역별 1회, 실패 시 미러를 바꿔 최대 6회 · 예산 60) |
 | `baseline_daily` · `backtest_daily` · `maintenance` | — | 04:30 · 04:45 · 매월 25일 | 0 |
+
+선로 형상: © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, [ODbL](https://opendatacommons.org/licenses/odbl/). 지도 화면에 출처를 표시합니다.
 
 ---
 
@@ -191,7 +194,9 @@ sequenceDiagram
 - **예측** — M0 = 기준선, M1 = M0(목표) + (현재 − M0(현재 슬롯)) × e^(−h/90분), 지속 = 현재. 도로공사 공개 지연 때문에 선행시간 h = 목표 − **마지막 관측 슬롯**.
 - **정시성** — P-v1: 시발 출발·종착 도착을 계획과 정확 비교, 정시 = 도착 지연 ≤ 5분(설정). P-i1: 중간역은 시발 출발 지연 d0 와 종착 도착 지연 d1 사이를 운행 경과시간 비율로 선형 보간(⚠ 추정).
 - **판단 R-DEC-01** — 자동차 = 카카오 미래 운행 정보(출발 시각 기준 경로) / 기차 = 역까지 + 대기 + 계획 소요 + 30일 평균 도착 지연 + 역에서, '출발 + 역까지' 이후 첫 직통 열차(그날 없으면 다음 날 첫차). |차이| < 10분이면 '비슷함'. 한쪽이 없으면 결론 대신 근거와 함께 '비교할 수 없습니다'. 경고: 강수확률 ≥ 60% · 길 돌발 · 초미세먼지 나쁨 이상.
-- **기차 여정** — 어디서·어디로 반경 30km 안의 운행 역 최대 6곳씩. 역까지·역에서: 1km 미만 도보 추정 · 9.5km 이내 카카오 다중 길찾기(실제 운전 경로) · 그 밖 직선거리 추정. CSA 로 가장 이른 도착(승차 여유 5분 · 최소 환승 10분 · 다음 날 첫차 포함). 코레일 여객열차끼리만 환승 — 지하철·버스 경로는 공개 데이터가 없어 제외하고, 출발역·도착역의 지하철 노선과 다음 열차 시각(TAGO)만 안내.
+- **기차 여정** — 출발지·도착지 반경 30km 안의 운행 역 최대 6곳씩. 역까지·역에서: 1km 미만 도보 추정 · 9.5km 이내 카카오 다중 길찾기(실제 운전 경로) · 그 밖 직선거리 추정. CSA 로 가장 이른 도착(승차 여유 5분 · 최소 환승 10분 · 다음 날 첫차 포함). 코레일 여객열차끼리만 환승 — 지하철·버스 경로는 공개 데이터가 없어 제외하고, 출발역·도착역의 지하철 노선과 다음 열차 시각(TAGO)만 안내.
+- **선로 경로 (지도)** — OpenStreetMap 선로(`railway=rail`)를 전국 4구역으로 나눠 받아(Overpass, 미러 순환) 그래프로 만들고, 역을 반경 400m 안의 모든 선로 점에 붙인 뒤 최근 14일 **연속 정차 역 쌍**마다 최단 선로 경로를 구해 `ref.rail_link` 에 둡니다(매월, [ADR-015](docs/adr/015-rail-track-geometry-osm.md)). 여정 구간은 그 열차가 실제로 서는 역 순서대로 역 쌍 경로를 이어 그리고, 선로 경로가 없는 역 쌍만 점선(직선)으로 표시합니다. 실측: 역 쌍 1,056개 모두 경로 · 직선 대비 길이 중앙값 1.12배.
+- **열차 종류 T-v1 (추정)** — 코레일 API 에 열차 종류가 없어 열차 번호 체계로 추정합니다(1–699 KTX · 300/600번대 수서 발착 SRT · 700번대 KTX-이음 · 1000번대 ITX-새마을 · 1100번대 ITX-마음·새마을 · 1200–1999 무궁화호 · 2000번대 ITX-청춘 · 4000 이상 임시). 'OO발 OO행'은 운행계획의 시발·종착역. 화면에 '추정'을 명시합니다.
 - **다음 열차** — 코레일 API 가 향후 운행계획을 주지 않으므로(U-6) 목표일과 같은 요일의 가장 최근 운행일 시간표로 추정하고 기준일을 표시.
 
 ## 5. API (http://localhost:8300/api/v1 · 문서 `/docs`)
@@ -208,21 +213,21 @@ sequenceDiagram
 | 8 | `GET /rail/punctuality?corridorId&from&to&dir&groupBy=train\|dow\|hour&thresholdMin` | 정시율 집계 · 지연 분포 · 전국 비교 |
 | 9 | `GET /corridors/{id}/env?hours` | 지점별 시간별 예보 · 대기질 |
 | 10 | `GET /incidents?corridorId&since` | 돌발 문자 안내 (길 매칭 M-v1) |
-| 11 | `GET /ops/collect-status` | 작업별 상태 · 24h 완전성 · 예산 · 공개 지연 · 오류 |
+| 11 | `GET /ops/collect-status` | 작업별 상태 · 24h 완전성 · 예산 · 공개 지연 · 오류 · `failures`(오류 실행의 전체 내용: 작업 메모 · 실패한 외부 호출 · 스택 트레이스, 키 마스킹) |
 | 12 | `POST /admin/jobs/{job}/run` | 즉시 실행 202 · 실행 중 409 |
 | 13 | `POST /admin/backfill` | 기간 재수집 202 (예상 호출 수 먼저 계산) · 기간 400 · 예산 429 · 실행 중 409 |
-| 14 | `GET /places/search?q` | 어디서·어디로 검색 — 행정구역 · 기차역 · 장소 (전국) |
-| 15 | `GET /trip?fromLat&fromLon&fromName[&fromStation]&toLat&toLon&toName[&toStation]&departIn&accessMin` | 어디서 → 어디로 판단 카드 — car(경로 좌표) · observed · rail(여정 3개: 역까지 · 열차 구간 · 환승 · 역에서, 지하철 연결) · env · decision · `pending` |
-| 16 | `GET /stations?q&limit` | 운행 중인 기차역 검색 (최근 7일 정차 편수 순) |
+| 14 | `GET /places/search?q` | 출발지·도착지 검색 — 행정구역 · 기차역 · 장소 (전국) |
+| 15 | `GET /trip?fromLat&fromLon&fromName[&fromStation]&toLat&toLon&toName[&toStation]&departIn&accessMin` | 출발지 → 도착지 판단 카드 — car(경로 좌표) · observed · rail(여정 3개: 역까지 · 열차 구간(선로 경로 · 열차 정보) · 환승 · 역에서, 지하철 연결) · env · decision · `pending` |
+| 16 | `GET /stations?q&limit&sort=trains\|name` | 운행 중인 기차역 검색 — `trains`: 정확 일치·정차 편수 순, `name`: 가나다순(역 선택 목록) |
 | 17 | `GET /rail/od/punctuality?dep&arr&from&to&groupBy&thresholdMin` | 임의 역 쌍 정시율 |
-| 18 | `GET /rail/od/trains?dep&arr&date` | 임의 역 쌍 날짜별 열차 + 30일 정시성 |
+| 18 | `GET /rail/od/trains?dep&arr&date` | 임의 역 쌍 날짜별 열차 + 30일 정시성 + 열차 정보(`meta`: 추정 종류 · OO발 OO행) |
 | 19 | `GET /road/route?fromLat&fromLon&fromName&toLat&toLon&toName&departIn` | 도로 분석 — 추천 · 고속도로 회피 경로, 도로별 구성 · 느린 구간, 출발 시각별 소요 |
 
 오류 규약: `{code, message, traceId}` — `VALIDATION_ERROR` 400 · `UNAUTHORIZED` 401 · `CORRIDOR_NOT_FOUND` 404 · `JOB_RUNNING` 409 · `QUOTA_EXHAUSTED` 429. 시각은 ISO-8601(+09:00), 소요시간은 `Sec`/`Min` 접미사.
 
 ## 6. 데이터 모델
 
-`ref`(길 · 구간 체인 · 영업소 · 역 · 환경 지점) · `ts`(구간 통행시간 · 길 합산 · 교통량 — 월 파티션 + BRIN, 돌발 문자) ·
+`ref`(길 · 구간 체인 · 영업소 · 역 · 환경 지점 · 역 쌍 선로 경로 `rail_link`) · `ts`(구간 통행시간 · 길 합산 · 교통량 — 월 파티션 + BRIN, 돌발 문자) ·
 `rail`(운행계획 · 운행정보(월 파티션) · 열차 정시성 · 임의 역 쌍 함수 `od_trips`) · `env`(단기예보(월 파티션) · 대기질) ·
 `ana`(기준선 · 백테스트 · 카카오 ETA) · `ops`(작업 · 실행 이력 · 예산 · 결측 · 호출 로그 · 백필). DDL: [db/migrations](db/migrations).
 
@@ -230,11 +235,11 @@ sequenceDiagram
 
 | 층 | 대상 | 수 |
 |---|---|---|
-| 단위 (pytest) | 슬롯 정렬 · 격자 변환(기상청 격자표 4곳) · 품질 규칙 · 튀는 값 제거 · 길 합산 · 정시성(자정 넘김 · 조기 도착 · 확인 불가 · 보간) · 예측 골든 · 기준선 · 백테스트(결정성 · 누수 없음) · 돌발 매칭 · 역 좌표 매칭 | 48 |
+| 단위 (pytest) | 슬롯 정렬 · 격자 변환(기상청 격자표 4곳) · 품질 규칙 · 튀는 값 제거 · 길 합산 · 정시성(자정 넘김 · 조기 도착 · 확인 불가 · 보간) · 예측 골든 · 기준선 · 백테스트(결정성 · 누수 없음) · 돌발 매칭 · 역 좌표 매칭 · 선로 그래프(본선 추종 · 지선 · 다른 역 통과 금지 · 단순화) · 공급자별 예산 설정 | 52 |
 | 계약 (pytest) | 공급자 5종 실제 응답 fixture 파서 | 8 |
-| 통합 (pytest + PostgreSQL · Redis) | 예산 동시성 · 멱등 수집 · 꼬리 커서 · 결측→백필 · seed 멱등 · 철도 일 계산 · SQL `od_trips` ↔ Python 보간 계약 · 호출 로그 키 마스킹 | 12 |
-| 단위 (JUnit) | 판단 규칙 · 예측 골든(Python 과 같은 파일) · 기상청 격자 · 행정구역→에어코리아 시도 · **CSA 환승 경로** · 도로 종류 분류 · 경로 요약 | 38 |
-| API 통합 (JUnit + Testcontainers) | 판단 카드 · 캐시 · 오류 규약 · 관리 API 401/202/409/400/429 · 수집 상태 · 헬스 · 임의 역 쌍 · 어디서→어디로 | 8 |
+| 통합 (pytest + PostgreSQL · Redis) | 예산 동시성 · 멱등 수집 · 꼬리 커서 · 결측→백필 · seed 멱등 · 철도 일 계산 · SQL `od_trips` ↔ Python 보간 계약 · 호출 로그 키 마스킹 · 시간 초과가 오류 상세에 남는지 | 13 |
+| 단위 (JUnit) | 판단 규칙 · 예측 골든(Python 과 같은 파일) · 기상청 격자 · 행정구역→에어코리아 시도 · **CSA 환승 경로** · 도로 종류 분류 · 경로 요약 · 열차 종류 추정 | 40 |
+| API 통합 (JUnit + Testcontainers) | 판단 카드 · 캐시 · 오류 규약 · 관리 API 401/202/409/400/429 · 수집 상태(오류 상세) · 헬스 · 임의 역 쌍(열차 정보 · 가나다순) · 출발지→도착지(선로 경로) | 8 |
 | E2E (Playwright) | 판단 · ⇄ 교환 · 전국 검색 선택 · 도로 분석(전국) · 지도 잠금 · 선택 목록 잘림 · 고속도로 실측 · 철도 역 검색 · 수집 상태 · 모바일 메뉴 | 10 |
 
 `make test` (collector 는 compose 컨테이너 안에서, api 는 Testcontainers) · `make e2e` · CI: [.github/workflows/ci.yml](.github/workflows/ci.yml)
@@ -249,7 +254,7 @@ sequenceDiagram
 | 도로 구간 | 106개 · 1종 5분 슬롯 · 공개 지연 약 3시간 |
 | 추석 귀성길 (서울→대전 하행) | 11:10 슬롯 6시간 24분 (평소 약 1시간 50분) — 상행은 정상 |
 | 교차검증 | 서울→천안 상행 합 52~55분 ↔ 카카오 미래 운행 정보 55분 |
-| 판단 카드 응답 | 길: 적중 7~9ms · 미적중 0.52~0.82초 / 어디서→어디로: 미적중 0.69~0.77초 · 재요청 16~130ms |
+| 판단 카드 응답 | 길: 적중 7~9ms · 미적중 0.52~0.82초 / 출발지→도착지: 미적중 0.69~0.77초 · 재요청 16~130ms |
 | 기차역 좌표 | 276/276 (카카오 키워드 + 정규화 규칙) |
 | DB 크기 | 172MB |
 
@@ -261,6 +266,8 @@ sequenceDiagram
 - 도로 종류는 도로 이름으로 분류하므로, 도로명으로 표기된 국도 구간은 일반도로로 집계됩니다.
 - 고속도로 실측(평소 대비 정체)은 수집 중인 8개 길에서만 보입니다. 길 판단 카드(`/corridors/{id}/now`)의 자동차 시간은 영업소(TG)→영업소 기준입니다.
 - 기준선·백테스트는 데이터가 쌓여야 의미가 있습니다. 첫 주에는 표본 수가 작게 표시됩니다.
+- 열차 종류(KTX · 무궁화호 …)는 API 에 없어 열차 번호 체계로 **추정**합니다. 코레일이 번호 체계를 바꾸면 틀릴 수 있습니다.
+- 선로 경로는 OpenStreetMap 기여자 데이터(ODbL)입니다. 새 노선이 OSM 에 없거나 역을 선로에 붙이지 못하면 그 구간은 직선(점선)으로 표시됩니다.
 - 도로공사 호출 한도는 공식 수치가 없어 보수적 예산(2만/일)으로 운영합니다 (U-3).
 
 ## 10. 디렉터리
@@ -271,7 +278,7 @@ roadrail/
 │                          #   pipeline(seed·road·rail·env·analysis) · analytics(순수 함수) · scheduler(quota·jobs·main) · cli
 ├─ collector/tests/       # unit · contract · integration
 ├─ api/src/main/java/com/roadrail/  # common · config · domain(ForecastModels·DecisionRule·RailRouter(CSA)·RoadClass·KmaGrid) · external(카카오·기상청·에어코리아·TAGO·QuotaGuard) · service · web(+dto)
-├─ web/                   # pages(index=어디서→어디로 · road · rail · forecast · ops) · components · lib · e2e
+├─ web/                   # pages(index=출발지→도착지 · road · rail · forecast · ops) · components · lib · e2e
 ├─ db/migrations/         # V1 스키마·파티션 함수 · V2 ref · V3 ts · V4 rail/env/ana · V5 ops · V6 역 쌍(od_trips) · V7 하루 시간표(day_stops)
 ├─ seed/corridors.yaml    # 길 정의 (tools/build_seed.py 생성)
 ├─ fixtures/              # 공급자 응답 fixture · 예측 골든 케이스(언어 공유)

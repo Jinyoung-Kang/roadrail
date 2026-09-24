@@ -76,6 +76,7 @@ roadrail:
     KAKAO: ${QUOTA_KAKAO:5000}
     KAKAO_LOCAL: ${QUOTA_KAKAO_LOCAL:50000}
     TAGO: ${QUOTA_TAGO:9000}
+    OSM: ${QUOTA_OSM:60}
 
 logging:
   level:

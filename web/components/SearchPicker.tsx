@@ -3,7 +3,8 @@ import { getJson } from "@/lib/api";
 
 /**
  * 검색형 선택기 — 입력하면 250ms 뒤 검색, ↑↓ Enter Esc 로 고른다.
- * 비어 있을 때는 `suggestions`(자주 오가는 길의 도시 등)를 보여 준다.
+ * 비어 있을 때는 `suggestions`(예: 역 전체 목록)를 보여 준다 — 없으면 아무것도 띄우지 않는다.
+ * suggestions 는 상태로 복사하지 않고 그대로 그린다: 목록을 받기 전에 칸을 눌러도 도착하는 즉시 보인다.
  */
 export default function SearchPicker<T>({ label, placeholder, value, onPick, search, suggestions = [], render, keyOf, className = "" }: {
   label: string; placeholder: string; value: string; onPick: (item: T) => void;
@@ -12,7 +13,7 @@ export default function SearchPicker<T>({ label, placeholder, value, onPick, sea
 }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<T[]>([]);
+  const [results, setResults] = useState<T[]>([]);
   const [active, setActive] = useState(0);
   const [loading, setLoading] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -21,14 +22,15 @@ export default function SearchPicker<T>({ label, placeholder, value, onPick, sea
   useEffect(() => {
     if (!open) return;
     const term = q.trim();
-    if (!term) { setItems(suggestions); setActive(0); return; }
+    setActive(0);
+    if (!term) { setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
     const t = setTimeout(async () => {
       try {
         const r = await getJson<any>(search(term));
-        if (!cancelled) { setItems(Array.isArray(r) ? r : r.items ?? []); setActive(0); }
-      } catch { if (!cancelled) setItems([]); }
+        if (!cancelled) { setResults(Array.isArray(r) ? r : r.items ?? []); setActive(0); }
+      } catch { if (!cancelled) setResults([]); }
       finally { if (!cancelled) setLoading(false); }
     }, 250);
     return () => { cancelled = true; clearTimeout(t); };
@@ -41,6 +43,7 @@ export default function SearchPicker<T>({ label, placeholder, value, onPick, sea
     return () => document.removeEventListener("mousedown", close);
   }, []);
 
+  const items = q.trim() ? results : suggestions;
   const pick = (it: T) => { onPick(it); setQ(""); setOpen(false); };
 
   return (

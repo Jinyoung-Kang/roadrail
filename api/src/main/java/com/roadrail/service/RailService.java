@@ -3,6 +3,7 @@ package com.roadrail.service;
 import com.roadrail.common.ApiException;
 import com.roadrail.common.Times;
 import com.roadrail.config.AppProperties;
+import com.roadrail.domain.TrainKind;
 import com.roadrail.web.dto.RailDtos.*;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -101,6 +102,30 @@ public class RailService {
 
     public record First(String trnNo, OffsetDateTime dep, OffsetDateTime arr) {}
 
+    /**
+     * 열차 정보 — 운행계획의 시발·종착역으로 'OO발 OO행', 열차 번호 체계로 종류(T-v1, 추정).
+     * 기간 안의 가장 최근 운행일 기준.
+     */
+    public Map<String, TrainMeta> trainMeta(Collection<String> trains, LocalDate from, LocalDate to) {
+        Map<String, TrainMeta> m = new HashMap<>();
+        if (trains.isEmpty()) return m;
+        jdbc.sql("""
+                SELECT DISTINCT ON (p.trn_no) p.trn_no, sd.stn_nm AS dep_nm, sa.stn_nm AS arr_nm,
+                       ops.km(sd.lat, sd.lon, sa.lat, sa.lon)
+                         / nullif(extract(epoch FROM p.plan_arr_at - p.plan_dep_at) / 3600, 0) AS kmh
+                FROM rail.run_plan p JOIN ref.station sd ON sd.stn_cd = p.dep_stn_cd JOIN ref.station sa ON sa.stn_cd = p.arr_stn_cd
+                WHERE p.run_ymd BETWEEN :f AND :t AND p.trn_no IN (:trains)
+                ORDER BY p.trn_no, p.run_ymd DESC""")
+                .param("f", from).param("t", to).param("trains", new ArrayList<>(trains))
+                .query(rs -> {
+                    String o = rs.getString("dep_nm"), d = rs.getString("arr_nm");
+                    double kmh = rs.getDouble("kmh");
+                    String kind = TrainKind.of(rs.getString("trn_no"), o, d, rs.wasNull() ? null : kmh);
+                    m.put(rs.getString("trn_no"), new TrainMeta(kind, o, d, o + "발 " + d + "행"));
+                });
+        return m;
+    }
+
     /** ready 이후 A→B 첫 열차 (통계 없이 — 역 조합 비교용). 그날 없으면 다음 날 첫차. 시각은 목표일 기준으로 옮김. */
     public Optional<First> firstTrain(String dep, String arr, OffsetDateTime ready) {
         OffsetDateTime r = Times.kst(ready);
@@ -163,6 +188,7 @@ public class RailService {
                         rs.getObject(5, OffsetDateTime.class), rs.getObject(6), rs.getObject(7), rs.getString(8),
                         rs.getString(9), rs.getDouble(10)}).list();
         Map<String, TrainStats> stats = stats30d(dep, arr, d, rows.stream().map(r -> (String) r[0]).toList());
+        Map<String, TrainMeta> meta = trainMeta(rows.stream().map(r -> (String) r[0]).toList(), d, d);
         int thr = props.onTimeThresholdMin();
         List<TrainRun> runs = new ArrayList<>();
         for (Object[] r : rows) {
@@ -170,7 +196,7 @@ public class RailService {
             runs.add(new TrainRun((String) r[0], Times.kst((OffsetDateTime) r[1]), Times.kst((OffsetDateTime) r[2]),
                     Times.kst((OffsetDateTime) r[3]), Times.kst((OffsetDateTime) r[4]), (Double) r[5], arrDelay,
                     (String) r[7], (String) r[8], (Double) r[9], arrDelay == null ? null : arrDelay <= thr,
-                    stats.get((String) r[0])));
+                    stats.get((String) r[0]), meta.get((String) r[0])));
         }
         return new Trains(dep, arr, depName, arrName, d.toString(), runs, dates,
                 "계획 시각: 시발·종착역은 운행계획과 정확히 비교(EXACT), 중간역은 시발 출발 지연과 종착 도착 지연을 "
@@ -200,7 +226,12 @@ public class RailService {
                 .param("thr", thr).param("a", dep).param("b", arr).param("f", from).param("t", to)
                 .query((rs, i) -> new PunctualityItem(rs.getString("k"), rs.getInt("samples"), rs.getInt("verified"),
                         round(rs, "rate", 3), round(rs, "avg_delay", 1), round(rs, "p90", 1), round(rs, "ride", 1),
-                        round(rs, "est", 3))).list();
+                        round(rs, "est", 3), null)).list();
+        if ("train".equals(groupBy) && !items.isEmpty()) {
+            Map<String, TrainMeta> meta = trainMeta(items.stream().map(PunctualityItem::key).toList(), from, to);
+            items = items.stream().map(it -> new PunctualityItem(it.key(), it.samples(), it.verified(), it.onTimeRate(),
+                    it.avgArrDelayMin(), it.p90ArrDelayMin(), it.avgRideMin(), it.estimatedShare(), meta.get(it.key()))).toList();
+        }
         List<Bucket> hist = new ArrayList<>();
         Summary summary = jdbc.sql("""
                 SELECT count(*) AS samples, count(arr_delay_min) AS verified,
@@ -238,6 +269,11 @@ public class RailService {
 
     /** 역 검색 — 이름 포함 검색, 최근 7일 운행 편수가 많은 역부터 */
     public List<Station> stations(String q, int limit) {
+        return stations(q, limit, false);
+    }
+
+    /** byName = true 면 가나다순 (역 선택 목록), 아니면 정확·앞부분 일치 → 운행 편수 순 (검색 추천) */
+    public List<Station> stations(String q, int limit, boolean byName) {
         LocalDate latest = latestDate().orElse(LocalDate.now(Times.KST));
         return jdbc.sql("""
                 SELECT s.stn_cd, s.stn_nm, s.lat, s.lon, coalesce(c.n, 0) AS n
@@ -245,7 +281,8 @@ public class RailService {
                 LEFT JOIN (SELECT stn_cd, count(*) AS n FROM rail.run_info
                            WHERE run_ymd > :l::date - 7 AND run_ymd <= :l GROUP BY 1) c USING (stn_cd)
                 WHERE (:q = '' OR s.stn_nm LIKE '%' || :q || '%') AND coalesce(c.n, 0) > 0
-                ORDER BY (s.stn_nm = :q) DESC, (s.stn_nm LIKE :q || '%') DESC, n DESC, s.stn_nm LIMIT :lim""")
+                ORDER BY {order} LIMIT :lim""".replace("{order}", byName ? "s.stn_nm COLLATE \"C\""   // UTF-8 바이트순 = 가나다순
+                        : "(s.stn_nm = :q) DESC, (s.stn_nm LIKE :q || '%') DESC, n DESC, s.stn_nm"))
                 .param("l", latest).param("q", q == null ? "" : q.trim()).param("lim", limit)
                 .query((rs, i) -> new Station(rs.getString(1), rs.getString(2), (Double) rs.getObject(3),
                         (Double) rs.getObject(4), rs.getInt(5))).list();

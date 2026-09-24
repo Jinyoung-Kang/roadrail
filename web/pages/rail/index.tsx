@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import Layout from "@/components/Layout";
 import SearchPicker from "@/components/SearchPicker";
 import { C, SimpleBars } from "@/components/Charts";
-import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Select, Spec, SpecStrip } from "@/components/ui";
+import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Select, Spec, SpecStrip, TrainName } from "@/components/ui";
 import { qs, useApi } from "@/lib/api";
 import { DASH, DOW, durMin, hm, num, pct, ymd } from "@/lib/format";
 import type { Punctuality, Station, Trains } from "@/lib/types";
@@ -24,7 +24,8 @@ export default function RailPage() {
   const go = (p: { dep?: string; arr?: string }) =>
     router.push({ pathname: "/rail", query: { dep, arr, ...p } }, undefined, { scroll: false });
 
-  const popular = useApi<Station[]>("/api/v1/stations?limit=12");
+  // 비어 있을 때는 운행 중인 모든 역을 가나다순으로 (목록 안에서 스크롤)
+  const allStations = useApi<Station[]>("/api/v1/stations?limit=400&sort=name");
   const to = ymd(new Date(Date.now() - 86400_000));
   const from = ymd(new Date(Date.now() - days * 86400_000));
   const base = router.isReady && dep !== arr ? { dep, arr, from, to, thresholdMin: thr } : null;
@@ -39,8 +40,8 @@ export default function RailPage() {
   const arrName = byTrain.data?.arrStation ?? trains.data?.arrStation;
   const stationPicker = (label: string, value: string | undefined, key: "dep" | "arr") => (
     <SearchPicker<Station> label={label} placeholder="역 이름 검색" value={value ? `${value}역` : ""} className="w-full sm:w-[260px]"
-      search={(t) => `/api/v1/stations?limit=20&q=${encodeURIComponent(t.replace(/역$/, ""))}`}
-      suggestions={popular.data ?? []} keyOf={(st) => st.code}
+      search={(t) => `/api/v1/stations?limit=60&sort=name&q=${encodeURIComponent(t.replace(/역$/, ""))}`}
+      suggestions={allStations.data ?? []} keyOf={(st) => st.code}
       render={(st) => ({ title: `${st.name}역`, sub: `최근 7일 ${st.trains7d.toLocaleString()}회 정차` })}
       onPick={(st) => go({ [key]: st.code })} />
   );
@@ -94,7 +95,7 @@ export default function RailPage() {
         {byTrain.data && <Note>{byTrain.data.note} {Object.entries(byTrain.data.rules).map(([k, v]) => `${k}: ${v}`).join(" · ")}</Note>}
       </Section>
 
-      <Section eyebrow="열차별" title="정시율 랭킹" gray wide desc="표본이 많은 열차부터. ⚠ 는 중간역 지연을 보간 추정한 비율이 있는 열차입니다.">
+      <Section eyebrow="열차별" title="정시율 랭킹" gray wide desc="표본이 많은 열차부터. ⚠ 는 중간역 지연을 보간 추정한 비율이 있는 열차입니다. 열차 종류는 코레일 열차 번호 체계로 추정한 값입니다(API 에 종류 정보가 없음).">
         {byTrain.data && byTrain.data.items.length === 0 && <Empty>이 기간 운행 기록이 없습니다.</Empty>}
         {byTrain.data && byTrain.data.items.length > 0 && (
           <div className="tile overflow-x-auto">
@@ -106,7 +107,7 @@ export default function RailPage() {
               <tbody>
                 {byTrain.data.items.slice(0, 40).map((i) => (
                   <tr key={i.key} className="hover:bg-mist">
-                    <td className="td font-medium">{i.key.replace(/^0+/, "")}</td>
+                    <td className="td"><TrainName trnNo={i.key} meta={i.meta} /></td>
                     <td className="td text-right">{i.verified}/{i.samples}</td>
                     <td className="td text-right">
                       <span className="inline-flex items-center gap-2">
@@ -142,7 +143,7 @@ export default function RailPage() {
               <tbody>
                 {(all ? trains.data.trains : trains.data.trains.slice(0, 40)).map((t) => (
                   <tr key={t.trnNo} className="hover:bg-mist">
-                    <td className="td font-medium">{t.trnNo.replace(/^0+/, "")}</td>
+                    <td className="td"><TrainName trnNo={t.trnNo} meta={t.meta} /></td>
                     <td className="td">{hm(t.planDepAt)}{t.depBasis === "EST" && " ⚠"}</td><td className="td">{hm(t.actDepAt)}</td>
                     <td className="td">{hm(t.planArrAt)}{t.arrBasis === "EST" && " ⚠"}</td><td className="td">{hm(t.actArrAt)}</td>
                     <td className="td text-right">{num(t.depDelayMin)}분</td><td className="td text-right">{num(t.arrDelayMin)}분</td>

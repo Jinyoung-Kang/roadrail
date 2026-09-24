@@ -3,9 +3,63 @@ import Layout from "@/components/Layout";
 import { ErrorBox, Loading, Note, PageHero, Section, Spec, SpecStrip, StatusBadge } from "@/components/ui";
 import { getJson, HttpError, useApi } from "@/lib/api";
 import { DASH, mdhm, num, pct } from "@/lib/format";
-import type { OpsStatus } from "@/lib/types";
+import type { OpsFailure, OpsStatus } from "@/lib/types";
 
-const PROVIDER: Record<string, string> = { EX: "한국도로공사", KORAIL: "한국철도공사", KMA: "기상청", AIRKOREA: "에어코리아", KAKAO: "카카오 길찾기", KAKAO_LOCAL: "카카오 검색", "-": "내부 계산" };
+const PROVIDER: Record<string, string> = { EX: "한국도로공사", KORAIL: "한국철도공사", KMA: "기상청", AIRKOREA: "에어코리아", KAKAO: "카카오 길찾기",
+  KAKAO_LOCAL: "카카오 검색", TAGO: "TAGO 지하철", OSM: "OpenStreetMap", "-": "내부 계산" };
+
+/** 클립보드 복사 — http 로 연 경우(보안 컨텍스트 아님)에는 textarea 선택 복사로 대신 */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; }
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch { return false; }
+}
+
+function CopyButton({ text, label = "복사" }: { text: string; label?: string }) {
+  const [state, setState] = useState<"idle" | "ok" | "fail">("idle");
+  useEffect(() => { if (state === "idle") return; const t = setTimeout(() => setState("idle"), 1800); return () => clearTimeout(t); }, [state]);
+  return (
+    <>
+      <button type="button" onClick={async () => setState((await copyText(text)) ? "ok" : "fail")}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded bg-white px-3 text-xs font-medium text-ink ring-1 ring-black/10 hover:bg-cloud">
+        <span aria-hidden>{state === "ok" ? "✓" : "⧉"}</span>
+        {state === "ok" ? "복사됨" : state === "fail" ? "복사 실패" : label}
+      </button>
+      <span className="sr-only" role="status">{state === "ok" ? "클립보드에 복사했습니다" : state === "fail" ? "복사하지 못했습니다" : ""}</span>
+    </>
+  );
+}
+
+const failureText = (f: OpsFailure) =>
+  `#${f.runId} ${f.job} · ${f.status} · ${f.startedAt} ~ ${f.finishedAt ?? "-"}\n${f.detail ?? f.message ?? ""}`;
+
+function FailureLog({ f, open }: { f: OpsFailure; open: boolean }) {
+  return (
+    <details id={`run-${f.runId}`} open={open} className="tile scroll-mt-24 overflow-hidden">
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4 hover:bg-mist">
+        <StatusBadge status={f.status} />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium">{f.job} <span className="font-normal text-muted">· 실행 #{f.runId} · {f.trigger}</span></span>
+          <span className="block truncate text-xs text-muted">{mdhm(f.startedAt)} · {f.message ?? "메시지 없음"}</span>
+        </span>
+        <span className="text-xs text-muted" aria-hidden>펼치기 ▾</span>
+      </summary>
+      <div className="border-t border-line bg-[#fafafa]">
+        <div className="flex items-center justify-between gap-3 px-5 py-2">
+          <span className="text-xs text-muted">전체 내용 · 작업 메모 · 실패한 외부 호출 · 스택 트레이스 (API 키는 가려져 있습니다)</span>
+          <CopyButton text={failureText(f)} />
+        </div>
+        <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-all px-5 pb-5 font-mono text-[12px] leading-relaxed text-ink2">{f.detail ?? f.message ?? "기록된 내용이 없습니다"}</pre>
+      </div>
+    </details>
+  );
+}
 
 export default function Ops() {
   const s = useApi<OpsStatus>("/api/v1/ops/collect-status", 30_000);
@@ -29,6 +83,9 @@ export default function Ops() {
   const road = d?.jobs.find((j) => j.job === "road_travel_time");
   const lag = d?.publicationLag.find((l) => l.series === "road_travel_time");
   const warnJobs = d?.jobs.filter((j) => j.warn).length ?? 0;
+  const failures = d?.failures ?? [];
+  const failed: Record<string, number> = {};
+  for (const f of failures) failed[f.job] ??= f.runId;  // 작업별 가장 최근 오류 실행
 
   return (
     <Layout title="수집 상태">
@@ -67,7 +124,11 @@ export default function Ops() {
                         {j.completeness24h < 0.95 && <span className="text-serious" title="95% 미만">▲</span>}{pct(j.completeness24h, 1)}
                       </span>)}</td>
                     <td className="td text-right">{j.gaps24h ?? DASH}</td>
-                    <td className="td max-w-[280px] truncate whitespace-nowrap text-xs text-muted" title={j.lastMessage ?? ""}>{j.lastMessage ?? ""}</td>
+                    <td className="td max-w-[280px] text-xs text-muted">
+                      <div className="truncate whitespace-nowrap" title={j.lastMessage ?? ""}>{j.lastMessage ?? ""}</div>
+                      {failed[j.job] && <a href={`#run-${failed[j.job]}`} className="font-medium text-accent hover:underline">
+                        {j.lastStatus === "OK" ? "지난 24시간 오류 보기 ↓" : "오류 상세 보기 ↓"}</a>}
+                    </td>
                     <td className="td"><button className="rounded px-2 py-1 text-xs font-medium text-accent hover:bg-accent/10 disabled:text-faint"
                                               disabled={!token || j.running} onClick={() => run(j.job)}>실행</button></td>
                   </tr>
@@ -87,9 +148,23 @@ export default function Ops() {
         <Note>토큰은 이 브라우저 탭의 sessionStorage 에만 둡니다. 실행 요청은 Redis Stream(rr:commands) 을 거쳐 수집기가 처리하며, 실행 중이면 409 JOB_RUNNING 입니다.</Note>
       </Section>
 
-      <Section eyebrow="예산" title="공급자별 오늘 호출 예산" gray wide desc="수집기와 API(어디서→어디로 조회 시점 호출)가 같은 Redis 예산을 원자적으로 예약합니다(Lua). 예산이 모자라면 호출하지 않습니다.">
+      {d && (
+        <Section id="failures" eyebrow="오류 상세" title={failures.length ? `최근 24시간 오류 ${failures.length}건` : "최근 24시간 오류 없음"} wide
+                 desc="실패 · 부분 성공 · 예산 부족으로 끝난 실행의 전체 내용입니다. 문의하거나 원인을 찾을 때 복사해서 붙여 넣으세요.">
+          {failures.length === 0 ? <p className="text-center text-sm text-muted"><span className="text-good">●</span> 모든 작업이 정상 종료했습니다.</p> : (
+            <>
+              <div className="mb-4 flex justify-end">
+                <CopyButton text={failures.map(failureText).join("\n\n" + "─".repeat(40) + "\n\n")} label={`전체 ${failures.length}건 복사`} />
+              </div>
+              <div className="space-y-3">{failures.map((f, i) => <FailureLog key={f.runId} f={f} open={i === 0} />)}</div>
+            </>
+          )}
+        </Section>
+      )}
+
+      <Section eyebrow="예산" title="공급자별 오늘 호출 예산" gray wide desc="수집기와 API(출발지→도착지 조회 시점 호출)가 같은 Redis 예산을 원자적으로 예약합니다(Lua). 예산이 모자라면 호출하지 않습니다.">
         {d && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {d.quota.map((q) => {
               const used = q.limit ? q.used / q.limit : 0, res = q.limit ? q.reserved / q.limit : 0;
               return (

@@ -131,3 +131,21 @@ export function Empty({ children }: { children: React.ReactNode }) {
 export function Note({ children }: { children: React.ReactNode }) {
   return <p className="mt-4 text-xs leading-relaxed text-muted">{children}</p>;
 }
+
+/** 열차 번호 + 추정 종류 + 'OO발 OO행'. compact 면 한 줄 */
+export function TrainName({ trnNo, meta, compact = false }: { trnNo: string; meta?: import("@/lib/types").TrainMeta | null; compact?: boolean }) {
+  const no = trnNo.replace(/^0+/, "");
+  const kind = meta?.kind;
+  const hs = kind ? /^(KTX|SRT)/.test(kind) : false;
+  const name = kind ? `${kind} ${no}` : `${no}열차`;
+  if (compact) return <span>{name}{meta && <span className="text-muted"> · {meta.label}</span>}</span>;
+  return (
+    <span className="block">
+      <span className="flex items-center gap-2 whitespace-nowrap">
+        {kind && <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${hs ? "bg-rail/10 text-[#b3471b]" : "bg-cloud text-ink2"}`}>{kind}</span>}
+        <span className="font-medium tabular">{no}</span>
+      </span>
+      {meta && <span className="mt-0.5 block whitespace-nowrap text-xs text-muted">{meta.label}</span>}
+    </span>
+  );
+}

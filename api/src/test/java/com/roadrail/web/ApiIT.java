@@ -27,7 +27,7 @@ class ApiIT extends IntegrationTest {
     @BeforeEach
     void seed() {
         jdbc.execute("TRUNCATE ref.corridor, ref.toll_unit, ref.station CASCADE");
-        jdbc.execute("TRUNCATE ts.road_corridor_tt, ana.road_baseline, rail.run_plan, rail.run_info, rail.train_punctuality, ops.backfill");
+        jdbc.execute("TRUNCATE ts.road_corridor_tt, ana.road_baseline, rail.run_plan, rail.run_info, rail.train_punctuality, ops.backfill, ref.rail_link, ops.job_run");
         jdbc.execute("""
                 INSERT INTO ref.toll_unit (unit_code, unit_name, route_no, route_name, lat, lon) VALUES
                   ('101', '서울', '001', '경부선', 37.365, 127.102), ('115', '대전', '001', '경부선', 36.361, 127.448);
@@ -38,6 +38,11 @@ class ApiIT extends IntegrationTest {
                 INSERT INTO ref.corridor_rail VALUES ('SEL-DJN', 'DN', 'S1', 'S2'), ('SEL-DJN', 'UP', 'S2', 'S1');
                 INSERT INTO ref.corridor_env_point VALUES ('SEL-DJN', 'origin', '서울', 37.55, 126.97, 60, 126, '서울'),
                                                          ('SEL-DJN', 'dest', '대전', 36.33, 127.43, 68, 100, '대전');
+                INSERT INTO ref.rail_link (dep_stn_cd, arr_stn_cd, path, length_km, straight_km)
+                  VALUES ('S1', 'S2', '[[37.55, 126.97], [36.9, 127.2], [36.33, 127.43]]', 150.0, 140.0);
+                INSERT INTO ops.job_run (job_name, trigger, started_at, finished_at, status, message, detail)
+                  VALUES ('road_travel_time', 'SCHEDULE', now() - interval '1 hour', now() - interval '59 minutes', 'FAILED',
+                          'ProviderError: HTTP 500', E'작업: road_travel_time\n[스택 트레이스]\nTraceback …');
                 """);
         // 최근 도로 관측 (1시간 전 슬롯) + 전체 요일 기준선
         OffsetDateTime slot = OffsetDateTime.now(KST).withSecond(0).withNano(0).minusHours(1);
@@ -135,6 +140,8 @@ class ApiIT extends IntegrationTest {
         mvc.perform(get("/api/v1/ops/collect-status")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.jobs[?(@.job == 'road_travel_time')].cron").value(hasItem("*/10 * * * *")))
                 .andExpect(jsonPath("$.quota[?(@.provider == 'AIRKOREA')].limit").value(hasItem(450)))
+                .andExpect(jsonPath("$.failures[0].job").value("road_travel_time"))
+                .andExpect(jsonPath("$.failures[0].detail").value(org.hamcrest.Matchers.containsString("[스택 트레이스]")))
                 .andExpect(jsonPath("$.collectorAlive").value(false));
         mvc.perform(get("/api/v1/health")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.components.db").value("UP"))
@@ -148,7 +155,9 @@ class ApiIT extends IntegrationTest {
         mvc.perform(get("/api/v1/rail/od/trains").param("dep", "S1").param("arr", "S2"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.date").value(ref.toString()))
                 .andExpect(jsonPath("$.trains[0].arrBasis").value("EXACT"))
-                .andExpect(jsonPath("$.trains[0].arrDelayMin").value(4.0));
+                .andExpect(jsonPath("$.trains[0].arrDelayMin").value(4.0))
+                .andExpect(jsonPath("$.trains[0].meta.kind").value("KTX"))
+                .andExpect(jsonPath("$.trains[0].meta.label").value("서울발 대전행"));
         mvc.perform(get("/api/v1/rail/od/punctuality").param("dep", "S1").param("arr", "S2")
                         .param("from", ref.minusDays(1).toString()).param("to", ref.toString()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.summary.onTimeRate").value(1.0))
@@ -156,6 +165,10 @@ class ApiIT extends IntegrationTest {
         mvc.perform(get("/api/v1/rail/od/trains").param("dep", "S1").param("arr", "S1")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/v1/stations").param("q", "대")).andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].name").value("대전"));
+        // 역 선택 목록: 가나다순
+        mvc.perform(get("/api/v1/stations").param("sort", "name").param("limit", "400")).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("대전")).andExpect(jsonPath("$[1].name").value("서울"));
+        mvc.perform(get("/api/v1/stations").param("sort", "bogus")).andExpect(status().isBadRequest());
     }
 
     @Test
@@ -170,6 +183,9 @@ class ApiIT extends IntegrationTest {
                 .andExpect(jsonPath("$.rail.journeys[0].legs[0].toName").value("대전"))
                 .andExpect(jsonPath("$.rail.journeys[0].access.mode").value("WALK"))
                 .andExpect(jsonPath("$.rail.journeys[0].transfers").value(0))
+                .andExpect(jsonPath("$.rail.journeys[0].legs[0].pathOnTrack").value(true))
+                .andExpect(jsonPath("$.rail.journeys[0].legs[0].path", hasSize(3)))
+                .andExpect(jsonPath("$.rail.journeys[0].legs[0].meta.label").value("서울발 대전행"))
                 .andExpect(jsonPath("$.decision.reasons", not(empty())))
                 .andExpect(jsonPath("$.env.origin.name").value("서울역"));
         mvc.perform(get("/api/v1/trip").param("fromLat", "10").param("fromLon", "10").param("fromName", "x")

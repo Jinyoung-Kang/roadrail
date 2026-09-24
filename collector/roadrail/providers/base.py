@@ -14,15 +14,15 @@ from ..scheduler.quota import Allowance, QuotaBudget
 
 logger = logging.getLogger(__name__)
 
-CONCURRENCY = {"EX": 4, "KORAIL": 2, "KMA": 4, "AIRKOREA": 2, "KAKAO": 4, "KAKAO_LOCAL": 4}
-TIMEOUT = {"EX": 15.0, "KORAIL": 60.0, "KMA": 10.0, "AIRKOREA": 10.0, "KAKAO": 10.0, "KAKAO_LOCAL": 10.0}
+CONCURRENCY = {"EX": 4, "KORAIL": 2, "KMA": 4, "AIRKOREA": 2, "KAKAO": 4, "KAKAO_LOCAL": 4, "OSM": 1}
+TIMEOUT = {"EX": 15.0, "KORAIL": 60.0, "KMA": 10.0, "AIRKOREA": 10.0, "KAKAO": 10.0, "KAKAO_LOCAL": 10.0, "OSM": 240.0}
 _semaphores: dict[str, asyncio.Semaphore] = {}
 
 
 class ProviderError(Exception):
     def __init__(self, provider: str, endpoint: str, message: str, status: int | None = None):
         super().__init__(f"{provider}/{endpoint}: {message}")
-        self.provider, self.endpoint, self.status = provider, endpoint, status
+        self.provider, self.endpoint, self.status, self.detail = provider, endpoint, status, message
 
 
 def _sem(provider: str) -> asyncio.Semaphore:
@@ -108,7 +108,8 @@ class JobContext:
                     return body
                 except (httpx.TransportError, ProviderError) as e:
                     last_err = e
-                    err = mask_text(str(e))[:500]
+                    # httpx 시간 초과 등은 str(e) 가 빈 문자열 → 예외 이름을 남긴다 (오류 상세에서 원인이 보이게)
+                    err = mask_text(e.detail if isinstance(e, ProviderError) else f"{type(e).__name__}: {e}".rstrip(": "))[:500]
                     retryable = isinstance(e, httpx.TransportError) or (status is not None and status >= 500)
                     if not retryable or attempt == retries:
                         raise ProviderError(provider, endpoint, err, status) from e

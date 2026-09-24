@@ -75,7 +75,7 @@ export default function RoadIndex() {
   } : null;
   const picker = (label: string, value: Place | null, key: "from" | "to") => (
     <SearchPicker<Place> label={label} placeholder="지역 · 역 · 장소 검색" value={value?.name ?? ""} className="w-full sm:w-[300px]"
-      search={(term) => `/api/v1/places/search?q=${encodeURIComponent(term)}`} suggestions={suggestions}
+      search={(term) => `/api/v1/places/search?q=${encodeURIComponent(term)}`}
       keyOf={(p) => `${p.kind}:${p.name}:${p.lat}`} render={(p) => ({ title: p.name, sub: p.address, badge: KIND_LABEL[p.kind] })}
       onPick={(p) => set({ [key]: encodePlace(p) })} />
   );
@@ -85,10 +85,10 @@ export default function RoadIndex() {
       <PageHero eyebrow="도로 분석 · 전국 어디든 (고속도로 · 국도 · 일반도로)" title={from && to ? `${from.name} → ${to.name}` : " "}
                 sub={<>카카오 미래 운행 정보로 본 {hm(d?.departAt)} 출발 경로 · 직선 {num(d?.straightKm, 0)}km</>}>
         <div className="flex flex-col items-center justify-center gap-2 sm:flex-row">
-          {picker("어디서", from, "from")}
-          <button className="chip h-11 w-11 shrink-0 text-base" aria-label="어디서와 어디로 바꾸기"
+          {picker("출발지", from, "from")}
+          <button className="chip h-11 w-11 shrink-0 text-base" aria-label="출발지와 도착지 바꾸기"
                   onClick={() => from && to && set({ from: encodePlace(to), to: encodePlace(from) })}>⇄</button>
-          {picker("어디로", to, "to")}
+          {picker("도착지", to, "to")}
         </div>
         <div className="mt-3 flex justify-center"><Segmented label="출발 시점" value={departIn} onChange={(v) => set({ t: v })} options={DEPART} /></div>
         <div className="mt-12">

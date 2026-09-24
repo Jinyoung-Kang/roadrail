@@ -2,41 +2,113 @@ import Link from "next/link";
 import type { Decision, EnvPoint, Journey, NextSubway, Trip } from "@/lib/types";
 import { DASH, dur, durMin, hm, MODEL_LABEL, num, pct, pm25Label, signedPct } from "@/lib/format";
 import { encodePlace } from "@/lib/places";
+import { TrainName } from "@/components/ui";
 
-function Row({ k, v, sub }: { k: string; v: React.ReactNode; sub?: React.ReactNode }) {
+/** 분 → ISO 시각 */
+const plusMin = (iso: string, min: number) => new Date(new Date(iso).getTime() + min * 60_000).toISOString();
+
+/** 큰 소요 시간 + 도착 예정 시각 */
+function Headline({ total, pending, arrive, note }: { total: number | null; pending?: boolean; arrive: string | null; note: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-line py-3 last:border-0">
-      <span className="text-sm text-muted">{k}</span>
-      <span className="text-right text-sm font-medium text-ink tabular">{v}{sub && <span className="ml-1 font-normal text-muted">{sub}</span>}</span>
+    <div className="mt-4 flex items-end justify-between gap-4">
+      <div>
+        <p className="text-[40px] font-medium leading-none tabular sm:text-[44px]">{pending ? "…" : durMin(total)}</p>
+        <p className="mt-2 text-[13px] text-muted">{note}</p>
+      </div>
+      <div className="shrink-0 text-right">
+        <p className="text-[11px] text-muted">도착 예정</p>
+        <p className="text-2xl font-medium leading-tight tabular">{arrive ? hm(arrive) : DASH}</p>
+      </div>
     </div>
   );
 }
 
+function Stats({ items }: { items: { k: string; v: React.ReactNode; sub?: string }[] }) {
+  return (
+    <dl className="mt-6 grid grid-cols-3 divide-x divide-line rounded bg-mist py-3">
+      {items.map((it) => (
+        <div key={it.k} className="px-3 text-center">
+          <dt className="text-[11px] text-muted">{it.k}</dt>
+          <dd className="mt-1 text-[15px] font-medium tabular text-ink">{it.v}</dd>
+          {it.sub && <dd className="text-[11px] text-muted">{it.sub}</dd>}
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+export interface Segment { label: string; min: number; className: string }
+
+/**
+ * 시간 구성 막대 — 두 카드가 같은 축(max)을 써서 막대 길이로 바로 비교된다.
+ * 색만으로 구분하지 않도록 아래에 항목·분을 글자로 함께 적는다.
+ */
+function TimeBar({ segments, max }: { segments: Segment[]; max: number }) {
+  const seg = segments.filter((x) => x.min > 0);
+  const total = seg.reduce((t, x) => t + x.min, 0);
+  if (!total || !max) return null;
+  return (
+    <div className="mt-6">
+      <div className="flex h-3 w-full gap-[2px]" role="img"
+           aria-label={`시간 구성: ${seg.map((x) => `${x.label} ${Math.round(x.min)}분`).join(", ")}`}>
+        {seg.map((x) => (
+          <span key={x.label} className={`h-full first:rounded-l last:rounded-r ${x.className}`}
+                style={{ width: `${(x.min / max) * 100}%` }} title={`${x.label} ${Math.round(x.min)}분`} />
+        ))}
+      </div>
+      <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink2">
+        {seg.map((x) => (
+          <li key={x.label} className="flex items-center gap-1.5">
+            <span className={`h-2 w-2 rounded-sm ${x.className}`} aria-hidden />{x.label} <span className="tabular text-muted">{durMin(Math.round(x.min))}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** 두 카드 공통 축: 자동차 · 기차 총 소요 중 큰 값 */
+export const barMax = (trip: Trip) => Math.max(trip.decision.carTotalMin ?? 0, trip.decision.trainTotalMin ?? 0);
+
 export function CarTile({ trip }: { trip: Trip }) {
-  const c = trip.car, o = trip.observed;
+  const c = trip.car, o = trip.observed, d = trip.decision;
+  const pending = c.pending && c.durationSec == null;
+  const total = d.carTotalMin ?? (c.durationSec ? Math.round(c.durationSec / 60) : null);
+  const drive = c.durationSec ? c.durationSec / 60 : null;
   return (
     <div className="tile flex flex-col p-6 sm:p-8">
-      <p className="eyebrow flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-road" aria-hidden />자동차</p>
-      <div className="mt-3 flex items-baseline gap-2">
-        <span className="text-[40px] font-medium leading-none tabular">{c.pending && c.durationSec == null ? "…" : durMin(trip.decision.carTotalMin ?? (c.durationSec ? c.durationSec / 60 : null))}</span>
-        <span className="text-sm text-muted">{c.pending && c.durationSec == null ? "경로 조회 중" : "예상"}</span>
-      </div>
-      <p className="mt-2 text-[13px] text-muted">{trip.from.name} → {trip.to.name} · {hm(trip.departAt)} 출발 · 카카오 경로 예측</p>
-      <div className="mt-6">
-        <Row k="경로 거리" v={c.distanceM == null ? DASH : `${num(c.distanceM / 1000, 0)}km`} sub={`직선 ${num(trip.distanceKm, 0)}km`} />
-        <Row k="출발 시각 기준 소요" v={dur(c.durationSec)} sub="카카오 미래 운행 정보" />
-        {o ? (
-          <>
-            <Row k="고속도로 실측 (수집 중인 길)" v={dur(o.travelSec)} sub={`${o.corridorName} · ${hm(o.slotTs)} 슬롯`} />
-            <Row k="같은 요일·시간 중앙값 대비" v={o.vsBaselinePct == null ? "비교 불가" : signedPct(o.vsBaselinePct)}
-                 sub={o.vsBaselinePct == null ? "표본 4일 미만" : undefined} />
-            <Row k="고속도로 구간 예측" v={dur(o.predictedSec)} sub={`${MODEL_LABEL[o.model] ?? o.model} · 선행 ${durMin(o.leadMin)}`} />
-          </>
-        ) : (
-          <p className="py-3 text-xs leading-relaxed text-muted">고속도로 실측(평소 대비 정체)은 수집 중인 길 8개에서만 보입니다. 이 길은 카카오 경로 예측만 사용합니다.</p>
-        )}
-      </div>
-      <div className="mt-auto flex flex-wrap justify-center gap-x-4 pt-6">
+      <p className="eyebrow flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-road" aria-hidden />자동차 · 도로</p>
+      <Headline total={total} pending={pending} arrive={total == null ? null : plusMin(trip.departAt, total)}
+                note={pending ? "카카오 경로 조회 중" : `${hm(trip.departAt)} 출발 · 카카오 미래 운행 예측`} />
+      <Stats items={[
+        { k: "경로 거리", v: c.distanceM == null ? DASH : `${num(c.distanceM / 1000, 0)}km` },
+        { k: "평균 속도", v: c.distanceM && c.durationSec ? `${num(c.distanceM / 1000 / (c.durationSec / 3600), 0)}km/h` : DASH },
+        { k: "직선 거리", v: `${num(trip.distanceKm, 0)}km` },
+      ]} />
+      {drive != null && total != null && (
+        <TimeBar max={barMax(trip)} segments={[
+          { label: "운전", min: drive, className: "bg-road" },
+          { label: "IC 접근", min: Math.max(total - drive, 0), className: "bg-road/40" },
+        ]} />
+      )}
+      {o ? (
+        <div className="mt-6 rounded ring-1 ring-line">
+          <p className="border-b border-line px-4 py-2.5 text-[12px] font-medium text-ink2">
+            고속도로 실측 · {o.corridorName} <span className="font-normal text-muted">{hm(o.slotTs)} 기준</span>
+          </p>
+          <dl className="grid grid-cols-3 divide-x divide-line py-3">
+            <div className="px-3 text-center"><dt className="text-[11px] text-muted">지금 구간</dt><dd className="mt-1 text-[15px] font-medium tabular">{dur(o.travelSec)}</dd></div>
+            <div className="px-3 text-center"><dt className="text-[11px] text-muted">평소 대비</dt>
+              <dd className="mt-1 text-[15px] font-medium tabular">{o.vsBaselinePct == null ? DASH : signedPct(o.vsBaselinePct)}</dd>
+              {o.vsBaselinePct == null && <dd className="text-[11px] text-muted">표본 4일 미만</dd>}</div>
+            <div className="px-3 text-center"><dt className="text-[11px] text-muted">예측</dt><dd className="mt-1 text-[15px] font-medium tabular">{dur(o.predictedSec)}</dd>
+              <dd className="text-[11px] text-muted">{MODEL_LABEL[o.model] ?? o.model} · {durMin(o.leadMin)} 뒤</dd></div>
+          </dl>
+        </div>
+      ) : (
+        <p className="mt-6 text-xs leading-relaxed text-muted">평소 대비 정체(고속도로 실측)는 수집 중인 길 8개에서만 보입니다. 이 경로는 카카오 예측만 사용합니다.</p>
+      )}
+      <div className="mt-auto flex flex-wrap justify-center gap-x-5 pt-6">
         <Link href={`/road?from=${encodeURIComponent(encodePlace(trip.from))}&to=${encodeURIComponent(encodePlace(trip.to))}`}
               className="text-sm font-medium text-ink underline underline-offset-4">경로 분석 보기</Link>
         {o && <Link href={`/road/${o.corridorId}?dir=${o.direction}`} className="text-sm font-medium text-ink underline underline-offset-4">고속도로 실측 보기</Link>}
@@ -45,54 +117,75 @@ export function CarTile({ trip }: { trip: Trip }) {
   );
 }
 
-const MODE: Record<string, string> = { WALK: "도보 · 추정", CAR: "차량 · 카카오 실제 경로", INPUT: "입력값", ESTIMATE: "차량 · 직선거리 추정" };
+const MODE: Record<string, string> = { WALK: "도보 추정", CAR: "차량 · 카카오 실제 경로", INPUT: "입력값", ESTIMATE: "차량 · 직선거리 추정" };
 
 function Dot({ tone }: { tone: "ink" | "rail" | "muted" }) {
-  const c = tone === "rail" ? "bg-rail" : tone === "ink" ? "bg-ink" : "bg-faint";
-  return <span className={`relative z-10 mt-1.5 h-2.5 w-2.5 flex-none rounded-full ring-2 ring-white ${c}`} aria-hidden />;
+  const c = tone === "rail" ? "bg-rail" : tone === "ink" ? "bg-ink" : "bg-white ring-faint";
+  return <span className={`relative z-10 mt-[5px] h-2.5 w-2.5 flex-none rounded-full ring-2 ${tone === "muted" ? "" : "ring-white"} ${c}`} aria-hidden />;
 }
 
-/** 어디서 → 역 → 열차(환승) → 역 → 어디로 */
-export function JourneyTimeline({ j }: { j: Journey }) {
-  const rows: React.ReactNode[] = [];
-  rows.push(
-    <li key="acc" className="flex gap-3"><Dot tone="ink" />
-      <div className="pb-4 text-sm"><span className="font-medium">역까지 {j.access.minutes}분</span>
-        <span className="text-muted"> · {j.access.stationName}역 · {MODE[j.access.mode]}{j.access.distanceM ? ` ${num(j.access.distanceM / 1000)}km` : ""}</span></div></li>);
-  j.legs.forEach((l, i) => {
-    if (i > 0) {
-      const gap = Math.round((new Date(l.dep).getTime() - new Date(j.legs[i - 1].arr).getTime()) / 60000);
-      rows.push(<li key={`x${i}`} className="flex gap-3"><Dot tone="muted" />
-        <div className="pb-4 text-sm"><span className="font-medium">{l.fromName} 환승</span><span className="text-muted"> · {gap}분 대기</span></div></li>);
-    }
-    rows.push(
-      <li key={`l${i}`} className="flex gap-3"><Dot tone="rail" />
-        <div className="flex-1 pb-4 text-sm">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-            <span className="font-medium tabular">{hm(l.dep)} {l.fromName} → {hm(l.arr)} {l.toName}</span>
-            <span className="text-xs text-muted tabular">{l.onTimeRate30d == null ? "정시율 —" : `정시 ${pct(l.onTimeRate30d)}`} · 평균 지연 {num(l.avgArrDelayMin30d)}분{l.delayEstimated && " ⚠"}</span>
-          </div>
-          <div className="text-xs text-muted">열차 {l.trnNo.replace(/^0+/, "")} · {durMin(l.rideMin)}{l.samples ? ` · 최근 30일 ${l.samples}회` : ""}</div>
-        </div></li>);
-  });
-  rows.push(
-    <li key="eg" className="flex gap-3"><Dot tone="ink" />
-      <div className="text-sm"><span className="font-medium">역에서 {j.egress.minutes}분</span>
-        <span className="text-muted"> · {j.egress.stationName}역 → 목적지 · {MODE[j.egress.mode]}{j.egress.distanceM ? ` ${num(j.egress.distanceM / 1000)}km` : ""}</span></div></li>);
+function Step({ time, tone, children, last = false }: { time: string; tone: "ink" | "rail" | "muted"; children: React.ReactNode; last?: boolean }) {
   return (
-    <ol className="relative">
-      <span className="absolute left-[4.5px] top-2 bottom-2 w-px bg-line" aria-hidden />
-      {rows}
-    </ol>
+    <li className="grid grid-cols-[44px_10px_1fr] gap-x-3">
+      <span className="pt-[1px] text-right text-[13px] font-medium tabular text-ink">{time}</span>
+      <span className="relative flex justify-center">
+        {!last && <span className="absolute left-1/2 top-3 bottom-[-4px] w-px -translate-x-1/2 bg-line" aria-hidden />}
+        <Dot tone={tone} />
+      </span>
+      <div className={`min-w-0 text-sm ${last ? "" : "pb-4"}`}>{children}</div>
+    </li>
   );
 }
 
-function SubwayList({ title, items }: { title: string; items: NextSubway[] }) {
+/** 출발지 → 역 → 열차(환승) → 역 → 도착지 — 왼쪽은 시각 */
+export function JourneyTimeline({ j, trip }: { j: Journey; trip: Trip }) {
+  const start = trip.departAt;
+  const end = plusMin(trip.departAt, j.totalMin);
+  const rows: React.ReactNode[] = [];
+  rows.push(
+    <Step key="o" time={hm(start)} tone="ink">
+      <p className="font-medium">{trip.from.name} 출발</p>
+      <p className="text-xs text-muted">{j.access.stationName}역까지 {j.access.minutes}분 · {MODE[j.access.mode]}{j.access.distanceM ? ` ${num(j.access.distanceM / 1000)}km` : ""}
+        {j.waitMin > 0 && ` · 역에서 ${j.waitMin}분 대기`}</p>
+    </Step>);
+  j.legs.forEach((l, i) => {
+    const prev = j.legs[i - 1];
+    const gap = prev ? Math.round((new Date(l.dep).getTime() - new Date(prev.arr).getTime()) / 60000) : 0;
+    rows.push(
+      <Step key={`d${i}`} time={hm(l.dep)} tone="rail">
+        <p className="font-medium">{l.fromName}역 {i === 0 ? "승차" : "갈아타기"}{i > 0 && <span className="font-normal text-muted"> · {gap}분 대기</span>}</p>
+        <div className="mt-1.5 rounded bg-mist px-3 py-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <TrainName trnNo={l.trnNo} meta={l.meta} />
+          </div>
+          <p className="mt-1 text-xs text-muted tabular">
+            {durMin(l.rideMin)} 탑승 · {l.onTimeRate30d == null ? "정시율 —" : `정시 ${pct(l.onTimeRate30d)}`} · 평균 지연 {num(l.avgArrDelayMin30d)}분{l.delayEstimated && " ⚠"}
+            {l.samples ? ` · 최근 30일 ${l.samples}회` : ""}
+          </p>
+        </div>
+      </Step>);
+    rows.push(
+      <Step key={`a${i}`} time={hm(l.arr)} tone={i < j.legs.length - 1 ? "muted" : "rail"}>
+        <p className="font-medium">{l.toName}역 하차{i < j.legs.length - 1 && <span className="font-normal text-muted"> (환승)</span>}</p>
+        {i === j.legs.length - 1 && (
+          <p className="text-xs text-muted">{j.expectedDelayMin && j.expectedDelayMin > 0 ? `평균 ${num(j.expectedDelayMin)}분 늦게 도착 · ` : ""}
+            목적지까지 {j.egress.minutes}분 · {MODE[j.egress.mode]}{j.egress.distanceM ? ` ${num(j.egress.distanceM / 1000)}km` : ""}</p>
+        )}
+      </Step>);
+  });
+  rows.push(
+    <Step key="e" time={hm(end)} tone="ink" last>
+      <p className="font-medium">{trip.to.name} 도착 <span className="font-normal text-muted">(지연 반영 예상)</span></p>
+    </Step>);
+  return <ol>{rows}</ol>;
+}
+
+export function SubwayList({ title, items }: { title: string; items: NextSubway[] }) {
   if (!items.length) return null;
   return (
-    <div className="mt-4">
+    <div>
       <p className="text-xs font-medium text-ink2">{title}</p>
-      <ul className="mt-1 space-y-1">
+      <ul className="mt-1.5 space-y-1.5">
         {items.slice(0, 6).map((s) => (
           <li key={s.line + s.toward} className="flex justify-between gap-3 text-xs text-muted">
             <span><span className="rounded bg-cloud px-1.5 py-0.5 text-ink2">{s.line}</span> {s.toward}</span><span className="tabular">{s.times.join(" · ")}</span>
@@ -103,44 +196,82 @@ function SubwayList({ title, items }: { title: string; items: NextSubway[] }) {
   );
 }
 
+function Fold({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <details className="group border-t border-line">
+      <summary className="flex cursor-pointer list-none items-center justify-between py-3 text-sm font-medium text-ink hover:text-ink2">
+        {title}<span className="text-xs text-muted transition group-open:rotate-180" aria-hidden>▾</span>
+      </summary>
+      <div className="pb-4">{children}</div>
+    </details>
+  );
+}
+
 export function TrainTile({ trip }: { trip: Trip }) {
   const r = trip.rail;
   const j = r?.journeys[0];
+  const ride = j ? j.legs.reduce((t, l) => t + l.rideMin, 0) : 0;
+  const transferWait = j ? Math.max((new Date(j.arriveAt).getTime() - new Date(j.departAt).getTime()) / 60000 - ride, 0) : 0;
+  const first = j?.legs[0], lastLeg = j?.legs[j.legs.length - 1];
   return (
     <div className="tile flex flex-col p-6 sm:p-8">
       <p className="eyebrow flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-rail" aria-hidden />기차 · 코레일 (환승 포함)</p>
-      <div className="mt-3 flex items-baseline gap-2">
-        <span className="text-[40px] font-medium leading-none tabular">{durMin(trip.decision.trainTotalMin)}</span>
-        <span className="text-sm text-muted">예상</span>
-      </div>
-      {j ? (
-        <p className="mt-2 text-[13px] text-muted">
-          {hm(j.departAt)} {j.legs[0].fromName}역 출발 → {hm(j.arriveAt)} {j.legs[j.legs.length - 1].toName}역 도착 · {j.transfers === 0 ? "직통" : `환승 ${j.transfers}회`}
-        </p>
-      ) : (
-        <p className="mt-2 text-[13px] text-muted">{r?.note ?? (trip.distanceKm < 15 ? "가까운 거리라 기차 비교를 하지 않습니다" : "기차 정보 없음")}</p>
+      <Headline total={trip.decision.trainTotalMin} arrive={j ? plusMin(trip.departAt, j.totalMin) : null}
+                note={j ? `${j.transfers === 0 ? "직통" : `환승 ${j.transfers}회`} · ${hm(j.departAt)} 열차 · 역 오가는 시간 포함`
+                        : r?.note ?? (trip.distanceKm < 15 ? "가까운 거리라 기차 비교를 하지 않습니다" : "기차 정보 없음")} />
+      {j && first && lastLeg && (
+        <>
+          <Stats items={[
+            { k: "타는 역", v: `${first.fromName}`, sub: `${j.access.minutes}분 거리` },
+            { k: "내리는 역", v: `${lastLeg.toName}`, sub: `${j.egress.minutes}분 거리` },
+            { k: "정시율 (30일)", v: lastLeg.onTimeRate30d == null ? DASH : pct(lastLeg.onTimeRate30d),
+              sub: j.legs.length > 1 ? "마지막 열차" : lastLeg.samples ? `${lastLeg.samples}회 운행` : undefined },
+          ]} />
+          <TimeBar max={barMax(trip)} segments={[
+            { label: "역까지", min: j.access.minutes, className: "bg-ink2" },
+            { label: "대기", min: j.waitMin, className: "bg-line" },
+            { label: "탑승", min: ride, className: "bg-rail" },
+            { label: "환승 대기", min: transferWait, className: "bg-rail/35" },
+            { label: "예상 지연", min: Math.max(j.expectedDelayMin ?? 0, 0), className: "bg-warn" },
+            { label: "역에서", min: j.egress.minutes, className: "bg-faint" },
+          ]} />
+          <div className="mt-6"><JourneyTimeline j={j} trip={trip} /></div>
+        </>
       )}
-      {j && <div className="mt-6"><JourneyTimeline j={j} /></div>}
-      {r && r.journeys.length > 1 && (
-        <div className="mt-5 border-t border-line pt-4">
-          <p className="text-xs font-medium text-ink2">다른 여정</p>
-          <ul className="mt-1 space-y-1">
-            {r.journeys.slice(1).map((x) => (
-              <li key={x.departAt + x.legs[0].trnNo} className="flex justify-between gap-3 text-xs text-muted tabular">
-                <span>{hm(x.departAt)} {x.legs[0].fromName} → {hm(x.arriveAt)} {x.legs[x.legs.length - 1].toName}{x.transfers ? ` · ${x.legs.slice(1).map((l) => l.fromName).join("·")} 환승` : " · 직통"}</span>
-                <span>총 {durMin(x.totalMin)}</span>
-              </li>
-            ))}
-          </ul>
+      {r && (r.journeys.length > 1 || r.subwayAtArrival.length > 0 || r.subwayAtDeparture.length > 0) && (
+        <div className="mt-5">
+          {r.journeys.length > 1 && (
+            <Fold title={`다른 여정 ${r.journeys.length - 1}개`}>
+              <ul className="space-y-2">
+                {r.journeys.slice(1).map((x) => (
+                  <li key={x.departAt + x.legs[0].trnNo} className="flex items-baseline justify-between gap-3 text-sm">
+                    <span className="min-w-0">
+                      <span className="font-medium tabular">{hm(x.departAt)} → {hm(x.arriveAt)}</span>
+                      <span className="ml-2 text-xs text-muted">{x.legs[0].fromName}→{x.legs[x.legs.length - 1].toName}
+                        {x.transfers ? ` · ${x.legs.slice(1).map((l) => l.fromName).join("·")} 환승` : " · 직통"}
+                        {x.legs[0].meta ? ` · ${x.legs[0].meta.kind}` : ""}</span>
+                    </span>
+                    <span className="shrink-0 text-xs text-ink2 tabular">총 {durMin(x.totalMin)}</span>
+                  </li>
+                ))}
+              </ul>
+            </Fold>
+          )}
+          {(r.subwayAtArrival.length > 0 || r.subwayAtDeparture.length > 0) && (
+            <Fold title="역에서 갈아탈 지하철 (TAGO 시간표)">
+              <div className="space-y-4">
+                <SubwayList title={`${lastLeg?.toName ?? ""}역 도착 후`} items={r.subwayAtArrival} />
+                <SubwayList title={`${first?.fromName ?? ""}역 출발 전`} items={r.subwayAtDeparture} />
+              </div>
+            </Fold>
+          )}
         </div>
       )}
-      {r && <SubwayList title={`${j?.legs[j.legs.length - 1].toName ?? ""}역에서 갈아탈 지하철 (TAGO 시간표)`} items={r.subwayAtArrival} />}
-      {r && <SubwayList title={`${j?.legs[0].fromName ?? ""}역 지하철`} items={r.subwayAtDeparture} />}
       {j && r?.referenceDate && (
-        <p className="mt-4 text-xs text-muted">시간표 기준: {r.referenceDate} ({r.basis}) · 근처 역 {r.originCandidates}×{r.destCandidates}곳 조합 · 승차 여유 {r.boardingBufferMin}분 · 최소 환승 {r.transferMin}분. {r.note}</p>
+        <p className="mt-3 text-xs leading-relaxed text-muted">시간표 기준 {r.referenceDate} ({r.basis}) · 근처 역 {r.originCandidates}×{r.destCandidates}곳 조합 · 승차 여유 {r.boardingBufferMin}분 · 최소 환승 {r.transferMin}분 · 열차 종류는 번호 체계로 추정. {r.note}</p>
       )}
       {j && (
-        <div className="mt-auto flex flex-wrap justify-center gap-x-4 pt-6">
+        <div className="mt-auto flex flex-wrap justify-center gap-x-5 pt-6">
           {j.legs.map((l) => (
             <Link key={l.trnNo + l.fromCode} href={`/rail?dep=${l.fromCode}&arr=${l.toCode}`} className="text-sm font-medium text-ink underline underline-offset-4">
               {l.fromName}→{l.toName} 철도 분석
@@ -202,7 +333,7 @@ export function EnvRow({ env }: { env: Record<"origin" | "dest", EnvPoint> }) {
         const e = env[role];
         return (
           <div key={role} className="tile p-6 sm:p-8">
-            <p className="eyebrow">{role === "origin" ? "어디서" : "어디로"} · {e?.name ?? DASH}</p>
+            <p className="eyebrow">{role === "origin" ? "출발지" : "도착지"} · {e?.name ?? DASH}</p>
             <div className="mt-4 grid grid-cols-3 gap-4 text-center">
               <div><div className="text-2xl font-medium tabular">{e?.tmp ?? DASH}{e?.tmp != null && "°"}</div><div className="mt-1 text-xs text-muted">{e?.sky ?? "기온"}</div></div>
               <div><div className="text-2xl font-medium tabular">{e?.pop ?? DASH}{e?.pop != null && "%"}</div><div className="mt-1 text-xs text-muted">강수확률 · {e?.pty ?? DASH}</div></div>

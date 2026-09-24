@@ -9,7 +9,7 @@ import { Empty, ErrorBox, Loading, Section, Segmented, Select, Spec, SpecStrip }
 import { qs, useApi } from "@/lib/api";
 import { DASH, durParts, hm, mdhm, num } from "@/lib/format";
 import { tripLayers } from "@/lib/layers";
-import { corridorEnds, decodePlace, encodePlace, KIND_LABEL, suggestedPlaces } from "@/lib/places";
+import { corridorEnds, decodePlace, encodePlace, KIND_LABEL } from "@/lib/places";
 import type { Place, Trip } from "@/lib/types";
 import { useCorridors } from "@/lib/useCorridors";
 
@@ -23,7 +23,7 @@ export default function Home() {
   const departIn = Number(q.t ?? 0) || 0;
   const access = (q.a as string) || "auto";
 
-  // 어디서 · 어디로 — URL 이 없으면 첫 번째 길(서울역 → 대전역)
+  // 출발지 · 도착지 — URL 이 없으면 첫 번째 길(서울역 → 대전역)
   const fallback = useMemo(() => (corridors.data?.[0] ? corridorEnds(corridors.data[0]) : null), [corridors.data]);
   const from = decodePlace(q.from) ?? fallback?.[0] ?? null;
   const to = decodePlace(q.to) ?? fallback?.[1] ?? null;
@@ -49,18 +49,17 @@ export default function Home() {
   const d = t?.decision;
   const car = durParts(d?.carTotalMin ?? (t?.car.durationSec ? t.car.durationSec / 60 : null));
   const train = durParts(d?.trainTotalMin);
-  const suggestions = useMemo(() => suggestedPlaces(corridors.data), [corridors.data]);
   const layers = useMemo(() => tripLayers(t, from, to), [t, from, to]);
   const picker = (label: string, value: Place | null, key: "from" | "to") => (
     <SearchPicker<Place> label={label} placeholder="지역 · 역 · 장소 검색" value={value?.name ?? ""} className="w-full sm:w-[300px]"
-      search={(term) => `/api/v1/places/search?q=${encodeURIComponent(term)}`} suggestions={suggestions}
+      search={(term) => `/api/v1/places/search?q=${encodeURIComponent(term)}`}
       keyOf={(p) => `${p.kind}:${p.name}:${p.lat}`} render={(p) => ({ title: p.name, sub: p.address, badge: KIND_LABEL[p.kind] })}
       onPick={(p) => set({ [key]: encodePlace(p) })} />
   );
 
   return (
     <Layout title="지금 차로 갈까, 기차로 갈까" overlay>
-      {/* ---------- 히어로: 지도 배경 + 어디서 → 어디로 + 스펙 + 두 버튼 */}
+      {/* ---------- 히어로: 지도 배경 + 출발지 → 도착지 + 스펙 + 두 버튼 */}
       <section className="relative z-10 h-[100svh] min-h-[720px] bg-[#eef1f4]">
         <RouteMap layers={layers} className="absolute inset-0 h-full w-full" padBottom={120} label="경로 지도" />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[50%] bg-gradient-to-b from-white via-white/85 to-transparent" />
@@ -76,10 +75,10 @@ export default function Home() {
             {d && <a href="#evidence" className="ml-2 underline underline-offset-4 text-ink">근거 보기</a>}
           </p>
           <div className="mt-6 flex flex-col items-center justify-center gap-2 sm:flex-row">
-            {picker("어디서", from, "from")}
-            <button className="chip h-11 w-11 shrink-0 text-base" aria-label="어디서와 어디로 바꾸기"
+            {picker("출발지", from, "from")}
+            <button className="chip h-11 w-11 shrink-0 text-base" aria-label="출발지와 도착지 바꾸기"
                     onClick={() => from && to && set({ from: encodePlace(to), to: encodePlace(from) })}>⇄</button>
-            {picker("어디로", to, "to")}
+            {picker("도착지", to, "to")}
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
             <Segmented label="출발 시점" value={departIn} onChange={(v) => set({ t: v })} options={DEPART} />
@@ -113,7 +112,7 @@ export default function Home() {
         {t ? <Evidence decision={t.decision} freshness={t.freshness} caveat={t.caveat} cache={t.cache} asOf={t.asOf} /> : <Loading />}
       </Section>
 
-      <Section eyebrow="날씨 · 대기" title="어디서와 어디로" gray>
+      <Section eyebrow="날씨 · 대기" title="출발지와 도착지" gray>
         {t ? <EnvRow env={t.env} /> : <Loading />}
       </Section>
 
@@ -135,13 +134,17 @@ export default function Home() {
         </Section>
       )}
 
-      <section className="relative h-[560px] bg-cloud">
+      <section id="map" className="relative h-[560px] scroll-mt-16 bg-cloud">
         <RouteMap layers={layers} interactive className="absolute inset-0 h-full w-full" label="경로 지도 (확대·이동 가능)" />
         <div className="pointer-events-none absolute left-4 top-4 sm:left-8 sm:top-8 rounded bg-white/95 px-4 py-3 shadow-tile">
           <p className="text-sm font-medium">{from?.name} → {to?.name}</p>
           <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-[3px] w-5 bg-road" />자동차 경로 (카카오) {t?.car.distanceM ? `${num(t.car.distanceM / 1000, 0)}km` : ""}</p>
-          <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-0 w-5 border-t-[3px] border-dashed border-rail" />기차 {t?.rail?.journeys[0] ? t.rail.journeys[0].legs.map((l, i) => (i === 0 ? `${l.fromName}→${l.toName}` : `→${l.toName}`)).join("") : "없음"}</p>
+          <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-[3px] w-5 bg-rail" />기차 선로 {t?.rail?.journeys[0] ? t.rail.journeys[0].legs.map((l, i) => (i === 0 ? `${l.fromName}→${l.toName}` : `→${l.toName}`)).join("") : "없음"}</p>
+          {t?.rail?.journeys[0]?.legs.some((l) => !l.pathOnTrack) && (
+            <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-0 w-5 border-t-[3px] border-dashed border-rail" />선로 형상이 없는 구간 (역 사이 직선)</p>
+          )}
         </div>
+        <p className="pointer-events-none absolute bottom-8 left-2 rounded bg-white/85 px-2 py-0.5 text-[11px] text-muted">선로 © OpenStreetMap contributors (ODbL)</p>
       </section>
 
       <Section eyebrow="길" title="자주 오가는 길" wide
