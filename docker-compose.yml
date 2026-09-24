@@ -7,7 +7,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: roadrail
-      POSTGRES_PASSWORD: roadrail
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-roadrail}   # .env 에서 바꾼다 (기존 볼륨이면 ALTER ROLE 도 함께)
       POSTGRES_DB: roadrail
       TZ: Asia/Seoul
       PGTZ: Asia/Seoul
@@ -43,7 +43,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/roadrail
       SPRING_DATASOURCE_USERNAME: roadrail
-      SPRING_DATASOURCE_PASSWORD: roadrail
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-roadrail}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: "6379"
       SPRING_FLYWAY_LOCATIONS: filesystem:/app/db/migrations
@@ -64,10 +64,11 @@ services:
     build:
       context: .
       dockerfile: collector/Dockerfile
+      target: runtime
     stop_grace_period: 75s   # 종료 신호 뒤 실행 중인 작업이 끝나기를 최대 60초 기다린다
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://roadrail:roadrail@db:5432/roadrail
+      DATABASE_URL: postgresql://roadrail:${POSTGRES_PASSWORD:-roadrail}@db:5432/roadrail
       REDIS_URL: redis://redis:6379/0
       SEED_PATH: /app/seed/corridors.yaml
       TZ: Asia/Seoul
@@ -76,6 +77,21 @@ services:
       redis: { condition: service_healthy }
       api: { condition: service_healthy }   # 스키마(Flyway)는 api 가 소유
     restart: unless-stopped
+
+  # 테스트 전용 (make test-collector) — 운영 이미지에는 테스트 도구 · 코드가 없다
+  collector-test:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: collector/Dockerfile
+      target: test
+    environment:
+      TEST_DATABASE_URL: postgresql://roadrail:${POSTGRES_PASSWORD:-roadrail}@db:5432/roadrail_test
+      TEST_REDIS_URL: redis://redis:6379/15
+      TZ: Asia/Seoul
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
 
   web:
     build:

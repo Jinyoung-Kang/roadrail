@@ -38,6 +38,10 @@ jobs:
         with: { python-version: "3.11", cache: pip, cache-dependency-path: collector/pyproject.toml }
       - run: pip install -e '.[dev]'
       - run: ruff check roadrail tests
+      - name: pip-audit (선언한 의존성 · 개발 도구)
+        run: |
+          python -c "import tomllib; d=tomllib.load(open('pyproject.toml','rb'))['project']; print('\n'.join(d['dependencies'] + d['optional-dependencies']['dev']))" > /tmp/req.txt
+          pip-audit --progress-spinner off -r /tmp/req.txt
       - run: pytest -q
 
   api:
@@ -67,8 +71,19 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "22", cache: npm, cache-dependency-path: web/package-lock.json }
       - run: npm ci --no-audit --no-fund
+      - run: npm audit --audit-level=high
       - run: npm run typecheck
       - run: npm run build
+
+  secrets:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   images:
     name: docker images

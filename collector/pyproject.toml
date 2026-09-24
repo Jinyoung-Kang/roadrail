@@ -16,9 +16,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "pytest==8.4.2",
-  "pytest-asyncio==1.2.0",
+  "pytest==9.0.3",       # 8.4.2 는 PYSEC-2026-1845 (pip-audit)
+  "pytest-asyncio==1.4.0",
   "ruff==0.13.1",
+  "pip-audit==2.10.1",
 ]
 
 [project.scripts]

@@ -81,3 +81,15 @@ def test_m1_between_current_and_baseline(h):
     cur = dt.datetime(2026, 10, 9, 17, 0, tzinfo=KST)
     p = predict_all(bl, cur, 7000, cur + dt.timedelta(minutes=h))
     assert min(5000, 7000) <= p["M1"] <= 7000 + 0
+
+
+def test_baseline_excludes_holidays():
+    # 명절(공휴일) 정체가 '평소' 기준선을 오염시키지 않게 공휴일 날짜는 입력에서 뺀다
+    df = synthetic(14, dt.date(2026, 9, 14))  # 09-14(월) ~ 09-27(일), 모든 날 같은 값
+    jam = df["slot_ts"].map(lambda t: t.date() == dt.date(2026, 9, 24))
+    df.loc[jam, "travel_sec"] = df.loc[jam, "travel_sec"] * 3  # 추석(목) 3배 정체
+    thu = lambda bl: bl[(bl.dow == 4) & (bl.slot_idx == 216)].iloc[0]  # noqa: E731 — 목요일 18:00
+    polluted = thu(compute_baseline(df))
+    clean = thu(compute_baseline(df, frozenset({dt.date(2026, 9, 24)})))
+    assert polluted.n == 2 and polluted.p90_sec > clean.p90_sec
+    assert clean.n == 1 and clean.p50_sec == clean.p90_sec  # 평소 목요일 하루만 남음

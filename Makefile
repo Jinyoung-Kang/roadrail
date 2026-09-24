@@ -3,7 +3,7 @@ SHELL := /bin/bash
 COMPOSE := docker compose
 ADMIN_TOKEN = $(shell grep -E '^ADMIN_TOKEN=' .env 2>/dev/null | cut -d= -f2-)
 
-.PHONY: help env up down logs ps seed collect-once rail-backfill reclassify smoke test test-collector test-api e2e capture psql reset build
+.PHONY: help env up down logs ps seed collect-once rail-backfill reclassify smoke test test-collector test-api e2e capture bench psql reset build
 
 help: ## 명령 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[1m%-16s\033[0m %s\n", $$1, $$2}'
@@ -50,14 +50,17 @@ test: test-collector test-api ## 전체 테스트 (collector 단위·계약·통
 
 test-collector: ## collector pytest (compose 의 db·redis 사용, roadrail_test DB)
 	$(COMPOSE) up -d db redis
-	$(COMPOSE) run --rm --no-deps -e TEST_DATABASE_URL=postgresql://roadrail:roadrail@db:5432/roadrail_test \
-	  -e TEST_REDIS_URL=redis://redis:6379/15 collector pytest -q
+	$(COMPOSE) --profile test build collector-test
+	$(COMPOSE) --profile test run --rm --no-deps collector-test pytest -q -p no:cacheprovider
 
 test-api: ## api JUnit + Testcontainers (Docker 필요, JDK 21 은 Gradle 이 자동 설치)
 	cd api && ./gradlew --no-daemon test
 
 e2e: ## Playwright 스모크 (스택이 떠 있어야 함, 설치된 Chrome 사용)
 	cd web && npm ci --no-audit --no-fund && E2E_CHANNEL=chrome npx playwright test smoke
+
+bench: ## API 응답 시간 측정 (p50 · p95 · 최대, 표준 라이브러리만)
+	python3 tools/bench.py http://localhost:8300 15
 
 capture: ## README 스크린샷 갱신 → docs/images
 	cd web && CAPTURE=1 E2E_CHANNEL=chrome npx playwright test capture

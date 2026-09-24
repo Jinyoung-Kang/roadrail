@@ -35,6 +35,7 @@ public abstract class IntegrationTest {
         r.add("spring.flyway.locations", () -> "filesystem:" + Path.of(System.getProperty("migrations.dir", "../db/migrations")).toAbsolutePath());
         r.add("roadrail.admin-token", () -> ADMIN);
         r.add("roadrail.kakao-rest-api-key", () -> "");
+        r.add("roadrail.rate-limit.search", () -> 3);  // 요청 한도 검증용으로 낮게
     }
 
     @Autowired

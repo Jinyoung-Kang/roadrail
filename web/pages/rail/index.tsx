@@ -5,7 +5,7 @@ import SearchPicker from "@/components/SearchPicker";
 import { C, SimpleBars } from "@/components/Charts";
 import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Select, Spec, SpecStrip, TrainName } from "@/components/ui";
 import { qs, useApi } from "@/lib/api";
-import { DASH, DOW, durMin, hm, num, pct, ymd } from "@/lib/format";
+import { DASH, dowLabel, durMin, hm, num, pct, ymd } from "@/lib/format";
 import type { Punctuality, Station, Trains } from "@/lib/types";
 
 const PERIODS = [{ value: 30, label: "최근 30일" }, { value: 90, label: "최근 90일" }];
@@ -90,8 +90,8 @@ export default function RailPage() {
             {byTrain.data ? <SimpleBars data={byTrain.data.histogram} x="label" y="count" color={C.rail} format={(v) => `${v}회`} /> : <Loading />}
           </div>
           <div className="tile p-6">
-            <p className="text-sm font-medium">요일별 정시율</p>
-            {byDow.data ? <SimpleBars data={byDow.data.items.map((i) => ({ ...i, label: DOW[Number(i.key)], rate: i.onTimeRate == null ? null : i.onTimeRate * 100 }))}
+            <p className="text-sm font-medium">요일별 정시율 <span className="font-normal text-muted">(공휴일은 따로)</span></p>
+            {byDow.data ? <SimpleBars data={byDow.data.items.map((i) => ({ ...i, label: dowLabel(i.key), rate: i.onTimeRate == null ? null : i.onTimeRate * 100 }))}
                                       x="label" y="rate" color={C.rail} yFormat={(v) => `${v}%`}
                                       format={(v, d) => `정시율 ${num(v, 1)}% · 평균 지연 ${num(d.avgArrDelayMin)}분 · ${d.verified}회`} /> : <Loading />}
           </div>

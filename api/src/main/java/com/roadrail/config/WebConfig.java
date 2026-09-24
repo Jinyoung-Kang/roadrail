@@ -1,6 +1,7 @@
 package com.roadrail.config;
 
 import com.roadrail.common.AdminTokenInterceptor;
+import com.roadrail.common.RateLimitInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
@@ -9,11 +10,17 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
     private final AdminTokenInterceptor adminToken;
+    private final RateLimitInterceptor rateLimit;
 
-    public WebConfig(AdminTokenInterceptor adminToken) { this.adminToken = adminToken; }
+    public WebConfig(AdminTokenInterceptor adminToken, RateLimitInterceptor rateLimit) {
+        this.adminToken = adminToken;
+        this.rateLimit = rateLimit;
+    }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        // 한도가 먼저 — 틀린 토큰을 반복해 넣는 요청도 세어서 막는다
+        registry.addInterceptor(rateLimit).addPathPatterns("/api/v1/**");
         registry.addInterceptor(adminToken).addPathPatterns("/api/v1/admin/**");
     }
 

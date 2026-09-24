@@ -14,8 +14,8 @@ from ..scheduler.quota import Allowance, QuotaBudget
 
 logger = logging.getLogger(__name__)
 
-CONCURRENCY = {"EX": 4, "KORAIL": 2, "KMA": 4, "AIRKOREA": 2, "KAKAO": 4, "KAKAO_LOCAL": 4, "OSM": 1}
-TIMEOUT = {"EX": 15.0, "KORAIL": 60.0, "KMA": 10.0, "AIRKOREA": 25.0, "KAKAO": 10.0, "KAKAO_LOCAL": 10.0, "OSM": 240.0}
+CONCURRENCY = {"EX": 4, "KORAIL": 2, "KMA": 4, "AIRKOREA": 2, "KAKAO": 4, "KAKAO_LOCAL": 4, "OSM": 1, "KASI": 1}
+TIMEOUT = {"EX": 15.0, "KORAIL": 60.0, "KMA": 10.0, "AIRKOREA": 25.0, "KAKAO": 10.0, "KAKAO_LOCAL": 10.0, "OSM": 240.0, "KASI": 10.0}
 _semaphores: dict[str, asyncio.Semaphore] = {}
 
 
@@ -36,7 +36,7 @@ def check_payload(provider: str, body: dict) -> tuple[str | None, str | None]:
     if provider == "EX":
         code = body.get("code")
         return code, None if code in (None, "SUCCESS") else body.get("message") or code
-    if provider in ("KORAIL", "KMA", "AIRKOREA"):
+    if provider in ("KORAIL", "KMA", "AIRKOREA", "KASI"):
         if "OpenAPI_ServiceResponse" in body:  # data.go.kr 게이트웨이 오류
             h = body["OpenAPI_ServiceResponse"].get("cmmMsgHeader", {})
             return h.get("returnReasonCode"), h.get("returnAuthMsg") or h.get("errMsg")

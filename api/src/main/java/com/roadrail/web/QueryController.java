@@ -38,7 +38,7 @@ public class QueryController {
 
     @GetMapping("/rail/punctuality")
     @Operation(summary = "정시율 집계 — 길의 역 쌍 (FR-302~303). 임의 역 쌍은 /rail/od/punctuality")
-    public RailDtos.Punctuality punctuality(@RequestParam String corridorId,
+    public RailDtos.Punctuality punctuality(@RequestParam @jakarta.validation.constraints.Pattern(regexp = "[A-Z0-9-]{3,20}") String corridorId,
                                             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
                                             @RequestParam(required = false) String dir,
@@ -51,7 +51,7 @@ public class QueryController {
 
     @GetMapping("/incidents")
     @Operation(summary = "돌발 문자 안내 (FR-405) — 길(corridorId) 매칭, since 이후")
-    public EnvDtos.Incidents incidents(@RequestParam(required = false) String corridorId,
+    public EnvDtos.Incidents incidents(@RequestParam(required = false) @jakarta.validation.constraints.Pattern(regexp = "[A-Z0-9-]{3,20}") String corridorId,
                                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime since,
                                        @RequestParam(defaultValue = "50") @Min(1) @Max(200) int limit) {
         if (corridorId != null) corridors.require(corridorId);

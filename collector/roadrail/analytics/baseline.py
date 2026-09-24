@@ -10,14 +10,20 @@ from ..core.timeutil import KST
 WEEKS = 8
 
 
-def compute_baseline(df: pd.DataFrame) -> pd.DataFrame:
+def compute_baseline(df: pd.DataFrame, holidays: frozenset = frozenset()) -> pd.DataFrame:
     """df: columns [corridor_id, direction, slot_ts(tz-aware), travel_sec]
-    → [corridor_id, direction, dow, slot_idx, p50_sec, p90_sec, n]  (dow 0 = 전체 요일 대체 기준선)"""
+    → [corridor_id, direction, dow, slot_idx, p50_sec, p90_sec, n]  (dow 0 = 전체 요일 대체 기준선)
+    holidays: 공휴일(KST 날짜)은 입력에서 뺀다 — '평소' 요일 · 시간 기준선이 명절 정체로 오염되지 않게."""
     cols = ["corridor_id", "direction", "dow", "slot_idx", "p50_sec", "p90_sec", "n"]
     if df.empty:
         return pd.DataFrame(columns=cols)
     d = df.copy()
     t = pd.to_datetime(d["slot_ts"], utc=True).dt.tz_convert(KST)
+    if holidays:
+        keep = ~t.dt.date.isin(holidays)
+        d, t = d[keep], t[keep]
+        if d.empty:
+            return pd.DataFrame(columns=cols)
     d["dow"] = t.dt.dayofweek + 1
     d["slot_idx"] = (t.dt.hour * 60 + t.dt.minute) // 5
 

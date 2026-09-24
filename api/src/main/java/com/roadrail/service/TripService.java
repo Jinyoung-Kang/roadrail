@@ -50,10 +50,11 @@ public class TripService {
     private final AirKoreaClient air;
     private final JsonCache cache;
     private final RailJourneyService journeys;
+    private final HolidayService holidays;
 
     public TripService(JdbcClient jdbc, AppProperties props, RailService rail, RoadService road, EnvService env,
                        KakaoMobilityClient mobility, KakaoLocalClient local, KmaClient kma, AirKoreaClient air, JsonCache cache,
-                       RailJourneyService journeys) {
+                       RailJourneyService journeys, HolidayService holidays) {
         this.jdbc = jdbc;
         this.props = props;
         this.rail = rail;
@@ -65,6 +66,7 @@ public class TripService {
         this.air = air;
         this.cache = cache;
         this.journeys = journeys;
+        this.holidays = holidays;
     }
 
     static Duration left(long deadlineNanos) {
@@ -158,7 +160,8 @@ public class TripService {
         var d = envMap.get("dest");
         var decision = DecisionRule.decide(dcar, dtrain,
                 new DecisionRule.Env(o == null ? null : o.pop(), d == null ? null : d.pop(),
-                        o == null ? null : o.pm25Grade(), d == null ? null : d.pm25Grade()), inc.size(), p);
+                        o == null ? null : o.pm25Grade(), d == null ? null : d.pm25Grade(),
+                        holidays.name(Times.kst(depart).toLocalDate()).orElse(null)), inc.size(), p);
         if (km < MIN_RAIL_KM) {
             decision = new DecisionRule.Result(decision.rule(), "CAR", "가까운 거리(" + km + "km)라 기차 비교는 하지 않습니다.",
                     decision.carTotalMin(), null, null, decision.reasons(), decision.warnings());

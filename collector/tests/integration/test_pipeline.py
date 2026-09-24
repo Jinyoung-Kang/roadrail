@@ -305,3 +305,18 @@ async def test_od_trips_prefers_timetable_over_interpolation(seeded):
                         VALUES ('SEL', 'DGU', %s, '00101', %s, %s, 'KTX')""", (d, t(5, 13), t(6, 52)))
     got = (await db.fetch("SELECT * FROM rail.od_trips('SEL', 'DGU', %s, %s)", (d, d)))[0]
     assert (got["dep_basis"], got["arr_basis"]) == ("EXACT", "TT")
+
+
+async def test_holiday_sync_is_idempotent(seeded, fixtures_dir):
+    from roadrail.pipeline import holidays
+    body = (fixtures_dir / "kasi" / "rest_days_2026.json").read_text()
+
+    def handler(request):
+        return httpx.Response(200, text=body, headers={"content-type": "application/json"})
+
+    for _ in range(2):
+        ctx = ctx_with(handler)
+        await holidays.sync_holidays(ctx)
+    assert ctx.calls == 3  # 작년 · 올해 · 내년
+    assert await count("SELECT count(*) AS n FROM ref.holiday") == 22  # 같은 응답을 세 번 받아도 날짜당 한 행
+    assert dt.date(2026, 9, 24) in await holidays.holiday_days(dt.date(2026, 1, 1))

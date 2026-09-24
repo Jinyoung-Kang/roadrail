@@ -70,7 +70,7 @@ export default function RoadPage() {
                desc={<>최근 8주 같은 요일·5분 슬롯의 중앙값(p50)을 시간 단위로 평균했습니다. 데이터가 쌓이기 전에는 빈칸이 많습니다 — 값이 없으면 없다고 표시합니다.
                  {baseline.data?.windowFrom && <> 입력 기간 {baseline.data.windowFrom} ~ {baseline.data.windowTo}.</>}</>}>
         <ErrorBox error={baseline.error} />
-        {baseline.data && (baseline.data.cells.length ? <div className="tile p-6"><Heatmap baseline={baseline.data} /></div> : <Empty>기준선이 아직 계산되지 않았습니다.</Empty>)}
+        {baseline.data && (baseline.data.cells.length ? <div className="tile p-6"><Heatmap baseline={baseline.data} /></div> : <Empty>아직 평소(공휴일이 아닌 날) 자료가 없어 기준선이 없습니다 — 공휴일은 명절 정체가 평소 값을 오염시키지 않도록 기준선에서 뺍니다.</Empty>)}
       </Section>
 
       <Section eyebrow="구간" title="영업소 체인">

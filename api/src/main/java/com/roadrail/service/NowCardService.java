@@ -22,16 +22,18 @@ public class NowCardService {
     private final AppProperties props;
     private final RoadService road;
     private final RailService rail;
+    private final HolidayService holidays;
     private final EnvService env;
     private final KakaoMobilityClient kakao;
     private final JsonCache cache;
 
     public NowCardService(JdbcClient jdbc, AppProperties props, RoadService road, RailService rail, EnvService env,
-                          KakaoMobilityClient kakao, JsonCache cache) {
+                          KakaoMobilityClient kakao, JsonCache cache, HolidayService holidays) {
         this.jdbc = jdbc;
         this.props = props;
         this.road = road;
         this.rail = rail;
+        this.holidays = holidays;
         this.env = env;
         this.kakao = kakao;
         this.cache = cache;
@@ -129,7 +131,8 @@ public class NowCardService {
         var o = envMap.get("origin");
         var d = envMap.get("dest");
         DecisionRule.Env denv = new DecisionRule.Env(o == null ? null : o.pop(), d == null ? null : d.pop(),
-                o == null ? null : o.pm25Grade(), d == null ? null : d.pm25Grade());
+                o == null ? null : o.pm25Grade(), d == null ? null : d.pm25Grade(),
+                holidays.name(Times.kst(depart).toLocalDate()).orElse(null));
 
         // ---- 돌발
         List<EnvDtos.Incident> inc = env.incidents(cid, now.minusHours(6), 5).items();

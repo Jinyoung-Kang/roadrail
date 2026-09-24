@@ -27,7 +27,7 @@ class ApiIT extends IntegrationTest {
     @BeforeEach
     void seed() {
         jdbc.execute("TRUNCATE ref.corridor, ref.toll_unit, ref.station CASCADE");
-        jdbc.execute("TRUNCATE ts.road_corridor_tt, ana.road_baseline, rail.run_plan, rail.run_info, rail.train_punctuality, ops.backfill, ref.rail_link, ops.job_run");
+        jdbc.execute("TRUNCATE ts.road_corridor_tt, ana.road_baseline, rail.run_plan, rail.run_info, rail.train_punctuality, ops.backfill, ref.rail_link, ops.job_run, ref.holiday");
         jdbc.execute("""
                 INSERT INTO ref.toll_unit (unit_code, unit_name, route_no, route_name, lat, lon) VALUES
                   ('101', '서울', '001', '경부선', 37.365, 127.102), ('115', '대전', '001', '경부선', 36.361, 127.448);
@@ -51,6 +51,9 @@ class ApiIT extends IntegrationTest {
         jdbc.execute("""
                 INSERT INTO ana.road_baseline (corridor_id, direction, dow, slot_idx, p50_sec, p90_sec, n, window_from, window_to)
                 SELECT 'SEL-DJN', 'DN', 0, s, 5580, 6400, 20, current_date - 56, current_date FROM generate_series(0, 287) s""");
+        // 공휴일 달력: 오늘 · 지난주 같은 요일 (한국천문연구원 특일 정보 형식)
+        jdbc.update("INSERT INTO ref.holiday (day, name) VALUES (?, '테스트휴일'), (?, '지난휴일')",
+                LocalDate.now(KST), LocalDate.now(KST).minusDays(7));
         // 같은 요일 지난주 열차 1편 S1 23:59 → S2 00:59(다음 날 아님: 23:59 출발 · 60분) — 운행계획 · 운행정보 · 정시성 원본
         LocalDate ref = LocalDate.now(KST).minusDays(7);
         OffsetDateTime dep = ref.atTime(23, 58).atZone(KST).toOffsetDateTime();
@@ -162,6 +165,10 @@ class ApiIT extends IntegrationTest {
                         .param("from", ref.minusDays(1).toString()).param("to", ref.toString()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.summary.onTimeRate").value(1.0))
                 .andExpect(jsonPath("$.depStation").value("서울"));
+        // 요일별: 공휴일은 요일과 따로 'H'
+        mvc.perform(get("/api/v1/rail/od/punctuality").param("dep", "S1").param("arr", "S2").param("groupBy", "dow")
+                        .param("from", ref.minusDays(1).toString()).param("to", ref.toString()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].key").value("H"));
         mvc.perform(get("/api/v1/rail/od/trains").param("dep", "S1").param("arr", "S1")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/v1/stations").param("q", "대")).andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].name").value("대전"));
@@ -169,6 +176,11 @@ class ApiIT extends IntegrationTest {
         mvc.perform(get("/api/v1/stations").param("sort", "name").param("limit", "400")).andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].name").value("대전")).andExpect(jsonPath("$[1].name").value("서울"));
         mvc.perform(get("/api/v1/stations").param("sort", "bogus")).andExpect(status().isBadRequest());
+        // 역 코드 형식 제한 (캐시 키 · SQL 매개변수로 쓰임)
+        mvc.perform(get("/api/v1/rail/od/trains").param("dep", "S1' OR 1=1").param("arr", "S2")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        mvc.perform(get("/api/v1/rail/od/punctuality").param("dep", "S1").param("arr", "S2").param("groupBy", "x")
+                .param("from", ref.toString()).param("to", ref.toString())).andExpect(status().isBadRequest());
     }
 
     @Test
@@ -187,7 +199,10 @@ class ApiIT extends IntegrationTest {
                 .andExpect(jsonPath("$.rail.journeys[0].legs[0].path", hasSize(3)))
                 .andExpect(jsonPath("$.rail.journeys[0].legs[0].meta.label").value("서울발 대전행"))
                 .andExpect(jsonPath("$.decision.reasons", not(empty())))
-                .andExpect(jsonPath("$.env.origin.name").value("서울역"));
+                .andExpect(jsonPath("$.env.origin.name").value("서울역"))
+                // 출발일이 공휴일 → 경고 · 지하철 시각은 표시하지 않음(TAGO 요일 구분에 공휴일이 없어)
+                .andExpect(jsonPath("$.decision.warnings", hasItem(org.hamcrest.Matchers.containsString("공휴일(테스트휴일)"))))
+                .andExpect(jsonPath("$.rail.subwayAtDeparture", empty()));
         mvc.perform(get("/api/v1/trip").param("fromLat", "10").param("fromLon", "10").param("fromName", "x")
                         .param("toLat", "36.33").param("toLon", "127.43").param("toName", "y"))
                 .andExpect(status().isBadRequest());
@@ -202,5 +217,20 @@ class ApiIT extends IntegrationTest {
                 .andExpect(jsonPath("$.backtest.maeSec.M1").value(nullValue()));
         mvc.perform(get("/api/v1/corridors/SEL-DJN/road/baseline").param("dir", "DN"))
                 .andExpect(jsonPath("$.cells", hasSize(288)));
+    }
+
+    @Test
+    void rateLimitPerClientReturns429WithRetryAfter() throws Exception {
+        // 장소 검색 한도 분당 3회(테스트 설정) — 4번째는 429 RATE_LIMITED + Retry-After
+        for (int i = 0; i < 3; i++) {
+            mvc.perform(get("/api/v1/places/search").param("q", "대전")).andExpect(status().isOk())
+                    .andExpect(header().string("X-RateLimit-Limit", "3"));
+        }
+        mvc.perform(get("/api/v1/places/search").param("q", "대전")).andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"))
+                .andExpect(header().exists("Retry-After"));
+        // 다른 클라이언트(프록시가 붙인 다른 주소)는 따로 센다
+        mvc.perform(get("/api/v1/places/search").param("q", "대전").header("X-Forwarded-For", "198.51.100.7"))
+                .andExpect(status().isOk());
     }
 }

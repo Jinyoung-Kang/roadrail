@@ -78,6 +78,14 @@ roadrail:
     TAGO: ${QUOTA_TAGO:9000}
     TAGO_TRAIN: ${QUOTA_TAGO_TRAIN:9000}   # TAGO 열차정보 (개발계정 10,000/일)
     OSM: ${QUOTA_OSM:60}
+    KASI: ${QUOTA_KASI:100}
+  # 클라이언트 IP 별 분당 요청 한도 — 외부 API 예산(카카오 · TAGO)을 한 사람이 다 쓰지 않게, 관리 토큰 추측 방지 (0 = 끔)
+  rate-limit:
+    admin: ${RATE_LIMIT_ADMIN:20}
+    trip: ${RATE_LIMIT_TRIP:40}
+    route: ${RATE_LIMIT_ROUTE:20}
+    search: ${RATE_LIMIT_SEARCH:120}
+    rail: ${RATE_LIMIT_RAIL:120}
 
 logging:
   level:

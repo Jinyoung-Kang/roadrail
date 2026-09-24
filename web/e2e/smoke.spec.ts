@@ -146,3 +146,25 @@ test("모바일: 메뉴 드로어", async ({ page }) => {
   await page.getByRole("button", { name: "메뉴" }).click();
   await expect(page.getByRole("dialog").getByRole("link", { name: "철도 분석" })).toBeVisible();
 });
+
+test("보안 헤더(CSP 등) · 콘솔 오류 없음 · 카카오 지도는 CSP 안에서 동작", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
+  page.on("pageerror", (e) => errors.push(e.message));
+  const res = await page.goto("/", { waitUntil: "networkidle" });
+  const h = res!.headers();
+  expect(h["content-security-policy"]).toContain("frame-ancestors 'none'");
+  expect(h["x-content-type-options"]).toBe("nosniff");
+  expect(h["x-frame-options"]).toBe("DENY");
+  await expect(page.getByRole("button", { name: "지도 조작하기 (이동 · 확대)" })).toBeVisible({ timeout: 15_000 });
+  expect(await page.evaluate(() => !!(window as any).kakao?.maps?.Map)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("요청 한도: 클라이언트가 X-Forwarded-For 를 위조해도 같은 한도에서 센다", async ({ request }) => {
+  const r1 = await request.get("/api/v1/places/search?q=%EB%8C%80%EC%A0%84", { headers: { "X-Forwarded-For": "203.0.113.1" } });
+  const r2 = await request.get("/api/v1/places/search?q=%EB%8C%80%EC%A0%84", { headers: { "X-Forwarded-For": "203.0.113.2" } });
+  expect(r1.ok() && r2.ok()).toBe(true);
+  const left = (r: typeof r1) => Number(r.headers()["x-ratelimit-remaining"]);
+  expect(left(r2)).toBe(left(r1) - 1);  // 주소를 바꿔도 새 한도가 생기지 않음
+});

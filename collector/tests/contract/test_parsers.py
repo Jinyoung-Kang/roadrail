@@ -4,7 +4,7 @@ import datetime as dt
 import json
 
 from roadrail.core.timeutil import KST
-from roadrail.providers import airkorea, ex, kakao, kma, korail
+from roadrail.providers import airkorea, ex, kakao, kasi, kma, korail
 
 
 def load(fixtures_dir, provider, name):
@@ -90,3 +90,15 @@ def test_sms_location_uses_latitude_and_altitude_as_longitude():
     assert (got[0]["lat"], got[0]["lon"], got[0]["point_name"]) == (35.724019, 129.296973, "남경주부근(68K)-남경주부근(71K)")
     assert (got[1]["lat"], got[1]["point_name"]) == (None, None)   # 좌표 없음 → 위치를 추정하지 않음
     assert got[2]["lat"] is None                                     # 국내 범위 밖 → 버림
+
+
+def test_kasi_rest_days(fixtures_dir):
+    # 한국천문연구원 특일 정보 2026년 (실제 응답): 공휴일 · 대체공휴일 · 선거일 22일
+    rows = kasi.parse_rest_days(load(fixtures_dir, "kasi", "rest_days_2026"))
+    days = {r["day"]: r["name"] for r in rows}
+    assert len(rows) == 22
+    assert days[dt.date(2026, 9, 24)] == "추석" and days[dt.date(2026, 10, 5)] == "대체공휴일(개천절)"
+    # 한 건이면 item 이 객체, 0 건이면 items 가 빈 문자열
+    one = {"response": {"body": {"items": {"item": {"locdate": 20261225, "dateName": "기독탄신일", "isHoliday": "Y"}}}}}
+    assert [r["day"] for r in kasi.parse_rest_days(one)] == [dt.date(2026, 12, 25)]
+    assert kasi.parse_rest_days({"response": {"body": {"items": ""}}}) == []

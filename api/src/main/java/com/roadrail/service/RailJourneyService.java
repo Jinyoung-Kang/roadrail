@@ -28,6 +28,7 @@ public class RailJourneyService {
     private final KakaoMobilityClient kakao;
     private final TagoSubwayClient tago;
     private final TimetableService timetable;
+    private final HolidayService holidays;
     private final ExecutorService exec = Executors.newVirtualThreadPerTaskExecutor();
     /** 기준 운행일 → 연결 목록 (하루 약 1만 개) + 열차별 정차역 순서. 하루 단위로 교체 */
     record Day(List<RailRouter.Connection> connections, Map<String, List<String>> stopsByTrip) {}
@@ -38,8 +39,9 @@ public class RailJourneyService {
     private volatile long linksLoadedAt = 0;
 
     public RailJourneyService(JdbcClient jdbc, RailService rail, KakaoMobilityClient kakao, TagoSubwayClient tago,
-                              TimetableService timetable) {
+                              TimetableService timetable, HolidayService holidays) {
         this.timetable = timetable;
+        this.holidays = holidays;
         this.jdbc = jdbc;
         this.rail = rail;
         this.kakao = kakao;
@@ -236,11 +238,17 @@ public class RailJourneyService {
                     "실제 시간표로 확인하니 이어지는 열차가 없습니다", List.of(), List.of(), pending);
         }
         Journey first = journeys.getFirst();
-        // 출발역 · 도착역에서 갈아탈 수 있는 지하철 (TAGO) — 병렬로, 늦으면 비움
-        var fSubDep = CompletableFuture.supplyAsync(() -> tago.next(first.access().stationName(), first.departAt().minusMinutes(40)), exec);
-        var fSubArr = CompletableFuture.supplyAsync(() -> tago.next(first.egress().stationName(), first.arriveAt().plusMinutes(3)), exec);
+        // 출발역 · 도착역에서 갈아탈 수 있는 지하철 (TAGO) — 병렬로, 늦으면 비움.
+        // TAGO 요일 구분은 평일 · 토 · 일뿐이라 공휴일에 어느 시간표가 도는지 알 수 없다 → 공휴일엔 표시하지 않는다(추정하지 않음)
+        boolean depHoliday = holidays.is(Times.kst(first.departAt()).toLocalDate());
+        boolean arrHoliday = holidays.is(Times.kst(first.arriveAt()).toLocalDate());
+        var fSubDep = depHoliday ? CompletableFuture.completedFuture(List.<TagoSubwayClient.NextSubway>of())
+                : CompletableFuture.supplyAsync(() -> tago.next(first.access().stationName(), first.departAt().minusMinutes(40)), exec);
+        var fSubArr = arrHoliday ? CompletableFuture.completedFuture(List.<TagoSubwayClient.NextSubway>of())
+                : CompletableFuture.supplyAsync(() -> tago.next(first.egress().stationName(), first.arriveAt().plusMinutes(3)), exec);
         return new Plan(journeys, ref.getFirst(), basis.getFirst(), origins.size(), dests.size(), BOARDING_BUFFER_MIN, TRANSFER_MIN,
-                "코레일 여객열차(KTX·ITX·무궁화 등) 기준. 지하철·버스 환승 경로는 공개 데이터가 없어 다루지 않습니다.",
+                "코레일 여객열차(KTX·ITX·무궁화 등) 기준. 지하철·버스 환승 경로는 공개 데이터가 없어 다루지 않습니다."
+                        + (depHoliday || arrHoliday ? " 공휴일에는 지하철 시간표 구분(평일·토·일)을 알 수 없어 지하철 시각을 표시하지 않습니다." : ""),
                 TripService.join(fSubDep, Duration.ofMillis(1500)), TripService.join(fSubArr, Duration.ofMillis(1500)), pending);
     }
 

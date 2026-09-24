@@ -55,4 +55,11 @@ class DecisionRuleTest {
         assertThat(r.reasons()).isNotEmpty();
         assertThat(r.summary()).contains("도로");
     }
+
+    @org.junit.jupiter.api.Test
+    void holidayDepartureAddsWarning() {
+        var r = DecisionRule.decide(null, null, new DecisionRule.Env(10, 10, 1, 1, "추석"), 0,
+                new DecisionRule.Params(10, 60, 20));
+        org.assertj.core.api.Assertions.assertThat(r.warnings()).containsExactly("출발일이 공휴일(추석) — 도로 기준선은 공휴일을 뺀 평소 값입니다");
+    }
 }

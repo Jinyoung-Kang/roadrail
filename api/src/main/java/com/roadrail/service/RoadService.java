@@ -50,7 +50,9 @@ public class RoadService {
                 WHERE corridor_id = :c AND direction = :d""").param("c", cid).param("d", dir)
                 .query((rs, i) -> new Object[]{rs.getString(1), rs.getString(2), rs.getObject(3, OffsetDateTime.class)}).single();
         return new Baseline(cid, dir, (String) meta[0], (String) meta[1], Times.kst((OffsetDateTime) meta[2]), cells,
-                "최근 8주 같은 요일·5분 슬롯의 통행시간 p50·p90. dow 0 = 전체 요일(표본 n<4 일 때 대체). 결측 슬롯은 셀 없음.");
+                "최근 8주 같은 요일·5분 슬롯의 통행시간 p50·p90. dow 0 = 전체 요일(표본 n<4 일 때 대체). 결측 슬롯은 셀 없음. "
+                        + "공휴일(한국천문연구원 특일 정보)은 입력에서 뺍니다 — 명절 정체가 평소 기준선을 오염시키지 않게. "
+                        + "공휴일 자료만 있으면 기준선은 비어 있습니다.");
     }
 
     public Series series(String cid, String dir, OffsetDateTime from, OffsetDateTime to, String agg) {

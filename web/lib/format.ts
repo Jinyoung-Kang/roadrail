@@ -51,6 +51,8 @@ export function ymd(d: Date): string {
 }
 
 export const DOW = ["", "월", "화", "수", "목", "금", "토", "일"];
+/** 요일별 집계 키 → 이름. 'H' = 공휴일(한국천문연구원 특일 정보) */
+export const dowLabel = (key: string) => (key === "H" ? "공휴일" : DOW[Number(key)] ?? key);
 export const DIR_LABEL: Record<string, string> = { DN: "하행", UP: "상행" };
 
 export const pm25Label = (g: number | null | undefined) =>

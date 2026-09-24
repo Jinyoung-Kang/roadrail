@@ -18,3 +18,6 @@
 | [014](014-rail-transfers-and-real-access.md) | 기차 환승 경로(CSA) · 역까지 실제 경로 · 전국 도로 분석 |
 | [015](015-rail-track-geometry-osm.md) | 기차 경로를 실제 선로로 (OpenStreetMap · 역 쌍 최단 선로) |
 | [016](016-data-provenance-and-tago-timetable.md) | 추정 대신 실제 값 — TAGO 열차 시간표(차종 · 역별 계획 시각)와 추정치 정리 |
+| [017](017-query-performance.md) | 쿼리 성능 — JIT 끄기 · 역 쌍 해시 조인 · 한 번 계산 · 결과 캐시 |
+| [018](018-security-hardening.md) | 보안 점검 — 요청 한도 · X-Forwarded-For 위조 차단 · CSP · SRI · 의존성 감사 · 이미지 분리 |
+| [019](019-holiday-calendar.md) | 공휴일 달력 (한국천문연구원 특일 정보) · 서울 버스 노선정보를 쓰지 않은 이유 |

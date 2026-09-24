@@ -21,7 +21,7 @@ from ..core import db, rds
 from ..core.config import settings
 from ..core.log import log, mask_text
 from ..core.timeutil import now_kst
-from ..pipeline import analysis, env, rail, rail_geometry, road, stations
+from ..pipeline import analysis, env, holidays, rail, rail_geometry, road, stations
 from ..providers.base import JobContext
 from .quota import QuotaBudget, QuotaExhausted
 
@@ -78,6 +78,7 @@ JOBS: dict[str, JobSpec] = {
     "kakao_eta": JobSpec(env.collect_kakao_eta, _kakao_estimate),
     "station_geocode": JobSpec(stations.geocode_stations, _station_estimate),
     "rail_geometry": JobSpec(rail_geometry.build_rail_links, _const({}), lock_ttl=3600),
+    "holiday_sync": JobSpec(holidays.sync_holidays, _const({"KASI": 3})),
     "baseline_daily": JobSpec(analysis.baseline_daily, _const({})),
     "backtest_daily": JobSpec(analysis.backtest_daily, _const({}), lock_ttl=3600),
     "maintenance": JobSpec(analysis.maintenance, _const({})),

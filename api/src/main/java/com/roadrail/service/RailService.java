@@ -22,11 +22,16 @@ public class RailService {
     private final JdbcClient jdbc;
     private final AppProperties props;
     private final TimetableService timetable;
+    private final JsonCache cache;
+    private final HolidayService holidays;
 
-    public RailService(JdbcClient jdbc, AppProperties props, TimetableService timetable) {
+    public RailService(JdbcClient jdbc, AppProperties props, TimetableService timetable, JsonCache cache,
+                       HolidayService holidays) {
+        this.holidays = holidays;
         this.jdbc = jdbc;
         this.props = props;
         this.timetable = timetable;
+        this.cache = cache;
     }
 
     public record Pair(String dep, String arr) {}
@@ -52,12 +57,25 @@ public class RailService {
      * 시간표 기준일: 코레일 API 는 향후 운행계획을 주지 않으므로(U-6) 목표일과 같은 요일의 최근 운행일.
      * 없으면 가장 최근 운행일.
      */
+    /**
+     * 앞으로의 시간표는 공개 데이터에 없어 **같은 요일의 최근 운행일** 실제 시간표를 쓴다.
+     * 공휴일에는 임시열차가 섞인다(실측: 추석 09-24(목) 931편 ↔ 09-17(목) 875편) → 평일 목표일에는 공휴일을 기준일로 고르지 않는다.
+     * 목표일이 공휴일이면 같은 요일 최근 운행일을 쓰고, 공휴일 임시열차는 반영되지 않는다고 밝힌다.
+     */
     public Optional<Map.Entry<LocalDate, String>> referenceDate(LocalDate target) {
-        LocalDate same = jdbc.sql("""
-                SELECT max(run_ymd) FROM rail.run_plan
-                WHERE run_ymd >= :t::date - 28 AND run_ymd < :t AND extract(isodow FROM run_ymd) = :dow""")
-                .param("t", target).param("dow", target.getDayOfWeek().getValue()).query(LocalDate.class).optional().orElse(null);
-        if (same != null) return Optional.of(Map.entry(same, "같은 요일 최근 운행일"));
+        boolean targetHoliday = holidays.is(target);
+        List<LocalDate> same = jdbc.sql("""
+                SELECT DISTINCT run_ymd FROM rail.run_plan
+                WHERE run_ymd >= :t::date - 56 AND run_ymd < :t AND extract(isodow FROM run_ymd) = :dow
+                ORDER BY run_ymd DESC""")
+                .param("t", target).param("dow", target.getDayOfWeek().getValue()).query(LocalDate.class).list();
+        for (LocalDate d : same) {
+            if (targetHoliday) {
+                return Optional.of(Map.entry(d, "같은 요일 최근 운행일 · 목표일은 " + holidays.name(target).orElse("공휴일")
+                        + " — 공휴일 임시열차는 반영되지 않음"));
+            }
+            if (!holidays.is(d)) return Optional.of(Map.entry(d, "같은 요일 최근 운행일 (공휴일 제외)"));
+        }
         return latestDate().map(d -> Map.entry(d, "가장 최근 운행일 (같은 요일 없음)"));
     }
 
@@ -166,19 +184,23 @@ public class RailService {
     }
 
     public Trains trains(String dep, String arr, LocalDate date) {
+        String cacheKey = "rail:trains:v2:%s:%s:%s".formatted(dep, arr, date == null ? "latest" : date);
+        Trains hit = cache.peek(cacheKey, Trains.class);
+        if (hit != null) return hit;
         String depName = stationName(dep), arrName = stationName(arr);
         LocalDate latest = latestDate().orElse(null);
-        List<String> dates = latest == null ? List.of() : jdbc.sql("""
-                SELECT DISTINCT run_ymd::text FROM rail.od_trips_real(:a, :b, :f, :t) ORDER BY 1 DESC""")
-                .param("a", dep).param("b", arr).param("f", latest.minusDays(120)).param("t", latest).query(String.class).list();
-        // 날짜를 고르지 않았으면: 계획 시각을 확인할 수 있는(운행의 절반 이상) 가장 최근 날짜 — TAGO 시간표가 빠진 날은 건너뜀
-        LocalDate d = date != null ? date : dates.isEmpty() ? null : latest == null ? null : jdbc.sql("""
-                SELECT run_ymd FROM rail.od_trips_real(:a, :b, :f, :t) GROUP BY run_ymd
-                HAVING count(arr_delay_min) >= 0.5 * count(*) ORDER BY run_ymd DESC LIMIT 1""")
+        // 최근 120일 날짜별 운행 수 · 계획 시각을 확인한 수를 한 번에 — 날짜 목록과 기본 날짜를 같이 고른다
+        List<Object[]> perDay = latest == null ? List.of() : jdbc.sql("""
+                SELECT run_ymd, count(*) AS n, count(arr_delay_min) AS v FROM rail.od_trips_real(:a, :b, :f, :t)
+                GROUP BY run_ymd ORDER BY run_ymd DESC""")
                 .param("a", dep).param("b", arr).param("f", latest.minusDays(120)).param("t", latest)
-                .query(LocalDate.class).optional().orElse(LocalDate.parse(dates.getFirst()));
+                .query((rs, i) -> new Object[]{rs.getObject(1, LocalDate.class), rs.getInt(2), rs.getInt(3)}).list();
+        List<String> dates = perDay.stream().map(r -> r[0].toString()).toList();
+        // 날짜를 고르지 않았으면: 계획 시각을 확인할 수 있는(운행의 절반 이상) 가장 최근 날짜 — TAGO 시간표가 빠진 날은 건너뜀
+        LocalDate d = date != null ? date : perDay.stream().filter(r -> (int) r[2] >= 0.5 * (int) r[1])
+                .map(r -> (LocalDate) r[0]).findFirst().orElse(dates.isEmpty() ? null : LocalDate.parse(dates.getFirst()));
         if (d == null) return new Trains(dep, arr, depName, arrName, null, List.of(), dates, "두 역을 잇는 직통 운행 기록이 없습니다.");
-        timetable.ensure(dep, arr, timetable.runDates(dep, arr, d.minusDays(29), d), Duration.ofMillis(2500));
+        boolean ready = timetable.ensure(dep, arr, timetable.runDates(dep, arr, d.minusDays(29), d), Duration.ofMillis(2500));
         List<Object[]> rows = jdbc.sql("""
                 SELECT trn_no, act_dep_at, act_arr_at, plan_dep_at, plan_arr_at, dep_delay_min::float,
                        arr_delay_min::float, dep_basis, arr_basis, ride_min::float, grade
@@ -199,10 +221,12 @@ public class RailService {
                     (String) r[7], (String) r[8], (Double) r[9], arrDelay == null ? null : arrDelay <= thr,
                     stats.get((String) r[0]), meta.get((String) r[0]), (String) r[10]));
         }
-        return new Trains(dep, arr, depName, arrName, d.toString(), runs, dates,
+        Trains t = new Trains(dep, arr, depName, arrName, d.toString(), runs, dates,
                 "계획 시각: 시발·종착역은 코레일 운행계획, 중간역은 TAGO 열차 시간표의 역별 계획 시각입니다. "
                         + "TAGO 시간표가 없는 날의 중간역 운행은 계획 시각을 알 수 없어 '—'(확인 불가)로 두고 통계에서 뺍니다(추정하지 않음). "
                         + "차종은 TAGO 시간표에 적힌 그날의 배정 차종입니다. 통계는 기준일까지 최근 30일. 환승 경로는 다루지 않습니다.");
+        if (ready) cache.put(cacheKey, t, Duration.ofMinutes(10));  // 시간표를 받는 중이면 캐시하지 않음
+        return t;
     }
 
     public Punctuality punctuality(String dep, String arr, LocalDate from, LocalDate to, String groupBy, Integer thresholdMin) {
@@ -213,50 +237,62 @@ public class RailService {
         if (thr < 0 || thr > 60) throw ApiException.invalid("thresholdMin 은 0~60 입니다.");
         String keyExpr = switch (groupBy) {
             case "train" -> "trn_no";
-            case "dow" -> "extract(isodow FROM run_ymd)::int::text";
-            case "hour" -> "lpad(extract(hour FROM coalesce(plan_dep_at, act_dep_at))::int::text, 2, '0')";
+            // 공휴일(한국천문연구원 특일 정보)은 요일과 따로 'H' — 임시열차가 섞여 평소 요일과 다르다
+            case "dow" -> "CASE WHEN EXISTS (SELECT 1 FROM ref.holiday h WHERE h.day = o.run_ymd) THEN 'H' "
+                    + "ELSE extract(isodow FROM o.run_ymd)::int::text END";
+            case "hour" -> "lpad(extract(hour FROM coalesce(o.plan_dep_at, o.act_dep_at))::int::text, 2, '0')";
             default -> throw ApiException.invalid("groupBy 는 train · dow · hour 중 하나입니다.");
         };
+        // 과거 기간 결과는 새 운행 자료(하루 세 번)나 시간표가 들어오기 전까지 같다 → 10분 캐시 (시간표를 받는 중이면 캐시하지 않음)
+        String cacheKey = "rail:punct:v2:%s:%s:%s:%s:%s:%d".formatted(dep, arr, from, to, groupBy, thr);
+        Punctuality hit = cache.peek(cacheKey, Punctuality.class);
+        if (hit != null) return hit;
+
         String depName = stationName(dep), arrName = stationName(arr);
         // 처음 보는 역 쌍은 2.5초까지만 기다리고 나머지는 뒤에서 받는다 (timetablePending → 화면이 다시 부름)
         boolean ready = timetable.ensure(dep, arr, timetable.runDates(dep, arr, from, to), Duration.ofMillis(2500));
-        List<PunctualityItem> items = jdbc.sql("""
-                SELECT %s AS k, count(*) AS samples, count(arr_delay_min) AS verified,
-                       (array_agg(grade ORDER BY run_ymd DESC) FILTER (WHERE grade IS NOT NULL))[1] AS grade,
-                       avg(CASE WHEN arr_delay_min IS NULL THEN NULL WHEN arr_delay_min <= :thr THEN 1.0 ELSE 0.0 END) AS rate,
-                       avg(arr_delay_min) AS avg_delay, percentile_cont(0.9) WITHIN GROUP (ORDER BY arr_delay_min) AS p90,
-                       avg(ride_min) AS ride
-                FROM rail.od_trips_real(:a, :b, :f, :t) GROUP BY 1 ORDER BY %s""".formatted(keyExpr,
-                        "train".equals(groupBy) ? "samples DESC, 1" : "1"))
-                .param("thr", thr).param("a", dep).param("b", arr).param("f", from).param("t", to)
-                .query((rs, i) -> new PunctualityItem(rs.getString("k"), rs.getInt("samples"), rs.getInt("verified"),
-                        round(rs, "rate", 3), round(rs, "avg_delay", 1), round(rs, "p90", 1), round(rs, "ride", 1),
-                        null, "train".equals(groupBy) ? rs.getString("grade") : null)).list();
-        if ("train".equals(groupBy) && !items.isEmpty()) {
-            Map<String, TrainMeta> meta = trainMeta(items.stream().map(PunctualityItem::key).toList(), from, to);
-            items = items.stream().map(it -> new PunctualityItem(it.key(), it.samples(), it.verified(), it.onTimeRate(),
-                    it.avgArrDelayMin(), it.p90ArrDelayMin(), it.avgRideMin(), meta.get(it.key()),
-                    it.grade())).toList();
-        }
+        // 한 번의 계산으로 묶음별 행 + 전체 요약 행(GROUPING SETS 의 ()) — 역 쌍 운행 계산(od_trips)을 한 번만
+        List<PunctualityItem> items = new ArrayList<>();
         List<Bucket> hist = new ArrayList<>();
-        Summary summary = jdbc.sql("""
-                SELECT count(*) AS samples, count(arr_delay_min) AS verified,
+        Summary[] summary = {new Summary(0, 0, 0, null, null, null)};
+        jdbc.sql("""
+                SELECT k, grouping(k) AS total, count(*) AS samples, count(arr_delay_min) AS verified,
                        avg(CASE WHEN arr_delay_min IS NULL THEN NULL WHEN arr_delay_min <= :thr THEN 1.0 ELSE 0.0 END) AS rate,
                        avg(arr_delay_min) AS avg_delay, percentile_cont(0.9) WITHIN GROUP (ORDER BY arr_delay_min) AS p90,
+                       avg(ride_min) AS ride,
+                       (array_agg(grade ORDER BY run_ymd DESC) FILTER (WHERE grade IS NOT NULL))[1] AS grade,
                        count(*) FILTER (WHERE arr_delay_min <= 0) AS b0,
                        count(*) FILTER (WHERE arr_delay_min > 0 AND arr_delay_min <= 5) AS b1,
                        count(*) FILTER (WHERE arr_delay_min > 5 AND arr_delay_min <= 10) AS b2,
                        count(*) FILTER (WHERE arr_delay_min > 10 AND arr_delay_min <= 20) AS b3,
                        count(*) FILTER (WHERE arr_delay_min > 20 AND arr_delay_min <= 30) AS b4,
                        count(*) FILTER (WHERE arr_delay_min > 30) AS b5
-                FROM rail.od_trips_real(:a, :b, :f, :t)""")
+                FROM (SELECT o.*, {key} AS k FROM rail.od_trips_real(:a, :b, :f, :t) o) x
+                GROUP BY GROUPING SETS ((k), ())""".replace("{key}", keyExpr))
                 .param("thr", thr).param("a", dep).param("b", arr).param("f", from).param("t", to)
-                .query((rs, i) -> {
-                    String[] labels = {"≤0분", "1–5분", "6–10분", "11–20분", "21–30분", ">30분"};
-                    for (int b = 0; b < 6; b++) hist.add(new Bucket(labels[b], rs.getInt("b" + b)));
-                    return new Summary(rs.getInt("samples"), rs.getInt("verified"), rs.getInt("samples") - rs.getInt("verified"),
-                            round(rs, "rate", 3), round(rs, "avg_delay", 1), round(rs, "p90", 1));
-                }).single();
+                .query(rs -> {
+                    if (rs.getInt("total") == 1) {
+                        String[] labels = {"≤0분", "1–5분", "6–10분", "11–20분", "21–30분", ">30분"};
+                        for (int i = 0; i < 6; i++) hist.add(new Bucket(labels[i], rs.getInt("b" + i)));
+                        summary[0] = new Summary(rs.getInt("samples"), rs.getInt("verified"),
+                                rs.getInt("samples") - rs.getInt("verified"), round(rs, "rate", 3), round(rs, "avg_delay", 1),
+                                round(rs, "p90", 1));
+                    } else {
+                        items.add(new PunctualityItem(rs.getString("k"), rs.getInt("samples"), rs.getInt("verified"),
+                                round(rs, "rate", 3), round(rs, "avg_delay", 1), round(rs, "p90", 1), round(rs, "ride", 1),
+                                null, "train".equals(groupBy) ? rs.getString("grade") : null));
+                    }
+                });
+        if (hist.isEmpty()) for (String l : List.of("≤0분", "1–5분", "6–10분", "11–20분", "21–30분", ">30분")) hist.add(new Bucket(l, 0));
+        items.sort("train".equals(groupBy)
+                ? Comparator.comparingInt(PunctualityItem::samples).reversed().thenComparing(PunctualityItem::key)
+                : Comparator.comparing(PunctualityItem::key));
+        List<PunctualityItem> out = items;
+        if ("train".equals(groupBy) && !items.isEmpty()) {
+            Map<String, TrainMeta> meta = trainMeta(items.stream().map(PunctualityItem::key).toList(), from, to);
+            out = items.stream().map(it -> new PunctualityItem(it.key(), it.samples(), it.verified(), it.onTimeRate(),
+                    it.avgArrDelayMin(), it.p90ArrDelayMin(), it.avgRideMin(), meta.get(it.key()), it.grade())).toList();
+        }
         Summary nation = jdbc.sql("""
                 SELECT count(*) AS samples, count(arr_delay_min) AS verified,
                        avg(CASE WHEN arr_delay_min IS NULL THEN NULL WHEN arr_delay_min <= :thr THEN 1.0 ELSE 0.0 END) AS rate,
@@ -266,12 +302,15 @@ public class RailService {
                 .query((rs, i) -> new Summary(rs.getInt("samples"), rs.getInt("verified"),
                         rs.getInt("samples") - rs.getInt("verified"), round(rs, "rate", 3), round(rs, "avg_delay", 1),
                         round(rs, "p90", 1))).single();
-        return new Punctuality(dep, arr, depName, arrName, from.toString(), to.toString(), groupBy, thr, summary, items,
+        Punctuality p = new Punctuality(dep, arr, depName, arrName, from.toString(), to.toString(), groupBy, thr, summary[0], out,
                 hist, nation,
                 Map.of("P-v1", "시발 출발·종착 도착을 코레일 운행계획과 정확 비교",
                         "P-t1", "중간역은 TAGO 열차 시간표의 역별 계획 시각과 정확 비교 (시간표가 없으면 확인 불가로 제외)"),
                 "계획 시각(운행계획 · TAGO 시간표)과 운행정보(역별 실제 출발·도착)를 비교한 값. 계획 시각을 알 수 없는 열차는 "
-                        + "'운행 확인 불가'로 정시율 분모에서 제외합니다. 직통 열차만 다룹니다(환승 제외).", !ready);
+                        + "'운행 확인 불가'로 정시율 분모에서 제외합니다. 직통 열차만 다룹니다(환승 제외)."
+                        + ("dow".equals(groupBy) ? " 요일별의 H 는 공휴일(한국천문연구원 특일 정보)입니다." : ""), !ready);
+        if (ready) cache.put(cacheKey, p, Duration.ofMinutes(10));
+        return p;
     }
 
     /** 역 검색 — 이름 포함 검색, 최근 7일 운행 편수가 많은 역부터 */

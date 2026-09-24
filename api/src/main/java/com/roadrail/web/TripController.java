@@ -67,13 +67,13 @@ public class TripController {
     }
 
     @GetMapping("/trip")
-    @Operation(summary = "어디서 → 어디로 판단 카드 — 카카오 경로(자동차) · 근처 역 직통 열차 · 날씨·대기 · R-DEC-01")
+    @Operation(summary = "출발지 → 도착지 판단 카드 — 카카오 경로(자동차) · 근처 역 직통 열차 · 날씨·대기 · R-DEC-01")
     public ResponseEntity<TripDtos.Trip> trip(@RequestParam double fromLat, @RequestParam double fromLon,
                                               @RequestParam @Size(max = 60) String fromName,
-                                              @RequestParam(required = false) String fromStation,
+                                              @RequestParam(required = false) @jakarta.validation.constraints.Pattern(regexp = STATION) String fromStation,
                                               @RequestParam double toLat, @RequestParam double toLon,
                                               @RequestParam @Size(max = 60) String toName,
-                                              @RequestParam(required = false) String toStation,
+                                              @RequestParam(required = false) @jakarta.validation.constraints.Pattern(regexp = STATION) String toStation,
                                               @RequestParam(defaultValue = "0") @Min(0) @Max(360) int departIn,
                                               @RequestParam(required = false) @Min(0) @Max(180) Integer accessMin) {
         var from = new TripDtos.Place(fromName, null, fromLat, fromLon, fromStation == null ? "PLACE" : "STATION", blank(fromStation));
@@ -84,21 +84,24 @@ public class TripController {
 
     @GetMapping("/rail/od/punctuality")
     @Operation(summary = "임의 역 쌍 정시율 — groupBy=train|dow|hour, thresholdMin")
-    public RailDtos.Punctuality odPunctuality(@RequestParam String dep, @RequestParam String arr,
+    public RailDtos.Punctuality odPunctuality(@RequestParam @jakarta.validation.constraints.Pattern(regexp = STATION) String dep, @RequestParam @jakarta.validation.constraints.Pattern(regexp = STATION) String arr,
                                               @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                               @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-                                              @RequestParam(defaultValue = "train") String groupBy,
+                                              @RequestParam(defaultValue = "train") @jakarta.validation.constraints.Pattern(regexp = "train|dow|hour") String groupBy,
                                               @RequestParam(required = false) Integer thresholdMin) {
         return rail.punctuality(dep, arr, from, to, groupBy, thresholdMin);
     }
 
     @GetMapping("/rail/od/trains")
     @Operation(summary = "임의 역 쌍 날짜별 열차 + 열차별 최근 30일 정시성")
-    public RailDtos.Trains odTrains(@RequestParam String dep, @RequestParam String arr,
+    public RailDtos.Trains odTrains(@RequestParam @jakarta.validation.constraints.Pattern(regexp = STATION) String dep, @RequestParam @jakarta.validation.constraints.Pattern(regexp = STATION) String arr,
                                     @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         if (dep.equals(arr)) throw ApiException.invalid("출발역과 도착역이 같습니다.");
         return rail.trains(dep, arr, date);
     }
+
+    /** 역 코드 — 캐시 키 · SQL 매개변수로 쓰이므로 형식 · 길이를 제한 (코레일 7자리, 테스트 S1) */
+    static final String STATION = "[0-9A-Za-z]{0,10}";
 
     private static String blank(String s) { return s == null || s.isBlank() ? null : s; }
 }

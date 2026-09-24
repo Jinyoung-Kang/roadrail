@@ -12,6 +12,7 @@ from ..core import db
 from ..core.config import settings
 from ..core.timeutil import now_kst
 from ..providers.base import JobContext
+from . import holidays
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,8 @@ async def baseline_daily(ctx: JobContext) -> int:
     now = now_kst()
     since = now - dt.timedelta(weeks=WEEKS)
     df = await load_series(since)
-    bl = compute_baseline(df)
+    hol = await holidays.holiday_days(since.date())
+    bl = compute_baseline(df, hol)
     p = await db.pool()
     async with p.connection() as conn, conn.transaction(), conn.cursor() as cur:
         await cur.execute("DELETE FROM ana.road_baseline")
@@ -39,7 +41,7 @@ async def baseline_daily(ctx: JobContext) -> int:
             [(r.corridor_id, r.direction, int(r.dow), int(r.slot_idx), int(r.p50_sec), int(r.p90_sec), int(r.n),
               since.date(), now.date()) for r in bl.itertuples()])
     ctx.rows += len(bl)
-    ctx.note(f"기준선 {len(bl)}행 (입력 {len(df)}슬롯)")
+    ctx.note(f"기준선 {len(bl)}행 (입력 {len(df)}슬롯, 공휴일 {sum(1 for h in hol if h <= now.date())}일 제외)")
     return len(bl)
 
 
@@ -49,7 +51,8 @@ async def backtest_daily(ctx: JobContext) -> int:
     since = dt.datetime.combine(today, dt.time(), now_kst().tzinfo) - dt.timedelta(days=DAYS, weeks=WEEKS)
     df = await load_series(since)
     # 오늘 슬롯도 평가 대상에 포함 (eval_day 끝 = 내일 0시)
-    rows, start, end = run_backtest(df, today + dt.timedelta(days=1), tau)
+    rows, start, end = run_backtest(df, today + dt.timedelta(days=1), tau,
+                                    holidays=await holidays.holiday_days(since.date()))  # 운영과 같은 기준선(공휴일 제외)
     await db.execute("DELETE FROM ana.forecast_eval WHERE eval_date = %s", (today,))
     await db.executemany("""
         INSERT INTO ana.forecast_eval (eval_date, model, corridor_id, direction, horizon_min, mae_sec, mape, n,

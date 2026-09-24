@@ -6,7 +6,7 @@ import { DASH, mdhm, num, pct } from "@/lib/format";
 import type { OpsFailure, OpsStatus } from "@/lib/types";
 
 const PROVIDER: Record<string, string> = { EX: "한국도로공사", KORAIL: "한국철도공사", KMA: "기상청", AIRKOREA: "에어코리아", KAKAO: "카카오 길찾기",
-  KAKAO_LOCAL: "카카오 검색", TAGO: "TAGO 지하철", TAGO_TRAIN: "TAGO 열차", OSM: "OpenStreetMap", "-": "내부 계산" };
+  KAKAO_LOCAL: "카카오 검색", TAGO: "TAGO 지하철", TAGO_TRAIN: "TAGO 열차", OSM: "OpenStreetMap", KASI: "천문연 특일 정보", "-": "내부 계산" };
 
 /** 클립보드 복사 — http 로 연 경우(보안 컨텍스트 아님)에는 textarea 선택 복사로 대신 */
 async function copyText(text: string): Promise<boolean> {

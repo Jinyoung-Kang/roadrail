@@ -31,7 +31,8 @@ class EvalRow:
 
 
 def run_backtest(series: pd.DataFrame, eval_day: dt.date, tau_min: float = 90.0,
-                 days: int = DAYS, horizons=HORIZONS) -> tuple[list[EvalRow], dt.datetime, dt.datetime]:
+                 days: int = DAYS, horizons=HORIZONS, holidays: frozenset = frozenset()
+                 ) -> tuple[list[EvalRow], dt.datetime, dt.datetime]:
     """series: [corridor_id, direction, slot_ts, travel_sec] (eval_day 이전 days+8주 포함).
     → (결과 행, 창 시작, 창 끝)"""
     end = dt.datetime(eval_day.year, eval_day.month, eval_day.day, tzinfo=KST)
@@ -47,7 +48,7 @@ def run_backtest(series: pd.DataFrame, eval_day: dt.date, tau_min: float = 90.0,
         day = start
         while day < end:
             hist = g[(g["slot_ts"] >= day - dt.timedelta(weeks=WEEKS)) & (g["slot_ts"] < day)]
-            bl = baseline_lookup(compute_baseline(hist), cid, direction) if not hist.empty else {}
+            bl = baseline_lookup(compute_baseline(hist, holidays), cid, direction) if not hist.empty else {}
             for hour in range(24):
                 issue = day + dt.timedelta(hours=hour)
                 cur = obs.get(pd.Timestamp(issue))

@@ -29,7 +29,12 @@ public final class DecisionRule {
         }
     }
 
-    public record Env(Integer popOrigin, Integer popDest, Integer pm25GradeOrigin, Integer pm25GradeDest) {}
+    /** holiday = 출발일이 공휴일이면 이름 (한국천문연구원 특일 정보) */
+    public record Env(Integer popOrigin, Integer popDest, Integer pm25GradeOrigin, Integer pm25GradeDest, String holiday) {
+        public Env(Integer popOrigin, Integer popDest, Integer pm25GradeOrigin, Integer pm25GradeDest) {
+            this(popOrigin, popDest, pm25GradeOrigin, pm25GradeDest, null);
+        }
+    }
 
     public record Params(int similarMin, int popWarn, int accessMin) {}
 
@@ -74,6 +79,7 @@ public final class DecisionRule {
             if (popMax >= p.popWarn()) warnings.add("강수확률 " + popMax + "% — 도로 지연 가능성");
             int gradeMax = Math.max(nz(env.pm25GradeOrigin()), nz(env.pm25GradeDest()));
             if (gradeMax >= 3) warnings.add("초미세먼지 " + (gradeMax >= 4 ? "매우나쁨" : "나쁨"));
+            if (env.holiday() != null) warnings.add("출발일이 공휴일(" + env.holiday() + ") — 도로 기준선은 공휴일을 뺀 평소 값입니다");
         }
         if (incidentCount > 0) warnings.add("경로 주변 돌발 안내 " + incidentCount + "건");
 
