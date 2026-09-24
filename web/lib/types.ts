@@ -93,14 +93,23 @@ export interface ApiError { code: string; message: string; traceId: string }
 export type PlaceKind = "REGION" | "STATION" | "PLACE" | "ADDRESS" | "CORRIDOR";
 export interface Place { name: string; address: string | null; lat: number; lon: number; kind: PlaceKind; stationCode: string | null }
 export interface Station { code: string; name: string; lat: number | null; lon: number | null; trains7d: number }
-export interface StationEnd { code: string; name: string; lat: number; lon: number; distanceKm: number; minutes: number; estimated: boolean }
+export interface TransferEnd { stationCode: string; stationName: string; lat: number; lon: number; straightKm: number; minutes: number;
+  distanceM: number | null; mode: "WALK" | "CAR" | "INPUT" | "ESTIMATE" }
+export interface JourneyLeg { trnNo: string; fromCode: string; fromName: string; toCode: string; toName: string; dep: string; arr: string;
+  rideMin: number; onTimeRate30d: number | null; avgArrDelayMin30d: number | null; samples: number; delayEstimated: boolean;
+  fromLat: number | null; fromLon: number | null; toLat: number | null; toLon: number | null }
+export interface Journey { access: TransferEnd; legs: JourneyLeg[]; egress: TransferEnd; departAt: string; arriveAt: string;
+  waitMin: number; transfers: number; totalMin: number; expectedDelayMin: number | null }
+export interface NextSubway { line: string; toward: string; times: string[] }
+export interface RailPlan { journeys: Journey[]; referenceDate: string | null; basis: string | null; originCandidates: number;
+  destCandidates: number; boardingBufferMin: number; transferMin: number; note: string | null;
+  subwayAtDeparture: NextSubway[]; subwayAtArrival: NextSubway[] }
 export interface Trip {
   from: Place; to: Place; distanceKm: number; asOf: string; departAt: string; accessMin: number | null;
   car: { durationSec: number | null; distanceM: number | null; departAt: string | null; path: [number, number][]; pending: boolean; source: string };
   observed: { corridorId: string; corridorName: string; direction: Dir; travelSec: number; baselineP50Sec: number | null;
     vsBaselinePct: number | null; slotTs: string; predictedSec: number | null; model: string; leadMin: number } | null;
-  rail: { dep: StationEnd | null; arr: StationEnd | null; referenceDate: string | null; basis: string | null;
-    nextTrains: NextTrain[]; pairsTried: number; note: string | null } | null;
+  rail: RailPlan | null;
   env: Record<"origin" | "dest", EnvPoint>;
   incidents: Incident[];
   decision: Decision;
@@ -109,3 +118,13 @@ export interface Trip {
   pending: boolean;
   cache: string;
 }
+
+// ---- 도로 분석 (전국 임의 두 지점, 카카오 경로)
+export interface RoadRun { name: string; type: string; distanceM: number; durationSec: number; speedKmh: number | null; traffic: string }
+export interface RouteSummary { label: string; durationSec: number | null; distanceM: number | null; tollFare: number | null;
+  taxiFare: number | null; path: [number, number][]; byType: { type: string; distanceM: number; durationSec: number; share: number }[];
+  roads: RoadRun[]; slow: RoadRun[] }
+export interface ProfilePoint { departAt: string; offsetMin: number; durationSec: number | null }
+export interface RouteAnalysis { from: Place; to: Place; straightKm: number; departAt: string; recommended: RouteSummary;
+  avoidMotorway: RouteSummary; profile: ProfilePoint[]; bestDeparture: ProfilePoint | null;
+  monitored: { corridorId: string; name: string; direction: Dir } | null; note: string }

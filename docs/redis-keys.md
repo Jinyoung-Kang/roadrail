@@ -13,7 +13,10 @@
 | `trip:{from}:{to}:{departIn}:{access}` | 어디서→어디로 판단 카드 (pending 이면 저장 안 함) | api | api | 60s |
 | `kakao:addr:{q}` · `kakao:kw:{q}` | 지역 · 장소 검색 결과 | api | api | 1일 |
 | `kakao:c2r:{lat,lon}` | 좌표 → 행정구역 (에어코리아 시도) | api | api | 30일 |
+| `kakao:many:{origins\|destinations}:{좌표}:{역 코드들}` | 역까지 · 역에서 실제 운전 시간 (다중 길찾기) | api | api | 20분 |
+| `kakao:route:{avoid}:{detail}:{o}:{d}:{출발}` | 도로 분석 경로 (도로별 구간 · 소통) | api | api | 20분 |
+| `tago:stn:{역명}` · `tago:tt:{역 ID}:{요일}:{U\|D}` | TAGO 지하철 역 목록 · 역별 시간표 | api | api | 7일 · 1일 |
 | `kma:{nx}:{ny}:{base}` | 조회 시점 단기예보 (수집 대상이 아닌 격자) | api | api | 3시간 |
 | `air:{sido}` | 조회 시점 대기질 (수집 대상이 아닌 시도) | api | api | 50분 |
 
-날짜는 모두 KST. `{P}` ∈ EX · KORAIL · KMA · AIRKOREA · KAKAO(길찾기) · KAKAO_LOCAL(검색).
+날짜는 모두 KST. `{P}` ∈ EX · KORAIL · KMA · AIRKOREA · KAKAO(길찾기) · KAKAO_LOCAL(검색) · TAGO(지하철정보).

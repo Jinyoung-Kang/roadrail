@@ -43,8 +43,8 @@ export default function RoadPage() {
   const units = corridor?.road[dir]?.units ?? [];
 
   return (
-    <Layout title={`${corridor?.name ?? cid} 도로 분석`}>
-      <PageHero eyebrow={`도로 분석 · ${DIR_LABEL[dir]}`} title={corridor ? `${units[0]?.name ?? ""} → ${units[units.length - 1]?.name ?? ""}` : cid}
+    <Layout title={`${corridor?.name ?? cid} 고속도로 실측`}>
+      <PageHero eyebrow={`고속도로 실측 분석 · 자주 오가는 길 · ${DIR_LABEL[dir]}`} title={corridor ? `${units[0]?.name ?? ""} → ${units[units.length - 1]?.name ?? ""}` : cid}
                 sub={<>영업소 {units.length}곳을 잇는 {corridor?.road[dir]?.segments ?? DASH}개 구간 · {num(corridor?.road[dir]?.distanceKm, 0)}km 의 1종(소형차) 통행시간 합</>}>
         <CorridorBar base="road" corridors={corridors.data} cid={cid} dir={dir} />
         <div className="mt-12">

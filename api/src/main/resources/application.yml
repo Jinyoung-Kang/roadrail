@@ -75,6 +75,7 @@ roadrail:
     AIRKOREA: ${QUOTA_AIRKOREA:450}
     KAKAO: ${QUOTA_KAKAO:5000}
     KAKAO_LOCAL: ${QUOTA_KAKAO_LOCAL:50000}
+    TAGO: ${QUOTA_TAGO:9000}
 
 logging:
   level:

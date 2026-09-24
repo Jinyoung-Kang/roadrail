@@ -109,6 +109,94 @@ public class KakaoMobilityClient {
         }
     }
 
+    // ------------------------------------------------------------------ 다중 목적지 · 출발지 (역까지 · 역에서 실제 경로)
+
+    /** key → (소요 초, 거리 m). 반경 10km 안의 목적지만 (카카오 제한). 실패하면 빈 맵. */
+    public record Leg(int durationSec, int distanceM) {}
+
+    public Map<String, Leg> manyDestinations(double oLat, double oLon, Map<String, double[]> dests) {
+        return many("/v1/destinations/directions", "origin", "destinations", oLat, oLon, dests);
+    }
+
+    public Map<String, Leg> manyOrigins(Map<String, double[]> origins, double dLat, double dLon) {
+        return many("/v1/origins/directions", "destination", "origins", dLat, dLon, origins);
+    }
+
+    private Map<String, Leg> many(String path, String oneField, String manyField, double lat, double lon, Map<String, double[]> pts) {
+        if (pts.isEmpty() || props.kakaoRestApiKey() == null || props.kakaoRestApiKey().isBlank()) return Map.of();
+        String key = String.format(Locale.ROOT, "kakao:many:%s:%.4f,%.4f:%s", manyField, lat, lon,
+                String.join(",", new java.util.TreeSet<>(pts.keySet())));
+        LegMap hit = cache.peek(key, LegMap.class);
+        if (hit != null) return hit.legs();
+        if (!quota.take("KAKAO")) return Map.of();
+        try {
+            List<Map<String, Object>> list = new ArrayList<>();
+            pts.forEach((k, v) -> list.add(Map.of("x", String.valueOf(v[1]), "y", String.valueOf(v[0]), "key", k)));
+            Map<String, Object> body = Map.of(oneField, Map.of("x", String.valueOf(lon), "y", String.valueOf(lat)),
+                    manyField, list, "radius", 10000);
+            JsonNode res = http.post().uri(path).header("Authorization", "KakaoAK " + props.kakaoRestApiKey())
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON).body(body).retrieve().body(JsonNode.class);
+            Map<String, Leg> out = new java.util.HashMap<>();
+            if (res != null) for (JsonNode r : res.path("routes")) {
+                if (r.path("result_code").asInt(-1) == 0) {
+                    out.put(r.path("key").asString(), new Leg(r.path("summary").path("duration").asInt(), r.path("summary").path("distance").asInt()));
+                }
+            }
+            cache.put(key, new LegMap(out), Duration.ofMinutes(20));
+            return out;
+        } catch (RuntimeException e) {
+            log.warn("카카오 다중 길찾기 실패: {}", e.getClass().getSimpleName());
+            return Map.of();
+        }
+    }
+
+    public record LegMap(Map<String, Leg> legs) {}
+
+    // ------------------------------------------------------------------ 경로 상세 (도로 분석)
+
+    public record Road(String name, int distanceM, int durationSec, int trafficState) {}
+
+    public record Route(int durationSec, int distanceM, Integer tollFare, Integer taxiFare, String departAt,
+                        List<double[]> path, List<Road> roads) {}
+
+    /** 출발 시각 기준 경로 상세. avoid = null | "motorway" (고속도로 회피 → 국도·일반도로 위주). 결과 20분 캐시. */
+    public Route route(double oLat, double oLon, double dLat, double dLon, OffsetDateTime departAt, String avoid, boolean detail) {
+        if (props.kakaoRestApiKey() == null || props.kakaoRestApiKey().isBlank()) return null;
+        OffsetDateTime t = departAt.withMinute(departAt.getMinute() - departAt.getMinute() % 10).withSecond(0).withNano(0);
+        if (t.isBefore(OffsetDateTime.now().plusMinutes(1))) t = t.plusMinutes(10);
+        String dep = t.format(FMT);
+        String key = String.format(Locale.ROOT, "kakao:route:%s:%s:%.4f,%.4f:%.4f,%.4f:%s", avoid, detail, oLat, oLon, dLat, dLon, dep);
+        Route hit = cache.peek(key, Route.class);
+        if (hit != null) return hit;
+        if (!quota.take("KAKAO")) return null;
+        try {
+            JsonNode body = http.get().uri(u -> {
+                        var b = u.path("/v1/future/directions").queryParam("origin", oLon + "," + oLat)
+                                .queryParam("destination", dLon + "," + dLat).queryParam("departure_time", dep)
+                                .queryParam("summary", detail ? "false" : "true");
+                        if (avoid != null) b = b.queryParam("avoid", avoid);
+                        return b.build();
+                    }).header("Authorization", "KakaoAK " + props.kakaoRestApiKey()).retrieve().body(JsonNode.class);
+            JsonNode r = body == null ? null : body.path("routes").path(0);
+            if (r == null || r.path("result_code").asInt(-1) != 0) return null;
+            JsonNode s = r.path("summary");
+            List<Road> roads = new ArrayList<>();
+            if (detail) for (JsonNode sec : r.path("sections")) for (JsonNode road : sec.path("roads")) {
+                roads.add(new Road(road.path("name").asString(""), road.path("distance").asInt(), road.path("duration").asInt(),
+                        road.path("traffic_state").asInt(0)));
+            }
+            Route out = new Route(s.path("duration").asInt(), s.path("distance").asInt(),
+                    s.path("fare").path("toll").isMissingNode() ? null : s.path("fare").path("toll").asInt(),
+                    s.path("fare").path("taxi").isMissingNode() ? null : s.path("fare").path("taxi").asInt(), dep,
+                    detail ? path(r) : List.of(), roads);
+            cache.put(key, out, Duration.ofMinutes(20));
+            return out;
+        } catch (RuntimeException e) {
+            log.warn("카카오 경로 조회 실패: {}", e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
     /** vertexes = [x1, y1, x2, y2, …] (경도, 위도) → [[lat, lon]] 을 최대 400점으로 균등 추출 */
     static List<double[]> path(JsonNode route) {
         List<double[]> all = new ArrayList<>();

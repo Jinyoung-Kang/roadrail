@@ -29,7 +29,36 @@ test("판단 화면: 전국 어디든 검색해서 고른다", async ({ page }) 
   await expect(page.getByText(/빠를 것으로 보입니다|비슷합니다|비교할 수 없습니다|비교합니다/).first()).toBeVisible({ timeout: 15_000 });
 });
 
-test("도로 분석: 추이 차트와 히트맵", async ({ page }) => {
+test("도로 분석: 전국 어디든 — 출발 시각별 · 도로 구성", async ({ page }) => {
+  await page.goto("/road?from=%EA%B0%95%EB%82%A8%EC%97%AD~37.49790~127.02760~&to=%EC%A0%84%EC%A3%BC%EC%8B%9C~35.82420~127.14800~");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(/강남역\s*→\s*전주시/);
+  await expect(page.getByRole("heading", { name: "언제 출발하면 빠를까" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "어떤 도로로 가나요" })).toBeVisible();
+  await expect(page.getByText("고속도로 비율 (거리)")).toBeVisible();
+});
+
+test("지도: 기본은 잠김 — 스크롤해도 배율이 바뀌지 않고 버튼으로 조작", async ({ page }) => {
+  await page.goto("/");
+  const btn = page.getByRole("button", { name: "지도 조작하기 (이동 · 확대)" });
+  await expect(btn).toBeVisible({ timeout: 15_000 });
+  await btn.click();
+  await expect(page.getByRole("button", { name: "지도 조작 끄기" })).toBeVisible();
+});
+
+test("선택 목록: 맨 아래 항목까지 잘리지 않는다", async ({ page }) => {
+  await page.goto("/rail?dep=3900023&arr=3900073");
+  await page.getByRole("combobox", { name: "도착역" }).click();
+  const list = page.getByRole("listbox");
+  await expect(list.getByRole("option").first()).toBeVisible();
+  await list.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  const last = list.getByRole("option").last();
+  await expect(last).toBeInViewport();
+  const box = await last.boundingBox();
+  const vh = page.viewportSize()!.height;
+  expect(box!.y + box!.height).toBeLessThanOrEqual(vh);
+});
+
+test("고속도로 실측 분석(길): 추이 차트와 히트맵", async ({ page }) => {
   await page.goto("/road/SEL-DJN?dir=DN");
   await expect(page.getByRole("heading", { name: "통행시간과 기준선" })).toBeVisible();
   await expect(page.locator(".recharts-line").first()).toBeVisible();

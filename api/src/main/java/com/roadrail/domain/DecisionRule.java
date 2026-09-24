@@ -59,8 +59,9 @@ public final class DecisionRule {
         if (train != null) {
             double delay = train.avgArrDelayMin30d() == null ? 0 : Math.max(train.avgArrDelayMin30d(), 0);
             trainMin = (int) Math.round(p.accessMin() + train.waitMin() + train.rideMin() + delay + train.egressMin());
-            reasons.add(String.format(Locale.ROOT, "기차: %s 열차 %s 출발 · 역까지 %d분 + 대기 %d분 + 소요 %s + 평균 지연 %.1f분%s%s",
-                    train.trnNo().replaceFirst("^0+", ""), train.planDep(), p.accessMin(), train.waitMin(), fmtMin(train.rideMin()), delay,
+            reasons.add(String.format(Locale.ROOT, "기차: 열차 %s · %s 출발 · 역까지 %d분 + 대기 %d분 + 탑승%s %s + 평균 지연 %.1f분%s%s",
+                    train.trnNo().replaceFirst("^0+", ""), train.planDep(), p.accessMin(), train.waitMin(),
+                    train.trnNo().contains("환승") ? "·환승" : "", fmtMin(train.rideMin()), delay,
                     train.egressMin() > 0 ? " + 역에서 " + train.egressMin() + "분" : "",
                     train.delayEstimated() ? " (⚠ 중간역 지연 추정)" : ""));
             if (train.onTimeRate30d() != null) {

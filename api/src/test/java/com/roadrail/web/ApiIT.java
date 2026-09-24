@@ -166,7 +166,10 @@ class ApiIT extends IntegrationTest {
                         .param("toStation", "S2").param("departIn", "0"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.distanceKm").value(org.hamcrest.Matchers.closeTo(140.0, 10.0)))
-                .andExpect(jsonPath("$.rail.dep.name").value("서울"))
+                .andExpect(jsonPath("$.rail.journeys[0].legs[0].fromName").value("서울"))
+                .andExpect(jsonPath("$.rail.journeys[0].legs[0].toName").value("대전"))
+                .andExpect(jsonPath("$.rail.journeys[0].access.mode").value("WALK"))
+                .andExpect(jsonPath("$.rail.journeys[0].transfers").value(0))
                 .andExpect(jsonPath("$.decision.reasons", not(empty())))
                 .andExpect(jsonPath("$.env.origin.name").value("서울역"));
         mvc.perform(get("/api/v1/trip").param("fromLat", "10").param("fromLon", "10").param("fromName", "x")

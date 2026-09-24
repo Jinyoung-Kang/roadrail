@@ -14,7 +14,7 @@ import type { Place, Trip } from "@/lib/types";
 import { useCorridors } from "@/lib/useCorridors";
 
 const DEPART = [0, 30, 60, 120, 180].map((v) => ({ value: v, label: v === 0 ? "지금" : `+${v >= 60 ? `${v / 60}시간` : `${v}분`}` }));
-const ACCESS = [{ value: "auto", label: "역까지 자동" }, ...[10, 20, 30, 45].map((v) => ({ value: String(v), label: `역까지 ${v}분` }))];
+const ACCESS = [{ value: "auto", label: "역까지 실제 경로" }, ...[10, 20, 30, 45].map((v) => ({ value: String(v), label: `역까지 ${v}분` }))];
 
 export default function Home() {
   const router = useRouter();
@@ -61,7 +61,7 @@ export default function Home() {
   return (
     <Layout title="지금 차로 갈까, 기차로 갈까" overlay>
       {/* ---------- 히어로: 지도 배경 + 어디서 → 어디로 + 스펙 + 두 버튼 */}
-      <section className="relative h-[100svh] min-h-[720px] overflow-hidden bg-[#eef1f4]">
+      <section className="relative z-10 h-[100svh] min-h-[720px] bg-[#eef1f4]">
         <RouteMap layers={layers} className="absolute inset-0 h-full w-full" padBottom={120} label="경로 지도" />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[50%] bg-gradient-to-b from-white via-white/85 to-transparent" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[44%] bg-gradient-to-t from-white via-white/90 to-transparent" />
@@ -96,16 +96,14 @@ export default function Home() {
           </SpecStrip>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 px-4 sm:flex-row sm:gap-6">
             <a href="#compare" className="btn-primary">자세히 보기</a>
-            {t?.rail?.dep && t.rail.arr
-              ? <Link href={`/rail?dep=${t.rail.dep.code}&arr=${t.rail.arr.code}`} className="btn-secondary">철도 분석</Link>
-              : <Link href="/rail" className="btn-secondary">철도 분석</Link>}
+            {from && to && <Link href={`/road?from=${encodeURIComponent(encodePlace(from))}&to=${encodeURIComponent(encodePlace(to))}`} className="btn-secondary">경로 분석</Link>}
           </div>
         </div>
       </section>
 
       {/* ---------- 비교 */}
       <Section id="compare" eyebrow="자동차와 기차" title="같은 출발 시각, 두 가지 선택" gray
-               desc="자동차는 카카오 경로 예측(출발 시각 기준), 기차는 근처 역을 잇는 직통 열차의 최근 30일 실제 운행으로 계산합니다.">
+               desc="자동차는 도로(고속도로·국도·일반도로) 기준 카카오 경로 예측, 기차는 가까운 역에서 목적지 가까운 역까지 코레일 환승 경로와 최근 30일 실제 운행으로 계산합니다.">
         <ErrorBox error={trip.error} />
         {!t && trip.loading && <Loading />}
         {t && <div className="grid gap-6 lg:grid-cols-2"><CarTile trip={t} /><TrainTile trip={t} /></div>}
@@ -142,7 +140,7 @@ export default function Home() {
         <div className="pointer-events-none absolute left-4 top-4 sm:left-8 sm:top-8 rounded bg-white/95 px-4 py-3 shadow-tile">
           <p className="text-sm font-medium">{from?.name} → {to?.name}</p>
           <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-[3px] w-5 bg-road" />자동차 경로 (카카오) {t?.car.distanceM ? `${num(t.car.distanceM / 1000, 0)}km` : ""}</p>
-          <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-0 w-5 border-t-[3px] border-dashed border-rail" />기차 {t?.rail?.dep ? `${t.rail.dep.name}역 – ${t.rail.arr?.name}역` : "없음"}</p>
+          <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-0 w-5 border-t-[3px] border-dashed border-rail" />기차 {t?.rail?.journeys[0] ? t.rail.journeys[0].legs.map((l, i) => (i === 0 ? `${l.fromName}→${l.toName}` : `→${l.toName}`)).join("") : "없음"}</p>
         </div>
       </section>
 

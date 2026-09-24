@@ -42,7 +42,7 @@ export function Section({ id, eyebrow, title, desc, children, gray = false, wide
 /** 페이지 상단 소형 히어로 (분석 화면용) */
 export function PageHero({ eyebrow, title, sub, children }: { eyebrow?: string; title: string; sub?: React.ReactNode; children?: React.ReactNode }) {
   return (
-    <div className="relative overflow-hidden bg-gradient-to-b from-[#eef1f4] to-white">
+    <div className="relative bg-gradient-to-b from-[#eef1f4] to-white">
       <div className="mx-auto max-w-[1200px] px-4 sm:px-8 pt-16 sm:pt-20 pb-12 text-center">
         {eyebrow && <p className="eyebrow mb-3">{eyebrow}</p>}
         <h1 className="text-[34px] sm:text-[44px] font-medium tracking-tight text-ink">{title}</h1>

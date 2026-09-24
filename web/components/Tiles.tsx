@@ -1,6 +1,7 @@
 import Link from "next/link";
-import type { Decision, EnvPoint, Trip } from "@/lib/types";
+import type { Decision, EnvPoint, Journey, NextSubway, Trip } from "@/lib/types";
 import { DASH, dur, durMin, hm, MODEL_LABEL, num, pct, pm25Label, signedPct } from "@/lib/format";
+import { encodePlace } from "@/lib/places";
 
 function Row({ k, v, sub }: { k: string; v: React.ReactNode; sub?: React.ReactNode }) {
   return (
@@ -35,47 +36,118 @@ export function CarTile({ trip }: { trip: Trip }) {
           <p className="py-3 text-xs leading-relaxed text-muted">고속도로 실측(평소 대비 정체)은 수집 중인 길 8개에서만 보입니다. 이 길은 카카오 경로 예측만 사용합니다.</p>
         )}
       </div>
-      {o && <Link href={`/road/${o.corridorId}?dir=${o.direction}`} className="mt-auto pt-6 text-center text-sm font-medium text-ink underline underline-offset-4">도로 분석 보기</Link>}
+      <div className="mt-auto flex flex-wrap justify-center gap-x-4 pt-6">
+        <Link href={`/road?from=${encodeURIComponent(encodePlace(trip.from))}&to=${encodeURIComponent(encodePlace(trip.to))}`}
+              className="text-sm font-medium text-ink underline underline-offset-4">경로 분석 보기</Link>
+        {o && <Link href={`/road/${o.corridorId}?dir=${o.direction}`} className="text-sm font-medium text-ink underline underline-offset-4">고속도로 실측 보기</Link>}
+      </div>
+    </div>
+  );
+}
+
+const MODE: Record<string, string> = { WALK: "도보 · 추정", CAR: "차량 · 카카오 실제 경로", INPUT: "입력값", ESTIMATE: "차량 · 직선거리 추정" };
+
+function Dot({ tone }: { tone: "ink" | "rail" | "muted" }) {
+  const c = tone === "rail" ? "bg-rail" : tone === "ink" ? "bg-ink" : "bg-faint";
+  return <span className={`relative z-10 mt-1.5 h-2.5 w-2.5 flex-none rounded-full ring-2 ring-white ${c}`} aria-hidden />;
+}
+
+/** 어디서 → 역 → 열차(환승) → 역 → 어디로 */
+export function JourneyTimeline({ j }: { j: Journey }) {
+  const rows: React.ReactNode[] = [];
+  rows.push(
+    <li key="acc" className="flex gap-3"><Dot tone="ink" />
+      <div className="pb-4 text-sm"><span className="font-medium">역까지 {j.access.minutes}분</span>
+        <span className="text-muted"> · {j.access.stationName}역 · {MODE[j.access.mode]}{j.access.distanceM ? ` ${num(j.access.distanceM / 1000)}km` : ""}</span></div></li>);
+  j.legs.forEach((l, i) => {
+    if (i > 0) {
+      const gap = Math.round((new Date(l.dep).getTime() - new Date(j.legs[i - 1].arr).getTime()) / 60000);
+      rows.push(<li key={`x${i}`} className="flex gap-3"><Dot tone="muted" />
+        <div className="pb-4 text-sm"><span className="font-medium">{l.fromName} 환승</span><span className="text-muted"> · {gap}분 대기</span></div></li>);
+    }
+    rows.push(
+      <li key={`l${i}`} className="flex gap-3"><Dot tone="rail" />
+        <div className="flex-1 pb-4 text-sm">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <span className="font-medium tabular">{hm(l.dep)} {l.fromName} → {hm(l.arr)} {l.toName}</span>
+            <span className="text-xs text-muted tabular">{l.onTimeRate30d == null ? "정시율 —" : `정시 ${pct(l.onTimeRate30d)}`} · 평균 지연 {num(l.avgArrDelayMin30d)}분{l.delayEstimated && " ⚠"}</span>
+          </div>
+          <div className="text-xs text-muted">열차 {l.trnNo.replace(/^0+/, "")} · {durMin(l.rideMin)}{l.samples ? ` · 최근 30일 ${l.samples}회` : ""}</div>
+        </div></li>);
+  });
+  rows.push(
+    <li key="eg" className="flex gap-3"><Dot tone="ink" />
+      <div className="text-sm"><span className="font-medium">역에서 {j.egress.minutes}분</span>
+        <span className="text-muted"> · {j.egress.stationName}역 → 목적지 · {MODE[j.egress.mode]}{j.egress.distanceM ? ` ${num(j.egress.distanceM / 1000)}km` : ""}</span></div></li>);
+  return (
+    <ol className="relative">
+      <span className="absolute left-[4.5px] top-2 bottom-2 w-px bg-line" aria-hidden />
+      {rows}
+    </ol>
+  );
+}
+
+function SubwayList({ title, items }: { title: string; items: NextSubway[] }) {
+  if (!items.length) return null;
+  return (
+    <div className="mt-4">
+      <p className="text-xs font-medium text-ink2">{title}</p>
+      <ul className="mt-1 space-y-1">
+        {items.slice(0, 6).map((s) => (
+          <li key={s.line + s.toward} className="flex justify-between gap-3 text-xs text-muted">
+            <span><span className="rounded bg-cloud px-1.5 py-0.5 text-ink2">{s.line}</span> {s.toward}</span><span className="tabular">{s.times.join(" · ")}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
 export function TrainTile({ trip }: { trip: Trip }) {
   const r = trip.rail;
-  const has = r?.dep && r.arr;
+  const j = r?.journeys[0];
   return (
     <div className="tile flex flex-col p-6 sm:p-8">
-      <p className="eyebrow flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-rail" aria-hidden />기차 · 직통</p>
+      <p className="eyebrow flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-rail" aria-hidden />기차 · 코레일 (환승 포함)</p>
       <div className="mt-3 flex items-baseline gap-2">
         <span className="text-[40px] font-medium leading-none tabular">{durMin(trip.decision.trainTotalMin)}</span>
         <span className="text-sm text-muted">예상</span>
       </div>
-      {has ? (
+      {j ? (
         <p className="mt-2 text-[13px] text-muted">
-          {r!.dep!.name}역 → {r!.arr!.name}역 · 역까지 {r!.dep!.minutes}분{r!.dep!.estimated && "(추정)"} · 역에서 {r!.arr!.minutes}분(추정)
+          {hm(j.departAt)} {j.legs[0].fromName}역 출발 → {hm(j.arriveAt)} {j.legs[j.legs.length - 1].toName}역 도착 · {j.transfers === 0 ? "직통" : `환승 ${j.transfers}회`}
         </p>
       ) : (
-        <p className="mt-2 text-[13px] text-muted">{r?.note ?? (trip.distanceKm < 15 ? "가까운 거리라 기차 비교를 하지 않습니다" : "직통 열차 정보 없음")}</p>
+        <p className="mt-2 text-[13px] text-muted">{r?.note ?? (trip.distanceKm < 15 ? "가까운 거리라 기차 비교를 하지 않습니다" : "기차 정보 없음")}</p>
       )}
-      <div className="mt-6">
-        {has && r!.nextTrains.length === 0 && <p className="py-6 text-center text-sm text-muted">이 시각 이후 열차가 없습니다</p>}
-        {r?.nextTrains.map((t, i) => (
-          <div key={t.trnNo} className={`flex items-center justify-between border-b border-line py-3 last:border-0 ${i === 0 ? "" : "opacity-80"}`}>
-            <div>
-              <div className="text-sm font-medium tabular">{t.planDep} → {t.planArr}<span className="ml-2 text-xs font-normal text-muted">{durMin(t.planRideMin)}</span></div>
-              <div className="text-xs text-muted">열차 {t.trnNo.replace(/^0+/, "")}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-sm font-medium tabular">{t.onTimeRate30d === null ? DASH : `정시 ${pct(t.onTimeRate30d)}`}</div>
-              <div className="text-xs text-muted tabular">평균 지연 {num(t.avgArrDelayMin30d)}분 · {t.samples}회{t.delayEstimated && <span title="중간역 지연은 추정값"> ⚠</span>}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-      {has && r!.referenceDate && (
-        <p className="mt-4 text-xs text-muted">시간표 기준: {r!.referenceDate} ({r!.basis}) — 코레일 API 는 향후 운행계획을 제공하지 않아 최근 같은 요일 운행으로 추정합니다. 근처 역 {r!.pairsTried}개 조합 중 가장 빠른 직통.</p>
+      {j && <div className="mt-6"><JourneyTimeline j={j} /></div>}
+      {r && r.journeys.length > 1 && (
+        <div className="mt-5 border-t border-line pt-4">
+          <p className="text-xs font-medium text-ink2">다른 여정</p>
+          <ul className="mt-1 space-y-1">
+            {r.journeys.slice(1).map((x) => (
+              <li key={x.departAt + x.legs[0].trnNo} className="flex justify-between gap-3 text-xs text-muted tabular">
+                <span>{hm(x.departAt)} {x.legs[0].fromName} → {hm(x.arriveAt)} {x.legs[x.legs.length - 1].toName}{x.transfers ? ` · ${x.legs.slice(1).map((l) => l.fromName).join("·")} 환승` : " · 직통"}</span>
+                <span>총 {durMin(x.totalMin)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
-      {has && <Link href={`/rail?dep=${r!.dep!.code}&arr=${r!.arr!.code}`} className="mt-auto pt-6 text-center text-sm font-medium text-ink underline underline-offset-4">철도 분석 보기</Link>}
+      {r && <SubwayList title={`${j?.legs[j.legs.length - 1].toName ?? ""}역에서 갈아탈 지하철 (TAGO 시간표)`} items={r.subwayAtArrival} />}
+      {r && <SubwayList title={`${j?.legs[0].fromName ?? ""}역 지하철`} items={r.subwayAtDeparture} />}
+      {j && r?.referenceDate && (
+        <p className="mt-4 text-xs text-muted">시간표 기준: {r.referenceDate} ({r.basis}) · 근처 역 {r.originCandidates}×{r.destCandidates}곳 조합 · 승차 여유 {r.boardingBufferMin}분 · 최소 환승 {r.transferMin}분. {r.note}</p>
+      )}
+      {j && (
+        <div className="mt-auto flex flex-wrap justify-center gap-x-4 pt-6">
+          {j.legs.map((l) => (
+            <Link key={l.trnNo + l.fromCode} href={`/rail?dep=${l.fromCode}&arr=${l.toCode}`} className="text-sm font-medium text-ink underline underline-offset-4">
+              {l.fromName}→{l.toName} 철도 분석
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

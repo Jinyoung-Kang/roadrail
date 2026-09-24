@@ -3,6 +3,7 @@ package com.roadrail.web;
 import com.roadrail.common.ApiException;
 import com.roadrail.service.PlaceService;
 import com.roadrail.service.RailService;
+import com.roadrail.service.RoadRouteService;
 import com.roadrail.service.TripService;
 import com.roadrail.web.dto.RailDtos;
 import com.roadrail.web.dto.TripDtos;
@@ -27,11 +28,27 @@ public class TripController {
     private final TripService trips;
     private final PlaceService places;
     private final RailService rail;
+    private final RoadRouteService roads;
 
-    public TripController(TripService trips, PlaceService places, RailService rail) {
+    public TripController(TripService trips, PlaceService places, RailService rail, RoadRouteService roads) {
         this.trips = trips;
         this.places = places;
         this.rail = rail;
+        this.roads = roads;
+    }
+
+    @GetMapping("/road/route")
+    @Operation(summary = "도로 분석 — 전국 임의 두 지점: 도로별 구성 · 느린 구간 · 고속도로 회피 비교 · 출발 시각별 소요")
+    public com.roadrail.web.dto.RouteDtos.Analysis route(@RequestParam double fromLat, @RequestParam double fromLon,
+                                                          @RequestParam @Size(max = 60) String fromName,
+                                                          @RequestParam double toLat, @RequestParam double toLon,
+                                                          @RequestParam @Size(max = 60) String toName,
+                                                          @RequestParam(defaultValue = "0") @Min(0) @Max(360) int departIn) {
+        var from = new TripDtos.Place(fromName, null, fromLat, fromLon, "PLACE", null);
+        var to = new TripDtos.Place(toName, null, toLat, toLon, "PLACE", null);
+        TripService.validate(from);
+        TripService.validate(to);
+        return roads.analyze(from, to, departIn);
     }
 
     @GetMapping("/places/search")

@@ -23,14 +23,8 @@ public final class TripDtos {
                            Integer baselineP50Sec, Double vsBaselinePct, OffsetDateTime slotTs, Integer predictedSec,
                            String model, int leadMin) {}
 
-    public record StationEnd(String code, String name, double lat, double lon, double distanceKm, int minutes,
-                             boolean estimated) {}
-
-    public record RailOption(StationEnd dep, StationEnd arr, String referenceDate, String basis,
-                             List<RailDtos.NextTrain> nextTrains, int pairsTried, String note) {}
-
     public record Trip(TripDtos.Place from, TripDtos.Place to, double distanceKm, OffsetDateTime asOf,
-                       OffsetDateTime departAt, Integer accessMin, Car car, Observed observed, RailOption rail,
+                       OffsetDateTime departAt, Integer accessMin, Car car, Observed observed, JourneyDtos.Plan rail,
                        Map<String, NowDtos.PointEnv> env, List<EnvDtos.Incident> incidents, DecisionRule.Result decision,
                        Map<String, String> freshness, String caveat, boolean pending, String cache) {
 

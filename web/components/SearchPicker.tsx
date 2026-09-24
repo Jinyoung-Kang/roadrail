@@ -60,7 +60,7 @@ export default function SearchPicker<T>({ label, placeholder, value, onPick, sea
         {loading && <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-line border-t-ink" aria-hidden />}
       </label>
       {open && (items.length > 0 || q.trim()) && (
-        <ul id={listId} role="listbox" className="absolute left-0 right-0 z-30 mt-1 max-h-80 overflow-auto rounded bg-white py-1 text-left shadow-xl ring-1 ring-black/10">
+        <ul id={listId} role="listbox" className="absolute left-0 right-0 z-50 mt-1 max-h-[min(22rem,60vh)] overflow-auto overscroll-contain rounded bg-white py-1 text-left shadow-xl ring-1 ring-black/10">
           {items.length === 0 && !loading && <li className="px-4 py-3 text-sm text-muted">검색 결과가 없습니다</li>}
           {items.map((it, i) => {
             const r = render(it);

@@ -34,7 +34,15 @@ export default function RouteMap({ layers, interactive = false, className = "", 
   layers: MapLayers | null; interactive?: boolean; className?: string; padBottom?: number; label?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<any>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  // 탐색용 지도는 기본으로 잠가 둔다 — 페이지를 스크롤할 때 휠이 지도 배율을 바꾸지 않게 (+/− 버튼은 항상 동작)
+  const [unlocked, setUnlocked] = useState(false);
+  const lock = (on: boolean) => {
+    setUnlocked(!on);
+    const m = mapRef.current;
+    if (m) { m.setDraggable(!on); m.setZoomable(!on); }
+  };
   const sig = layers ? JSON.stringify(layers).length + ":" + layers.lines.length + ":" + layers.markers.map((m) => m.lat.toFixed(3)).join() : "";
 
   useEffect(() => {
@@ -47,9 +55,12 @@ export default function RouteMap({ layers, interactive = false, className = "", 
       const first = layers.markers[0] ?? { lat: 36.5, lon: 127.8 };
       const map = new kakao.maps.Map(ref.current, {
         center: new kakao.maps.LatLng(first.lat, first.lon), level: 10,
-        draggable: interactive, scrollwheel: interactive, disableDoubleClickZoom: !interactive,
+        draggable: false, scrollwheel: false, disableDoubleClickZoom: true,
       });
-      if (!interactive) map.setZoomable(false);
+      map.setZoomable(false);
+      mapRef.current = map;
+      setUnlocked(false);
+      if (interactive) map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
       const bounds = new kakao.maps.LatLngBounds();
       for (const l of layers.lines) {
         if (l.path.length < 2) continue;
@@ -81,8 +92,15 @@ export default function RouteMap({ layers, interactive = false, className = "", 
   if (failed || !KEY) return <SvgRoute layers={layers} className={className} note={failed ?? "카카오 JS 키 없음"} />;
   // 카카오 SDK 가 컨테이너를 position: relative 로 바꾸므로 배치는 바깥 래퍼가, 쌓임 맥락은 isolate 가 맡는다
   return (
-    <div className={`${className} isolate ${interactive ? "" : "rr-map-muted"}`} aria-label={label}>
+    <div className={`${className} isolate ${interactive ? "" : "rr-map-muted"}`} aria-label={label}
+         onMouseLeave={() => interactive && unlocked && lock(true)}>
       <div ref={ref} className="h-full w-full" />
+      {interactive && (
+        <button onClick={() => lock(unlocked)}
+                className="absolute bottom-4 right-4 z-10 rounded bg-white/95 px-3 py-2 text-xs font-medium text-ink2 shadow-tile hover:bg-white">
+          {unlocked ? "지도 조작 끄기" : "지도 조작하기 (이동 · 확대)"}
+        </button>
+      )}
     </div>
   );
 }

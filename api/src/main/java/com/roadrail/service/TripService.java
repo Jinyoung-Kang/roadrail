@@ -10,6 +10,7 @@ import com.roadrail.external.AirKoreaClient;
 import com.roadrail.external.KakaoLocalClient;
 import com.roadrail.external.KmaClient;
 import com.roadrail.web.dto.EnvDtos;
+import com.roadrail.web.dto.JourneyDtos;
 import com.roadrail.web.dto.NowDtos;
 import com.roadrail.web.dto.RailDtos;
 import com.roadrail.web.dto.RoadDtos.Latest;
@@ -35,8 +36,6 @@ import java.util.concurrent.*;
  */
 @Service
 public class TripService {
-    static final double STATION_RADIUS_KM = 40;
-    static final int STATION_CANDIDATES = 4;
     static final double MIN_RAIL_KM = 15;
     static final Duration DEADLINE = Duration.ofMillis(750);
     private final ExecutorService exec = Executors.newVirtualThreadPerTaskExecutor();
@@ -50,9 +49,11 @@ public class TripService {
     private final KmaClient kma;
     private final AirKoreaClient air;
     private final JsonCache cache;
+    private final RailJourneyService journeys;
 
     public TripService(JdbcClient jdbc, AppProperties props, RailService rail, RoadService road, EnvService env,
-                       KakaoMobilityClient mobility, KakaoLocalClient local, KmaClient kma, AirKoreaClient air, JsonCache cache) {
+                       KakaoMobilityClient mobility, KakaoLocalClient local, KmaClient kma, AirKoreaClient air, JsonCache cache,
+                       RailJourneyService journeys) {
         this.jdbc = jdbc;
         this.props = props;
         this.rail = rail;
@@ -63,6 +64,7 @@ public class TripService {
         this.kma = kma;
         this.air = air;
         this.cache = cache;
+        this.journeys = journeys;
     }
 
     static Duration left(long deadlineNanos) {
@@ -83,11 +85,6 @@ public class TripService {
         }
     }
 
-    /** 도심 접근 시간 추정: 직선거리 × 1.3 ÷ 25km/h, 최소 5분 */
-    static int accessMinutes(double km) {
-        return (int) Math.max(5, Math.round(km * 1.3 / 25 * 60));
-    }
-
     public Trip trip(Place from, Place to, int departIn, Integer accessMin) {
         validate(from);
         validate(to);
@@ -100,7 +97,7 @@ public class TripService {
         return t;
     }
 
-    private static void validate(Place p) {
+    public static void validate(Place p) {
         if (p.lat() < 33 || p.lat() > 39 || p.lon() < 124 || p.lon() > 132) {
             throw ApiException.invalid("대한민국 안의 좌표만 지원합니다: " + p.name());
         }
@@ -115,7 +112,7 @@ public class TripService {
         // 외부 조회가 늦으면 WAIT 까지만 기다리고 비워 둔다 — 조회는 계속되어 캐시를 채우고, 화면은 pending 을 보고 다시 부른다.
         var fOrigin = CompletableFuture.supplyAsync(() -> pointEnv(from, depart), exec);
         var fDest = CompletableFuture.supplyAsync(() -> pointEnv(to, depart), exec);
-        var fRail = CompletableFuture.supplyAsync(() -> km < MIN_RAIL_KM ? null : railOption(from, to, depart, accessMin), exec);
+        var fRail = CompletableFuture.supplyAsync(() -> km < MIN_RAIL_KM ? null : journeys.plan(from, to, depart, accessMin), exec);
         var fObs = CompletableFuture.supplyAsync(() -> observed(from, to, depart, now), exec);
 
         // ---- 자동차 (카카오) — 모든 외부 대기는 하나의 마감 시각을 공유한다 (순서대로 더해지지 않게)
@@ -129,7 +126,7 @@ public class TripService {
                 eta.map(KakaoMobilityClient.Eta::path).orElse(List.of()), pending, "KAKAO_FUTURE_DIRECTIONS");
 
         Observed obs = join(fObs, Duration.ofSeconds(3));        // DB 만 — 넉넉히
-        RailOption railOpt = join(fRail, Duration.ofSeconds(3));  // DB 만
+        JourneyDtos.Plan railOpt = join(fRail, Duration.ofSeconds(4));  // DB + 카카오 다중 길찾기 (캐시)
         var origin = join(fOrigin, left(deadline));
         var dest = join(fDest, left(deadline));
         boolean envPending = origin == null || dest == null;
@@ -147,12 +144,14 @@ public class TripService {
         }
         DecisionRule.Train dtrain = null;
         int acc = accessMin == null ? 0 : accessMin;
-        if (railOpt != null && !railOpt.nextTrains().isEmpty()) {
-            var t = railOpt.nextTrains().getFirst();
-            acc = railOpt.dep().minutes();
-            int wait = (int) Math.max(Duration.between(depart.plusMinutes(acc), t.planDepAt()).toMinutes(), 0);
-            dtrain = new DecisionRule.Train(t.trnNo(), t.planDep(), wait, t.planRideMin(), t.avgArrDelayMin30d(),
-                    t.onTimeRate30d(), t.samples(), t.delayEstimated(), railOpt.arr().minutes());
+        if (railOpt != null && !railOpt.journeys().isEmpty()) {
+            var j = railOpt.journeys().getFirst();
+            acc = j.access().minutes();
+            var lastLeg = j.legs().getLast();
+            dtrain = new DecisionRule.Train(journeyLabel(j), j.departAt().format(com.roadrail.common.Times.HM), j.waitMin(),
+                    (int) Duration.between(j.departAt(), j.arriveAt()).toMinutes(), lastLeg.avgArrDelayMin30d(),
+                    lastLeg.onTimeRate30d(), lastLeg.samples(), j.legs().stream().anyMatch(JourneyDtos.Leg::delayEstimated),
+                    j.egress().minutes());
         }
         var p = new DecisionRule.Params(props.decisionSimilarMin(), props.decisionPopWarn(), acc);
         var o = envMap.get("origin");
@@ -165,8 +164,8 @@ public class TripService {
                     decision.carTotalMin(), null, null, decision.reasons(), decision.warnings());
         } else if (dtrain == null && car.durationSec() != null) {
             List<String> r = new ArrayList<>(decision.reasons().stream().filter(x -> !x.contains("데이터가 없어 한쪽만")).toList());
-            r.add(railOpt == null || railOpt.note() == null ? "두 지점 근처 역을 잇는 직통 열차가 없습니다" : railOpt.note());
-            decision = new DecisionRule.Result(decision.rule(), "CAR", "직통 열차가 없어 자동차만 비교합니다.",
+            r.add(railOpt == null || railOpt.note() == null ? "두 지점 근처 역을 잇는 열차가 없습니다" : railOpt.note());
+            decision = new DecisionRule.Result(decision.rule(), "CAR", "이어지는 열차가 없어 자동차만 비교합니다.",
                     decision.carTotalMin(), null, null, r, decision.warnings());
         }
 
@@ -174,18 +173,19 @@ public class TripService {
         fresh.put("kakao", car.departAt() == null ? (pending ? "경로 조회 중" : "—")
                 : "출발 " + car.departAt().substring(8, 10) + ":" + car.departAt().substring(10) + " 기준 경로 예측");
         fresh.put("road", obs == null ? "수집 중인 길 아님" : Times.ago(obs.slotTs(), now) + " 슬롯 (도로공사 공개 지연)");
-        fresh.put("rail", railOpt == null || railOpt.referenceDate() == null ? "—" : railOpt.referenceDate() + " 운행 기준");
+        fresh.put("rail", railOpt == null || railOpt.referenceDate() == null ? "—" : railOpt.referenceDate() + " 운행 기준 시간표");
         fresh.put("weather", "단기예보 최근 발표");
         fresh.put("air", "시도 측정소 최근 측정");
-        String caveat = "자동차는 카카오 경로 예측(출발 시각 기준)입니다. 기차는 직통 열차만 보며, 역까지·역에서의 시간은 "
-                + (accessMin == null ? "직선거리로 추정" : "역까지 입력값 " + accessMin + "분, 역에서는 직선거리로 추정")
-                + "했습니다. 참고 정보이며 교통 안내 서비스가 아닙니다.";
+        String caveat = "자동차는 카카오 경로 예측(출발 시각 기준)입니다. 기차는 코레일 여객열차의 환승 경로(최소 환승 "
+                + RailJourneyService.TRANSFER_MIN + "분, 승차 여유 " + RailJourneyService.BOARDING_BUFFER_MIN + "분)이며, 역까지·역에서는 "
+                + (accessMin == null ? "카카오 실제 운전 경로(1km 미만은 도보 추정)" : "역까지 입력값 " + accessMin + "분 · 역에서는 카카오 실제 경로")
+                + "입니다. 지하철·버스 환승은 포함하지 않습니다. 참고 정보이며 교통 안내 서비스가 아닙니다.";
         return new Trip(from, to, km, now, depart, accessMin, car, obs, railOpt, envMap, inc, decision, fresh, caveat,
                 pending || envPending, "MISS");
     }
 
     /** 두 지점이 수집 중인 길의 끝(출발·도착 도시 역)과 각각 30km 안이면 그 길 · 방향 */
-    Observed observed(Place from, Place to, OffsetDateTime depart, OffsetDateTime now) {
+    public Observed observed(Place from, Place to, OffsetDateTime depart, OffsetDateTime now) {
         var match = jdbc.sql("""
                 WITH p AS (
                   SELECT o.corridor_id, o.lat AS olat, o.lon AS olon, d.lat AS dlat, d.lon AS dlon
@@ -215,48 +215,15 @@ public class TripService {
                 (int) Duration.between(l.slotTs(), depart).toMinutes());
     }
 
-    RailOption railOption(Place from, Place to, OffsetDateTime depart, Integer accessMin) {
-        var origins = from.stationCode() != null
-                ? List.of(new RailDtos.StationNear(from.stationCode(), from.name().replaceAll("역$", ""), from.lat(), from.lon(), 0))
-                : rail.near(from.lat(), from.lon(), STATION_RADIUS_KM, STATION_CANDIDATES);
-        var dests = to.stationCode() != null
-                ? List.of(new RailDtos.StationNear(to.stationCode(), to.name().replaceAll("역$", ""), to.lat(), to.lon(), 0))
-                : rail.near(to.lat(), to.lon(), STATION_RADIUS_KM, STATION_CANDIDATES);
-        if (origins.isEmpty() || dests.isEmpty()) {
-            return new RailOption(null, null, null, null, List.of(), 0,
-                    (origins.isEmpty() ? "출발지" : "도착지") + " 반경 " + (int) STATION_RADIUS_KM + "km 안에 운행 중인 기차역이 없습니다");
+    /** "1203 → 대전 환승 → 101" */
+    static String journeyLabel(JourneyDtos.Journey j) {
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < j.legs().size(); i++) {
+            var l = j.legs().get(i);
+            if (i > 0) b.append(" → ").append(l.fromName()).append(" 환승 → ");
+            b.append(l.trnNo().replaceFirst("^0+", ""));
         }
-        RailDtos.StationNear bestA = null, bestB = null;
-        int bestTotal = Integer.MAX_VALUE, bestAccess = 0, bestEgress = 0, tried = 0;
-        for (var a : origins) {
-            int access = accessMin != null ? accessMin : accessMinutes(a.distanceKm());
-            for (var b : dests) {
-                if (a.code().equals(b.code())) continue;
-                tried++;
-                var ready = depart.plusMinutes(access);
-                var first = rail.firstTrain(a.code(), b.code(), ready);  // 그날 없으면 다음 날 첫차
-                if (first.isEmpty()) continue;
-                int egress = accessMinutes(b.distanceKm());
-                long wait = Math.max(Duration.between(ready, first.get().dep()).toMinutes(), 0);
-                int total = (int) (access + wait + Duration.between(first.get().dep(), first.get().arr()).toMinutes() + egress);
-                if (total < bestTotal) {
-                    bestTotal = total;
-                    bestA = a;
-                    bestB = b;
-                    bestAccess = access;
-                    bestEgress = egress;
-                }
-            }
-        }
-        if (bestA == null) {
-            return new RailOption(null, null, null, null, List.of(), tried,
-                    "근처 역을 잇는 직통 열차가 없습니다 (환승 경로는 다루지 않습니다)");
-        }
-        var next = rail.nextTrains(bestA.code(), bestB.code(), depart.plusMinutes(bestAccess), 3);
-        return new RailOption(
-                new StationEnd(bestA.code(), bestA.name(), bestA.lat(), bestA.lon(), bestA.distanceKm(), bestAccess, accessMin == null),
-                new StationEnd(bestB.code(), bestB.name(), bestB.lat(), bestB.lon(), bestB.distanceKm(), bestEgress, true),
-                next.referenceDate(), next.basis(), next.trains(), tried, null);
+        return b.toString();
     }
 
     NowDtos.PointEnv pointEnv(Place p, OffsetDateTime at) {
