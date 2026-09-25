@@ -11,7 +11,7 @@ dependencies = [
   "pandas==2.3.2",
   "numpy==2.3.3",
   "PyYAML==6.0.2",
-  "pydantic-settings==2.10.1",
+  "pydantic-settings==2.15.0",
 ]
 
 [project.optional-dependencies]
