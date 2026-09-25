@@ -8,7 +8,7 @@ dependencies = [
   "psycopg[binary,pool]==3.2.10",
   "redis==6.4.0",
   "APScheduler==3.11.0",
-  "pandas==2.3.2",
+  "pandas==3.0.6",
   "numpy==2.3.3",
   "PyYAML==6.0.2",
   "pydantic-settings==2.10.1",
