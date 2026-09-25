@@ -81,9 +81,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 액션(gitleaks-action)은 첫 push 에서 '첫 커밋^' 범위를 만들다 git 오류로 실패한다 → 공식 이미지로 전체 이력을 직접 검사
+      - run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3 git /repo --redact --no-banner
 
   images:
     name: docker images
