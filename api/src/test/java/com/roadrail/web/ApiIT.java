@@ -20,7 +20,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-/** 시드 DB 로 API 계약 확인 (10장 API·E2E) — 판단 카드 · 오류 규약 · 관리 API 403/409/429 · 캐시. */
+/** 시드 DB 로 API 계약 확인 (10장 API·E2E) — 판단 카드 · 오류 규약 · 관리 API 401/409/429 · 캐시. */
 @AutoConfigureMockMvc
 class ApiIT extends IntegrationTest {
     static final ZoneId KST = ZoneId.of("Asia/Seoul");

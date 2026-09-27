@@ -31,8 +31,8 @@ import java.util.concurrent.*;
  * <ul>
  *   <li>자동차: 카카오 미래 운행 정보 (출발 시각 기준, 집 앞 → 목적지 경로). 두 지점이 수집 중인 길과 겹치면
  *       고속도로 실측(평소 대비 %)을 근거로 덧붙인다.</li>
- *   <li>기차: 출발·도착 반경 40km 안의 운행 역 최대 4곳씩 조합해 '역까지 + 대기 + 탑승 + 평균 지연 + 역에서'
- *       합이 가장 작은 직통 열차 (환승 제외).</li>
+ *   <li>기차: 출발·도착 반경 30km 안의 운행 역 최대 6곳씩을 후보로 코레일 환승 경로(CSA, RailJourneyService) —
+ *       '역까지 + 대기 + 탑승(환승 포함) + 최근 30일 평균 지연 + 역에서' 가 가장 이른 여정.</li>
  *   <li>날씨·대기: 수집된 값이 있으면 DB, 없으면 조회 시점 호출 (공유 예산 · 캐시).</li>
  * </ul>
  */
@@ -203,10 +203,10 @@ public class TripService {
                     ON d.corridor_id = o.corridor_id AND o.role = 'origin' AND d.role = 'dest'
                   JOIN ref.corridor c ON c.corridor_id = o.corridor_id AND c.active)
                 SELECT corridor_id, dir FROM (
-                  SELECT corridor_id, 'DN' AS dir, greatest(dist(olat, olon, :fla, :flo), dist(dlat, dlon, :tla, :tlo)) AS m FROM p
+                  SELECT corridor_id, 'DN' AS dir, greatest(ops.km(olat, olon, :fla, :flo), ops.km(dlat, dlon, :tla, :tlo)) AS m FROM p
                   UNION ALL
-                  SELECT corridor_id, 'UP', greatest(dist(dlat, dlon, :fla, :flo), dist(olat, olon, :tla, :tlo)) FROM p) x
-                WHERE m <= 30 ORDER BY m LIMIT 1""".replace("dist(", "ops.km("))
+                  SELECT corridor_id, 'UP', greatest(ops.km(dlat, dlon, :fla, :flo), ops.km(olat, olon, :tla, :tlo)) FROM p) x
+                WHERE m <= 30 ORDER BY m LIMIT 1""")
                 .param("fla", from.lat()).param("flo", from.lon()).param("tla", to.lat()).param("tlo", to.lon())
                 .query((rs, i) -> new String[]{rs.getString(1), rs.getString(2)}).optional();
         if (match.isEmpty()) return null;
