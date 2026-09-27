@@ -22,3 +22,4 @@
 | [018](018-security-hardening.md) | 보안 점검 — 요청 한도 · X-Forwarded-For 위조 차단 · CSP · SRI · 의존성 감사 · 이미지 분리 |
 | [019](019-holiday-calendar.md) | 공휴일 달력 (한국천문연구원 특일 정보) · 서울 버스 노선정보를 쓰지 않은 이유 |
 | [020](020-code-review-architecture-concurrency.md) | 전체 코드 리뷰 — 의존 방향 · 가상 스레드 동시성 · 오류 규약 · 외부 예산 클라이언트별 몫 |
+| [021](021-dependabot-auto-merge.md) | Dependabot minor · patch 자동 병합 — 필수 검사 하나(ci passed)로 게이트 |
