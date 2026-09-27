@@ -23,3 +23,4 @@
 | [019](019-holiday-calendar.md) | 공휴일 달력 (한국천문연구원 특일 정보) · 서울 버스 노선정보를 쓰지 않은 이유 |
 | [020](020-code-review-architecture-concurrency.md) | 전체 코드 리뷰 — 의존 방향 · 가상 스레드 동시성 · 오류 규약 · 외부 예산 클라이언트별 몫 |
 | [021](021-dependabot-auto-merge.md) | Dependabot minor · patch 자동 병합 — 필수 검사 하나(ci passed)로 게이트 |
+| [022](022-web-major-upgrades.md) | 웹 메이저 업그레이드 — Next 16(webpack 빌드) · Tailwind 4(v3 모양 유지) · TypeScript 7 · React 18 유지 |
