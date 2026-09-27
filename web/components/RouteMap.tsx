@@ -12,6 +12,30 @@ export interface MapLine { path: [number, number][]; color: string; dashed?: boo
 export interface MapMarker { lat: number; lon: number; label?: string; color: string; ring?: boolean; size?: number; warn?: boolean }
 export interface MapLayers { lines: MapLine[]; markers: MapMarker[] }
 
+/**
+ * 지도 표식 — HTML 문자열이 아니라 DOM 노드로 만든다.
+ * 라벨(장소 이름 · 역 이름 · 돌발 유형)은 URL · API 에코 · 외부 데이터에서 오므로 textContent 로만 넣고,
+ * 스타일도 속성별 대입(CSSOM)이라 값에 선언을 덧붙여 끼워 넣을 수 없다.
+ */
+function markerNode(m: MapMarker): HTMLElement {
+  const dot = document.createElement("span");
+  dot.style.display = "inline-block";
+  if (m.warn) {
+    Object.assign(dot.style, { width: "0", height: "0", borderLeft: "7px solid transparent", borderRight: "7px solid transparent",
+      borderBottom: `12px solid ${m.color}`, filter: "drop-shadow(0 0 1px #fff)" });
+  } else {
+    const size = `${m.size ?? 10}px`;
+    Object.assign(dot.style, { width: size, height: size, borderRadius: "50%", background: m.ring ? "#fff" : m.color,
+      border: `2px solid ${m.ring ? m.color : "#fff"}`, boxShadow: "0 0 0 1px rgba(0,0,0,.08)" });
+  }
+  if (!m.label) return dot;
+  const box = document.createElement("div");
+  Object.assign(box.style, { font: "500 12px Pretendard,system-ui", padding: "4px 8px", borderRadius: "4px", background: "#fff",
+    boxShadow: "0 1px 4px rgba(0,0,0,.18)", color: "#171a20", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "6px" });
+  box.append(dot, document.createTextNode(m.label));
+  return box;
+}
+
 function loadKakao(): Promise<any> {
   if (typeof window === "undefined") return Promise.reject(new Error("ssr"));
   if (!KEY) return Promise.reject(new Error("NEXT_PUBLIC_KAKAO_JS_KEY 없음"));
@@ -74,14 +98,7 @@ export default function RouteMap({ layers, interactive = false, className = "", 
       for (const m of layers.markers) {
         const p = new kakao.maps.LatLng(m.lat, m.lon);
         bounds.extend(p);
-        const size = m.size ?? 10;
-        const dot = m.warn
-          ? `<span style="display:inline-block;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:12px solid ${m.color};filter:drop-shadow(0 0 1px #fff)"></span>`
-          : `<span style="display:inline-block;width:${size}px;height:${size}px;border-radius:50%;background:${m.ring ? "#fff" : m.color};border:2px solid ${m.ring ? m.color : "#fff"};box-shadow:0 0 0 1px rgba(0,0,0,.08)"></span>`;
-        new kakao.maps.CustomOverlay({ map, position: p, yAnchor: m.label ? 1.25 : 0.5,
-          content: m.label
-            ? `<div style="font:500 12px Pretendard,system-ui;padding:4px 8px;border-radius:4px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.18);color:#171a20;white-space:nowrap;display:flex;align-items:center;gap:6px">${dot}${m.label}</div>`
-            : dot });
+        new kakao.maps.CustomOverlay({ map, position: p, yAnchor: m.label ? 1.25 : 0.5, content: markerNode(m) });
       }
       // 컨테이너 크기가 확정된 다음에 맞춘다 (생성 직후 0 크기일 수 있음 · rAF 는 백그라운드 탭에서 멈추므로 타이머)
       const fit = () => { map.relayout(); map.setBounds(bounds, 60, 60, 60 + padBottom, 60); };
