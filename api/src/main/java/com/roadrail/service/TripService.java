@@ -99,10 +99,10 @@ public class TripService {
         return t;
     }
 
+    /** 대한민국 범위 안의 유한한 좌표만. '범위 안' 조건으로 쓴다 — NaN 은 모든 비교가 거짓이라 '범위 밖(<, >)' 조건을 통과한다 */
     public static void validate(Place p) {
-        if (p.lat() < 33 || p.lat() > 39 || p.lon() < 124 || p.lon() > 132) {
-            throw ApiException.invalid("대한민국 안의 좌표만 지원합니다: " + p.name());
-        }
+        boolean inside = p.lat() >= 33 && p.lat() <= 39 && p.lon() >= 124 && p.lon() <= 132;
+        if (!inside) throw ApiException.invalid("대한민국 안의 좌표만 지원합니다: " + p.name());
     }
 
     Trip build(Place from, Place to, int departIn, Integer accessMin) {

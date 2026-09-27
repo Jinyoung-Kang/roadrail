@@ -18,7 +18,7 @@ export default function ForecastPage() {
   const [dir, setDir] = useState<Dir>("DN");
   const corridors = useCorridors();
   const c = corridors.data?.find((x) => x.id === cid);
-  const f = useApi<Forecast>(`/api/v1/corridors/${cid}/road/forecast?dir=${dir}&horizons=60,120,180`);
+  const f = useApi<Forecast>(`/api/v1/corridors/${encodeURIComponent(cid)}/road/forecast?dir=${dir}&horizons=60,120,180`);
   const bt = f.data?.backtest;
 
   return (

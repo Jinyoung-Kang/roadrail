@@ -209,6 +209,19 @@ class ApiIT extends IntegrationTest {
     }
 
     @Test
+    void nonFiniteCoordinatesAreRejected() throws Exception {
+        // NaN 은 모든 비교가 거짓이라 '범위 밖(<, >)' 조건을 통과했다 → 200 · 0.0km 판단 · 외부 API 호출 (SEC-03)
+        for (String bad : new String[]{"NaN", "Infinity", "-Infinity"}) {
+            mvc.perform(get("/api/v1/trip").param("fromLat", bad).param("fromLon", "126.97").param("fromName", "x")
+                            .param("toLat", "36.33").param("toLon", "127.43").param("toName", "y"))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+            mvc.perform(get("/api/v1/road/route").param("fromLat", "37.55").param("fromLon", "126.97").param("fromName", "x")
+                            .param("toLat", "36.33").param("toLon", bad).param("toName", "y"))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        }
+    }
+
+    @Test
     void forecastAndBaseline() throws Exception {
         mvc.perform(get("/api/v1/corridors/SEL-DJN/road/forecast").param("dir", "DN")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.items", hasSize(3)))

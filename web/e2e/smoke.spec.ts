@@ -168,3 +168,20 @@ test("요청 한도: 클라이언트가 X-Forwarded-For 를 위조해도 같은 
   const left = (r: typeof r1) => Number(r.headers()["x-ratelimit-remaining"]);
   expect(left(r2)).toBe(left(r1) - 1);  // 주소를 바꿔도 새 한도가 생기지 않음
 });
+
+test("보안: URL 의 장소 이름은 지도 라벨에 글자로만 들어간다 (HTML 주입 차단)", async ({ page }) => {
+  // 이름은 URL(공유 링크) · API 에코 · 외부 데이터에서 온다 — 지도 표식은 HTML 문자열이 아니라 텍스트여야 한다
+  const evil = '<b id="rr-inj">주입</b>';
+  await page.goto(`/?from=${encodeURIComponent(`${evil}~37.55470~126.97060~`)}&to=${encodeURIComponent("대전역~36.33250~127.43430~3900073")}`);
+  const map = page.getByLabel("경로 지도", { exact: true });
+  await expect(map.getByText(evil, { exact: true })).toBeVisible({ timeout: 15_000 });  // 꺾쇠까지 글자 그대로
+  expect(await page.locator("#rr-inj").count()).toBe(0);
+});
+
+test("보안: 프록시는 /api/v1 아래의 정상 경로만 넘긴다", async ({ request }) => {
+  // 인코딩한 '../' 로 API 서버의 다른 경로를 노리는 요청 → 프록시가 JSON 400 으로 거절 (Tomcat HTML 이 아님)
+  const r = await request.get("/api/v1/..%2f..%2factuator/health");
+  expect(r.status()).toBe(400);
+  expect((await r.json()).code).toBe("VALIDATION_ERROR");
+  expect((await request.get("/api/v1/corridors")).ok()).toBe(true);
+});
