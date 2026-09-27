@@ -294,15 +294,7 @@ public class RailService {
             out = items.stream().map(it -> new PunctualityItem(it.key(), it.samples(), it.verified(), it.onTimeRate(),
                     it.avgArrDelayMin(), it.p90ArrDelayMin(), it.avgRideMin(), meta.get(it.key()), it.grade())).toList();
         }
-        Summary nation = jdbc.sql("""
-                SELECT count(*) AS samples, count(arr_delay_min) AS verified,
-                       avg(CASE WHEN arr_delay_min IS NULL THEN NULL WHEN arr_delay_min <= :thr THEN 1.0 ELSE 0.0 END) AS rate,
-                       avg(arr_delay_min) AS avg_delay, percentile_cont(0.9) WITHIN GROUP (ORDER BY arr_delay_min) AS p90
-                FROM rail.train_punctuality WHERE run_ymd BETWEEN :f AND :t""")
-                .param("thr", thr).param("f", from).param("t", to)
-                .query((rs, i) -> new Summary(rs.getInt("samples"), rs.getInt("verified"),
-                        rs.getInt("samples") - rs.getInt("verified"), round(rs, "rate", 3), round(rs, "avg_delay", 1),
-                        round(rs, "p90", 1))).single();
+        Summary nation = nationwide(from, to, thr);
         Punctuality p = new Punctuality(dep, arr, depName, arrName, from.toString(), to.toString(), groupBy, thr, summary[0], out,
                 hist, nation,
                 Map.of("P-v1", "시발 출발·종착 도착을 코레일 운행계획과 정확 비교",
@@ -351,6 +343,18 @@ public class RailService {
                         (Double) rs.getObject(4), rs.getInt(5))).list())).value().items();
     }
 
+    /** 같은 기간 전국 여객열차 종착역 기준 정시성(P-v1) — 역 쌍과 무관하므로 (기간, 기준)으로 따로 10분 캐시 (PERF-04) */
+    Summary nationwide(LocalDate from, LocalDate to, int thr) {
+        return cache.get("rail:nation:v1:%s:%s:%d".formatted(from, to, thr), Duration.ofMinutes(10), Summary.class, () -> jdbc.sql("""
+                SELECT count(*) AS samples, count(arr_delay_min) AS verified,
+                       avg(CASE WHEN arr_delay_min IS NULL THEN NULL WHEN arr_delay_min <= :thr THEN 1.0 ELSE 0.0 END) AS rate,
+                       avg(arr_delay_min) AS avg_delay, percentile_cont(0.9) WITHIN GROUP (ORDER BY arr_delay_min) AS p90
+                FROM rail.train_punctuality WHERE run_ymd BETWEEN :f AND :t""")
+                .param("thr", thr).param("f", from).param("t", to)
+                .query((rs, i) -> new Summary(rs.getInt("samples"), rs.getInt("verified"),
+                        rs.getInt("samples") - rs.getInt("verified"), round(rs, "rate", 3), round(rs, "avg_delay", 1),
+                        round(rs, "p90", 1))).single()).value();
+    }
 
     /** 좌표에서 가까운 (최근 14일 운행이 있는) 역 */
     public List<StationNear> near(double lat, double lon, double radiusKm, int limit) {
