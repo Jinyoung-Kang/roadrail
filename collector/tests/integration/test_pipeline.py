@@ -260,6 +260,31 @@ async def test_restart_recovers_stale_runs_locks_and_reservations(seeded):
     assert int(await r.get(rds.quota_key("KAKAO", day))) == 25
 
 
+async def test_failure_before_the_job_body_releases_lock_and_records_run(seeded, monkeypatch):
+    # 잠금을 잡은 뒤 예산 예상치 조회가 실패하면 예전에는 잠금이 TTL(최대 2시간)까지 남고 실행 기록이 RUNNING 으로 남았다 (BUG-06)
+    from roadrail.pipeline import analysis
+    from roadrail.scheduler import jobs
+
+    async def broken_estimate():
+        raise RuntimeError("예상치 조회 실패")
+    monkeypatch.setitem(jobs.JOBS, "maintenance", jobs.JobSpec(analysis.maintenance, broken_estimate))
+    assert await jobs.run_job("maintenance", "ADMIN") == "FAILED"
+    assert await rds.client().get(rds.lock_key("maintenance")) is None
+    r = await db.fetchone("SELECT status, message FROM ops.job_run WHERE job_name = 'maintenance' ORDER BY run_id DESC LIMIT 1")
+    assert r["status"] == "FAILED" and "예상치 조회 실패" in r["message"]
+
+
+async def test_lock_release_does_not_delete_someone_elses_lock(seeded, monkeypatch):
+    # 잠금이 만료돼 다른 실행이 잡은 경우 끝날 때 그 잠금을 지우면 안 된다 (비교 후 삭제, BUG-06)
+    from roadrail.scheduler import jobs
+
+    async def body(ctx):
+        await rds.client().set(rds.lock_key("maintenance"), "someone-else")
+    monkeypatch.setitem(jobs.JOBS, "maintenance", jobs.JobSpec(body, jobs._const({})))
+    assert await jobs.run_job("maintenance", "ADMIN") == "OK"
+    assert await rds.client().get(rds.lock_key("maintenance")) == "someone-else"
+
+
 async def test_cancelled_job_is_recorded_as_aborted_and_unlocked(seeded, monkeypatch):
     # SIGTERM 으로 작업이 취소되면 'OK' 가 아니라 중단으로 기록하고 잠금을 푼다
     import asyncio

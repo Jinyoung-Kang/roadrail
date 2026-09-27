@@ -104,6 +104,10 @@ def budget() -> QuotaBudget:
     return _budget
 
 
+# 비교 후 삭제 — 잠금이 만료돼 다른 실행이 잡은 경우 그 잠금을 지우지 않는다 (GET 과 DEL 사이의 경쟁 없이 원자적으로)
+RELEASE_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end"
+
+
 async def run_job(name: str, trigger: str = "SCHEDULE", estimates: dict[str, int] | None = None, **kwargs) -> str:
     spec = JOBS[name]
     r = rds.client()
@@ -111,14 +115,22 @@ async def run_job(name: str, trigger: str = "SCHEDULE", estimates: dict[str, int
     if not await r.set(rds.lock_key(name), token, nx=True, ex=spec.lock_ttl):
         log(logger, "이미 실행 중 — 건너뜀", job=name, trigger=trigger)
         return "LOCKED"
+    try:  # 잠금을 잡은 직후부터 — 기록 · 예상치 조회가 실패해도 잠금이 TTL(최대 2시간)까지 남지 않게
+        return await _run_locked(name, trigger, spec, estimates, kwargs)
+    finally:
+        await r.eval(RELEASE_LUA, 1, rds.lock_key(name), token)
+
+
+async def _run_locked(name: str, trigger: str, spec: JobSpec, estimates: dict[str, int] | None, kwargs: dict) -> str:
     t0 = time.perf_counter()
     run = await db.fetchone("INSERT INTO ops.job_run (job_name, trigger, status) VALUES (%s, %s, 'RUNNING') RETURNING run_id",
                             (name, trigger))
     await db.execute("UPDATE ops.collect_job SET last_status = 'RUNNING' WHERE job_name = %s", (name,))
-    ctx = JobContext(job_name=name, http=http(), budget=budget(), trigger=trigger,
-                     estimates=estimates if estimates is not None else await spec.estimate())
+    ctx = JobContext(job_name=name, http=http(), budget=budget(), trigger=trigger, estimates=estimates or {})
     status, message, detail = "OK", None, None
     try:
+        if estimates is None:
+            ctx.estimates = await spec.estimate()  # 실패하면 아래에서 FAILED 로 기록 (예전에는 RUNNING 으로 남음)
         await ctx.open_budgets()
         await spec.func(ctx, **kwargs)
         partial = [n for n in ctx.notes if n.startswith("PARTIAL")]
@@ -143,20 +155,16 @@ async def run_job(name: str, trigger: str = "SCHEDULE", estimates: dict[str, int
         if status != "OK":
             detail = run_detail(name, trigger, status, message, detail, ctx)
         ms = int((time.perf_counter() - t0) * 1000)
-        try:
-            await db.executemany("""
-                INSERT INTO ops.api_call (job_name, provider, endpoint, params_masked, http_status, result_code,
-                                          latency_ms, rows, error) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                ctx.api_calls)
-            await db.execute("""UPDATE ops.job_run SET finished_at = now(), status = %s, calls = %s, rows = %s, message = %s,
-                                  detail = %s WHERE run_id = %s""", (status, ctx.calls, ctx.rows, message, detail, run["run_id"]))
-            await db.execute("""UPDATE ops.collect_job SET last_run_at = now(), last_status = %s, last_duration_ms = %s,
-                                  last_calls = %s, last_rows = %s, last_message = %s WHERE job_name = %s""",
-                             (status, ms, ctx.calls, ctx.rows, message, name))
-            await persist_quota(set(ctx.estimates) | set(ctx.allowances))
-        finally:
-            if await r.get(rds.lock_key(name)) == token:
-                await r.delete(rds.lock_key(name))
+        await db.executemany("""
+            INSERT INTO ops.api_call (job_name, provider, endpoint, params_masked, http_status, result_code,
+                                      latency_ms, rows, error) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            ctx.api_calls)
+        await db.execute("""UPDATE ops.job_run SET finished_at = now(), status = %s, calls = %s, rows = %s, message = %s,
+                              detail = %s WHERE run_id = %s""", (status, ctx.calls, ctx.rows, message, detail, run["run_id"]))
+        await db.execute("""UPDATE ops.collect_job SET last_run_at = now(), last_status = %s, last_duration_ms = %s,
+                              last_calls = %s, last_rows = %s, last_message = %s WHERE job_name = %s""",
+                         (status, ms, ctx.calls, ctx.rows, message, name))
+        await persist_quota(set(ctx.estimates) | set(ctx.allowances))
     log(logger, "작업 종료", job=name, trigger=trigger, status=status, calls=ctx.calls, rows=ctx.rows, ms=ms)
     return status
 
