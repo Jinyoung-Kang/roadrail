@@ -95,7 +95,7 @@ open http://localhost:3300
 
 ```mermaid
 flowchart TB
-  subgraph web["web · Next.js 15 (Pages Router · React 18 · TS · Tailwind · Recharts · 카카오 지도) :3300"]
+  subgraph web["web · Next.js 16 (Pages Router · React 18 · TS · Tailwind · Recharts · 카카오 지도) :3300"]
     pages["판단(출발지 → 도착지) · 도로 분석 · 철도 분석 · 예측 성능 · 수집 상태"]
   end
   subgraph api["api · Java 21 · Spring Boot 4.1 :8300 — 스키마(Flyway) 소유"]
@@ -150,7 +150,7 @@ sequenceDiagram
 |---|---|---|
 | 수집 · 분석 | Python 3.11 · asyncio · httpx · APScheduler · psycopg 3 · pandas | 공급자 어댑터 5종 · 작업 12개 · CLI (`roadrail …`) |
 | API | Java 21 · **Spring Boot 4.1.1** · JdbcClient · Flyway · Spring Data Redis · springdoc | 3.4 는 OSS 지원 종료 → 4.1 ([ADR-007](docs/adr/007-polyglot-stack.md)). 가상 스레드 |
-| 화면 | Next.js 15 (Pages Router) · React 18 · TypeScript · Tailwind · Recharts 3 · 카카오 지도 | 테슬라 톤 라이트 모드. 차트 팔레트는 CVD 검증(ΔE 9.2) |
+| 화면 | Next.js 16 (Pages Router) · React 18 · TypeScript · Tailwind · Recharts 3 · 카카오 지도 | 테슬라 톤 라이트 모드. 차트 팔레트는 CVD 검증(ΔE 9.2) |
 | 저장 | PostgreSQL 16 (월 파티션 · BRIN · SQL 함수 `rail.od_trips`) · Redis 7 | 6 스키마 · 24 테이블 |
 | 테스트 | pytest · JUnit 5 · Testcontainers · MockMvc · Playwright | 아래 7장 |
 | 운영 | Docker Compose · Makefile · GitHub Actions | 모든 포트 127.0.0.1 바인딩 |
