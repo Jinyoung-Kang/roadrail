@@ -31,17 +31,19 @@ public final class Memo<K, V> {
                     V v = loader.apply(key);
                     mine.complete(v);
                     return v;
-                } catch (RuntimeException e) {
+                } catch (Throwable t) {  // Error 까지 — 완료하지 않은 Future 가 남으면 그 키의 모든 호출이 join 에서 영원히 멈춘다
                     map.remove(key, mine);
-                    mine.completeExceptionally(e);
-                    throw e;
+                    mine.completeExceptionally(t);
+                    throw t;
                 }
             }
         }
         try {
             return f.join();
         } catch (CompletionException e) {
-            throw e.getCause() instanceof RuntimeException re ? re : e;
+            if (e.getCause() instanceof RuntimeException re) throw re;
+            if (e.getCause() instanceof Error err) throw err;
+            throw e;
         }
     }
 

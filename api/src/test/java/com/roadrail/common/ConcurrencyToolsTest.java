@@ -76,6 +76,25 @@ class ConcurrencyToolsTest {
     }
 
     @Test
+    void memoDoesNotHangAfterALoaderError() throws Exception {
+        // RuntimeException 이 아닌 Error(StackOverflowError 등)면 Future 가 완료되지 않은 채 맵에 남아,
+        // 그 키를 부르는 모든 스레드가 타임아웃 없는 join 에서 영원히 멈췄다 (셀프 리뷰)
+        var memo = new Memo<String, String>(8);
+        assertThatThrownBy(() -> memo.get("k", k -> { throw new StackOverflowError("깊은 재귀"); }))
+                .isInstanceOf(StackOverflowError.class);
+        // 따로 띄운 가상 스레드(데몬)에서 부르고 2초만 기다린다 — 실행기 close() 로 기다리면 결함이 있을 때 테스트 자체가 멈춘다
+        var again = new CompletableFuture<String>();
+        Thread.ofVirtual().start(() -> {
+            try {
+                again.complete(memo.get("k", k -> "다시"));
+            } catch (Throwable t) {
+                again.completeExceptionally(t);
+            }
+        });
+        assertThat(again.get(2, TimeUnit.SECONDS)).isEqualTo("다시");   // 멈추지 않고 다시 불러온다
+    }
+
+    @Test
     void memoLoaderRunsOutsideTheMapLock() {
         // 로더가 같은 Memo 의 다른 키를 불러도 된다 — computeIfAbsent 안에서라면 맵 잠금을 쥔 채 도는 구조
         var memo = new Memo<String, String>(8);
