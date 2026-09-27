@@ -3,7 +3,10 @@ package com.roadrail.web;
 import com.roadrail.support.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -108,6 +111,19 @@ class ApiIT extends IntegrationTest {
         mvc.perform(get("/api/v1/rail/punctuality").param("corridorId", "SEL-DJN").param("from", "2025-01-01")
                 .param("to", "2026-09-01")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message", containsString("366")));
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void standardMvcErrorsFollowTheErrorContract(CapturedOutput output) throws Exception {
+        // 클라이언트 오류가 500 · 스택 트레이스 ERROR 로그로 남던 것 (BUG-02, 재현: text/plain → 500, Accept: text/csv → 빈 406)
+        mvc.perform(post("/api/v1/admin/backfill").header("X-Admin-Token", ADMIN).contentType(MediaType.TEXT_PLAIN).content("x"))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.code").value("UNSUPPORTED_MEDIA_TYPE"))
+                .andExpect(jsonPath("$.traceId", hasLength(26)));
+        mvc.perform(get("/api/v1/corridors").accept("text/csv")).andExpect(status().isNotAcceptable())
+                .andExpect(content().string(""));  // JSON 을 받지 않는 클라이언트에게는 본문 없이
+        org.assertj.core.api.Assertions.assertThat(output).doesNotContain("처리되지 않은 오류").doesNotContain("Failure in @ExceptionHandler");
     }
 
     @Test
