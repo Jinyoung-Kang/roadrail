@@ -83,7 +83,7 @@ async def consume_commands() -> None:
     while True:
         try:
             resp = await r.xreadgroup(rds.COMMAND_GROUP, consumer, {rds.COMMANDS: stream_id}, count=10,
-                                      block=None if stream_id == "0" else 5000)
+                                      block=None if stream_id == "0" else rds.COMMAND_BLOCK_MS)
             messages = [m for _, ms in resp or [] for m in ms]
             for msg_id, fields in messages:
                 spawn(handle_and_ack(msg_id, fields))
