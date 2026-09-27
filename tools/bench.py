@@ -63,6 +63,7 @@ if __name__ == "__main__":
             lambda: get(PUNCT.replace("2026-06-26", "2026-08-26").format(a=SEL, b=DJN, g="train"))),
         run("날짜별 운행 서울→대전", lambda: get(f"/api/v1/rail/od/trains?dep={SEL}&arr={DJN}")),
         run("역 목록 가나다순", lambda: get("/api/v1/stations?limit=400&sort=name")),
+        run("역 검색 추천 (입력할 때마다)", lambda: get("/api/v1/stations?q=%EB%8C%80")),
         run("길 통행시간 48시간", lambda: get("/api/v1/corridors/SEL-DJN/road/series?dir=DN&hours=48")),
     ]
     print(json.dumps(rows, ensure_ascii=False))
