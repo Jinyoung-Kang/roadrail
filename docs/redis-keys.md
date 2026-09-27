@@ -10,7 +10,7 @@
 | `ex:tail:{start}-{end}:{yyyymmdd}` | 정수 — 오늘 본 1종 행 수 (꼬리 페이지 커서) | collector | — | 48h |
 | `now:{id}:{dir}:{departIn}:{access}:{carAccess}` | 판단 카드 JSON | api | api | 60s |
 | `kakao:eta[p]:{o}:{d}:{yyyyMMddHHmm}` | 카카오 ETA JSON (`p` = 경로 좌표 포함) | api | api | 20분 |
-| `trip:{from}:{to}:{departIn}:{access}` | 출발지→도착지 판단 카드 (pending 이면 저장 안 함) | api | api | 60s |
+| `trip:v2:{from}:{역 코드}:{이름}:{to}:{역 코드}:{이름}:{departIn}:{access}` | 출발지→도착지 판단 카드 (pending 이면 저장 안 함) — 역 지정 · 이름도 결과를 바꾸므로 키에 포함 | api | api | 60s |
 | `kakao:addr:{q}` · `kakao:kw:{q}` | 지역 · 장소 검색 결과 | api | api | 1일 |
 | `kakao:c2r:{lat,lon}` | 좌표 → 행정구역 (에어코리아 시도) | api | api | 30일 |
 | `kakao:many:{origins\|destinations}:{좌표}:{역 코드들}` | 역까지 · 역에서 실제 운전 시간 (다중 길찾기) | api | api | 20분 |

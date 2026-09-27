@@ -3,7 +3,10 @@ package com.roadrail.web;
 import com.roadrail.support.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -90,6 +93,8 @@ class ApiIT extends IntegrationTest {
                 .andExpect(jsonPath("$.decision.rule").value("R-DEC-01"))
                 .andExpect(jsonPath("$.decision.reasons", not(empty())))
                 .andExpect(jsonPath("$.freshness.road", containsString("공개 지연")))
+                // 철도 자료 시각 안내가 실제 수집 일정(05:30 · 09:30 · 15:30)과 다르던 문구 '매일 03:30 계산' (BUG-08)
+                .andExpect(jsonPath("$.freshness.rail", allOf(containsString("운행 기준 시간표"), not(containsString("03:30")))))
                 .andExpect(jsonPath("$.caveat", containsString("20분")))
                 .andExpect(jsonPath("$.asOf", endsWith("+09:00")));
         mvc.perform(get("/api/v1/corridors/SEL-DJN/now").param("dir", "DN"))
@@ -108,6 +113,19 @@ class ApiIT extends IntegrationTest {
         mvc.perform(get("/api/v1/rail/punctuality").param("corridorId", "SEL-DJN").param("from", "2025-01-01")
                 .param("to", "2026-09-01")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message", containsString("366")));
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void standardMvcErrorsFollowTheErrorContract(CapturedOutput output) throws Exception {
+        // 클라이언트 오류가 500 · 스택 트레이스 ERROR 로그로 남던 것 (BUG-02, 재현: text/plain → 500, Accept: text/csv → 빈 406)
+        mvc.perform(post("/api/v1/admin/backfill").header("X-Admin-Token", ADMIN).contentType(MediaType.TEXT_PLAIN).content("x"))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.code").value("UNSUPPORTED_MEDIA_TYPE"))
+                .andExpect(jsonPath("$.traceId", hasLength(26)));
+        mvc.perform(get("/api/v1/corridors").accept("text/csv")).andExpect(status().isNotAcceptable())
+                .andExpect(content().string(""));  // JSON 을 받지 않는 클라이언트에게는 본문 없이
+        org.assertj.core.api.Assertions.assertThat(output).doesNotContain("처리되지 않은 오류").doesNotContain("Failure in @ExceptionHandler");
     }
 
     @Test
@@ -206,6 +224,19 @@ class ApiIT extends IntegrationTest {
         mvc.perform(get("/api/v1/trip").param("fromLat", "10").param("fromLon", "10").param("fromName", "x")
                         .param("toLat", "36.33").param("toLon", "127.43").param("toName", "y"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void tripCacheKeyIncludesStationPinAndName() throws Exception {
+        // 같은 좌표라도 역 지정 · 이름이 다르면 다른 판단 카드 — 예전 키는 좌표만 봐서 앞 요청의 결과를 돌려주었다 (BUG-04)
+        mvc.perform(get("/api/v1/trip").param("fromLat", "37.55").param("fromLon", "126.97").param("fromName", "서울역")
+                        .param("fromStation", "S1").param("toLat", "36.33").param("toLon", "127.43").param("toName", "대전역"))
+                .andExpect(status().isOk()).andExpect(header().string("X-Cache", "MISS"));
+        var plain = get("/api/v1/trip").param("fromLat", "37.55").param("fromLon", "126.97").param("fromName", "서울 시내")
+                .param("toLat", "36.33").param("toLon", "127.43").param("toName", "대전역");
+        mvc.perform(plain).andExpect(status().isOk()).andExpect(header().string("X-Cache", "MISS"))
+                .andExpect(jsonPath("$.from.name").value("서울 시내")).andExpect(jsonPath("$.from.stationCode").isEmpty());
+        mvc.perform(plain).andExpect(header().string("X-Cache", "HIT"));
     }
 
     @Test

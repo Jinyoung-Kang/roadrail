@@ -73,4 +73,41 @@ class RailRouterTest {
         assertThat(several).extracting(Journey::departure).doesNotHaveDuplicates();
         assertThat(several.size()).isGreaterThanOrEqualTo(2);
     }
+
+    /** 출발 후보 A(10:00 부터) · B(10:30 부터). T1: A 10:05 → B 10:15, T2: B 10:25 → D 11:00 (환승 10분) */
+    static final List<Stop> VIA_ORIGIN = List.of(
+            new Stop("T1", 1, "A", null, t(10, 5)), new Stop("T1", 2, "B", t(10, 15), null),
+            new Stop("T2", 1, "B", null, t(10, 25)), new Stop("T2", 2, "D", t(11, 0), null));
+
+    @Test
+    void doesNotBoardAnOriginStationBeforeItCanBeReached() {
+        // B 에 직접 가면 10:30 이라 T2(10:25)를 못 탄다 — 유일한 여정은 A →(T1)→ B →(T2)→ D.
+        // 예전 복원은 출발 후보역(B)을 만나면 멈춰 'B 10:25 승차'라는 불가능한 여정을 돌려주었다 (BUG-01)
+        var j = RailRouter.earliest(RailRouter.connections(VIA_ORIGIN),
+                List.of(new Origin("A", t(10, 0)), new Origin("B", t(10, 30))), List.of(new Dest("D", 0)), 600).orElseThrow();
+        assertThat(j.originStn()).isEqualTo("A");
+        assertThat(j.legs()).extracting(Leg::trip).containsExactly("T1", "T2");
+        assertThat(j.departure()).isEqualTo(t(10, 5));
+        assertThat(j.arrival()).isEqualTo(t(11, 0));
+    }
+
+    @Test
+    void boardsAtTheOriginWhenItCanBeReachedInTime() {
+        // B 에 10:20 까지 갈 수 있으면 B 에서 T2 를 바로 탄다 (같은 도착이면 구간이 적은 쪽)
+        var j = RailRouter.earliest(RailRouter.connections(VIA_ORIGIN),
+                List.of(new Origin("A", t(10, 0)), new Origin("B", t(10, 20))), List.of(new Dest("D", 0)), 600).orElseThrow();
+        assertThat(j.originStn()).isEqualTo("B");
+        assertThat(j.legs()).extracting(Leg::trip).containsExactly("T2");
+    }
+
+    @Test
+    void everyJourneyStartsFromAnOriginNoEarlierThanItsReadyTime() {
+        // 여러 여정(several)도 모두 실제로 탈 수 있어야 한다
+        var origins = List.of(new Origin("A", t(10, 0)), new Origin("B", t(10, 30)));
+        for (var j : RailRouter.several(RailRouter.connections(VIA_ORIGIN), origins, List.of(new Dest("D", 0)), 600, 3)) {
+            long ready = origins.stream().filter(o -> o.stn().equals(j.originStn())).findFirst().orElseThrow().ready();
+            assertThat(j.departure()).isGreaterThanOrEqualTo(ready);
+        }
+    }
 }
+

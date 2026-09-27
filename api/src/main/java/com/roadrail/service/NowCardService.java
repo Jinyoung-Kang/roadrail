@@ -142,7 +142,7 @@ public class NowCardService {
 
         Map<String, String> fresh = new LinkedHashMap<>();
         fresh.put("road", latest.map(l -> Times.ago(l.slotTs(), now) + " 슬롯 (도로공사 공개 지연)").orElse("—"));
-        fresh.put("rail", next.referenceDate() == null ? "—" : next.referenceDate() + " 운행 기준 · 매일 03:30 계산");
+        fresh.put("rail", next.referenceDate() == null ? "—" : next.referenceDate() + " 운행 기준 시간표");  // 출발지→도착지 카드와 같은 표현
         fresh.put("weather", weatherBase == null ? "—" : Times.kst(weatherBase).format(Times.HM) + " 발표");
         fresh.put("air", airTime == null ? "—" : airTime.format(Times.HM) + " 측정");
         fresh.put("kakao", kk == null ? "—" : "출발 " + kk.departAt().substring(8, 10) + ":" + kk.departAt().substring(10) + " 기준 경로 예측");

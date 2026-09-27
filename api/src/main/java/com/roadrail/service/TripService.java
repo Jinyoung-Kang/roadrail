@@ -90,8 +90,10 @@ public class TripService {
     public Trip trip(Place from, Place to, int departIn, Integer accessMin) {
         validate(from);
         validate(to);
-        String key = String.format(Locale.ROOT, "trip:%.4f,%.4f:%.4f,%.4f:%d:%s", from.lat(), from.lon(), to.lat(), to.lon(),
-                departIn, accessMin == null ? "auto" : accessMin);
+        // 역 지정(여정의 출발 · 도착역 고정)과 이름(응답에 그대로 나감)도 결과를 바꾸므로 키에 넣는다
+        String key = String.format(Locale.ROOT, "trip:v2:%.4f,%.4f:%s:%s:%.4f,%.4f:%s:%s:%d:%s", from.lat(), from.lon(),
+                Objects.requireNonNullElse(from.stationCode(), "-"), from.name(), to.lat(), to.lon(),
+                Objects.requireNonNullElse(to.stationCode(), "-"), to.name(), departIn, accessMin == null ? "auto" : accessMin);
         Trip hit = cache.peek(key, Trip.class);
         if (hit != null) return hit.withCache("HIT");
         Trip t = build(from, to, departIn, accessMin);
