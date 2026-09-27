@@ -38,7 +38,7 @@
 
 ## 2. 발견 사항
 
-심각도: Critical 0 · **High 2** · Medium 10 · Low 17 (Info 제외). 재현 표시가 있는 항목은 실제로 재현했다.
+심각도: Critical 0 · **High 2** · Medium 10 · Low 24 — 총 36건 (Info 제외). 재현 표시가 있는 항목은 실제로 재현했다.
 
 | ID | 분류 | 심각도 | 위치(파일:라인) | 근거 코드 | 문제와 영향 | 개선안 | 작업량 |
 |---|---|---|---|---|---|---|---|
@@ -124,3 +124,59 @@
 | #17 | Next.js 16.3.5 (메이저) | 통과 | 보류(승인 필요) | 빌드는 통과하나 메이저 — E2E 포함 이전 검증 후 |
 | #18 | Tailwind 4 | **실패** | Request changes | 설정 · PostCSS 플러그인 구조 변경 필요 |
 | #19 | react-is 19 | 통과 | Request changes · 닫기 | React 18 과 메이저 불일치(recharts 피어) |
+
+## 5. 처리 결과
+
+PR 병합 순서: [#20](https://github.com/Jinyoung-Kang/roadrail/pull/20) 보안 → [#21](https://github.com/Jinyoung-Kang/roadrail/pull/21) 정확성 → [#22](https://github.com/Jinyoung-Kang/roadrail/pull/22) 아키텍처·동시성 → [#23](https://github.com/Jinyoung-Kang/roadrail/pull/23) 성능 → [#24](https://github.com/Jinyoung-Kang/roadrail/pull/24) 수집기(독립, `main` 기준) → #25 정리·문서.
+#20~#23 · #25 는 앞 PR 위에 쌓은 스택이라 순서대로 병합하면 base 가 자동으로 바뀐다.
+
+| ID | 상태 | PR | 검증 |
+|---|---|---|---|
+| SEC-01 | 해결 | #20 | E2E 주입 문자열이 글자 그대로 · 주입 요소 0 · 라벨 계산 스타일 동일 |
+| SEC-02 | **보류** (구현 후 셀프 리뷰에서 되돌림) | #20 | 문서화된 배포에서 클라이언트 식별자가 하나로 묶여(실측 키 1개) 몫이 전체 상한이 되고, 몫 거절로 비어진 결과가 캐시 · SingleFlight 로 번짐 → 신뢰할 수 있는 식별 + 요청 단위 회계 · 캐시 분리가 전제. 분당 한도 · 전체 일일 한도는 그대로, Lua 한 번 왕복(PERF-07)은 유지 |
+| SEC-03 | 해결 | #20 | ApiIT NaN · ±Infinity → 400 (수정 전 200 재현) |
+| SEC-04 | 해결 | #20 | E2E 인코딩한 `../` → JSON 400 |
+| SEC-05 · SEC-06 | 문서화 (보류) | #25 | README '공개 배포 체크리스트' — 로컬 전용이라 현 동작 유지 |
+| BUG-01 | 해결 | #21 | RailRouterTest +3 · 실제 시간표 3,000쌍: 탈 수 없는 여정 17 · 20건 → 0 |
+| BUG-02 | 해결 | #21 | ApiIT 415 · 406 · ERROR 로그 없음(OutputCapture) · 실제 스택 확인 |
+| BUG-03 | 해결 | #21 | TagoSubwayClientTest 3 · 성공 응답 헤더(resultCode 00) 실제 호출로 확인 |
+| BUG-04 · BUG-08 | 해결 | #21 | ApiIT |
+| ARC-01 | 해결 | #22 | 패키지 의존 재집계 — service ↔ external · dto → external 없음 (common ↔ config 는 남김) |
+| ARC-02 | 해결 | #22 | `-Djdk.tracePinnedThreads`: Memo 에서 출력 없음 · ConcurrencyToolsTest |
+| ARC-03 | 해결 | #22 | GlobalExceptionHandlerTest · connection-timeout 3초 |
+| ARC-04 | 해결 | #22 | 재시작 구간 ERROR/WARN 없음 |
+| BUG-07 | 해결 | #22 | ConcurrencyToolsTest — 즉시 완료 · 실패 비고착 (수정 전 패턴은 `Recursive update` 재현) |
+| CODE-03 | 해결 | #22 | 헬퍼로 통합 |
+| CODE-07 | 해결 | #20 | 길 ID 경로 값 encodeURIComponent |
+| PERF-01 · PERF-07 | 해결 (방식 변경) | #20 · #23 | 88.5 → 43.3ms. 계획했던 통계 추정치(`reltuples`)는 화면에 추정치를 내지 않는 원칙(ADR-016)과 맞지 않아 **정확한 값 5분 캐시 + 측정 시각**으로 바꿨다 |
+| PERF-02 | 해결 | #23 | 역 검색 15.5 → 5.6ms · 정렬 특성 테스트(수정 전 SQL 에서 먼저 통과) |
+| PERF-04 | 해결 (확장) | #23 | 전국 비교 캐시 + JsonCache 동시 미적중 합치기(JsonCacheIT) — 철도 화면 첫 로드 231 → 183ms |
+| PERF-05 | 해결 | #23 | 분석 화면 첫 로드 JS 226 · 223 · 220 → 103 · 99.4 · 96.8kB |
+| PERF-06 | 해결 | #23 | 정상 경로 결과 동일(테스트) |
+| BUG-05 · BUG-06 | 해결 | #24 | 통합 테스트 3 (수정 전 2개 실패 재현) · 실제 수집기 기동 작업 11개 OK · 남은 잠금 없음 |
+| PERF-03 | 해결 | #24 | 무작위 65세트 결과 동일 · 60일 13,582 → 14.3ms |
+| CODE-05 · CODE-10 | 해결 | #24 | `ruff --extend-select RUF100,S608` 통과 · 이미지 /tmp 비어 있음 |
+| CODE-01 · CODE-04 · CODE-06 · CODE-08 · CODE-09 · CODE-11 | 해결 | #25 | springdoc 경고 조건은 바이트코드로 확인(`enabled` 필드 기본 false · 엔드포인트는 matchIfMissing) |
+| CODE-02 | 보류 | — | ESLint 는 새 개발 의존성이 많아 별도 PR 권장 |
+
+### 셀프 리뷰 (4단계)
+
+자신의 diff 전체를 PR 리뷰 기준으로 다시 검토하고, 독립 리뷰(별도 에이전트)의 지적을 코드로 직접 확인한 뒤 반영했다.
+Blocking 없음 · Should-fix 3 · Nit 1 — 모두 재현 테스트를 먼저 실패시킨 뒤 수정했다.
+
+| 지적 | 판단 | 조치 | PR |
+|---|---|---|---|
+| 꼬리 위치를 gather 뒤 now_kst() 로 다시 만든 키에 기록 — 수집이 자정을 넘기면 D일 위치가 D+1 키로 가 다음 날 00~15시 슬롯을 건너뜀 | 맞음 (BUG-05 수정이 만든 회귀) | 읽은 키를 그대로 돌려받아 기록 · 자정 시계 주입 테스트 | #24 |
+| 클라이언트별 몫의 식별자가 사실상 하나 → 20% 가 전체 상한, 비어진 결과가 캐시로 번짐, 보고서의 '429' 표기와도 다름 | 맞음 (실측 키 1개로 확인) | SEC-02 되돌림 · 보류로 문서화 (Lua 한 번 왕복만 유지) | #20 |
+| Memo 가 Error 를 만나면 Future 미완료 → 그 키의 영구 대기 | 맞음 | Throwable 에서 완료 · 제거 · 재던짐 · 2초 안에 재로드 테스트(수정 전 TimeoutException) | #22 |
+| 실행기 close() 대기 상한 없음 → 종료 유예 초과 시 SIGKILL | 맞음 (Nit) | shutdown → 5초 → shutdownNow · ConcurrencyConfigTest | #22 |
+
+### 최종 상태
+
+| 항목 | 수정 전 | 수정 후 |
+|---|---|---|
+| API 테스트 (JUnit + Testcontainers) | 55 | **80** |
+| 수집기 테스트 (pytest) | 82 | **88** |
+| E2E (Playwright) | 17 | **19** |
+| 의존성 취약점 · 비밀정보 | 0 · 0 | 0 · 0 |
+| 새 경고 | — | 없음 (springdoc 기동 경고 2건은 제거) |

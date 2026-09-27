@@ -9,7 +9,7 @@ import java.util.List;
 public final class JourneyDtos {
     private JourneyDtos() {}
 
-    /** 어디서 → 역 · 역 → 어디로 이동. mode: WALK(도보 추정) · CAR(카카오 실제 경로) · INPUT(사용자 입력) · ESTIMATE(직선거리 추정) */
+    /** 어디서 → 역 · 역 → 어디로 이동. mode: WALK(1km 미만 도보 추정) · CAR(카카오 실제 경로) · INPUT(사용자 입력) */
     public record Transfer(String stationCode, String stationName, double lat, double lon, double straightKm, int minutes,
                            Integer distanceM, String mode) {}
 

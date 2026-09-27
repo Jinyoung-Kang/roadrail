@@ -21,3 +21,4 @@
 | [017](017-query-performance.md) | 쿼리 성능 — JIT 끄기 · 역 쌍 해시 조인 · 한 번 계산 · 결과 캐시 |
 | [018](018-security-hardening.md) | 보안 점검 — 요청 한도 · X-Forwarded-For 위조 차단 · CSP · SRI · 의존성 감사 · 이미지 분리 |
 | [019](019-holiday-calendar.md) | 공휴일 달력 (한국천문연구원 특일 정보) · 서울 버스 노선정보를 쓰지 않은 이유 |
+| [020](020-code-review-architecture-concurrency.md) | 전체 코드 리뷰 — 의존 방향 · 가상 스레드 동시성 · 오류 규약 · 외부 예산 클라이언트별 몫 |
