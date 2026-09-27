@@ -39,6 +39,9 @@
 - GITHUB_TOKEN 으로 켠 자동 병합은 github-actions[bot] 의 병합으로 기록된다. GitHub 는 GITHUB_TOKEN 이 일으킨 이벤트로 새 워크플로를
   만들지 않으므로(workflow_dispatch · repository_dispatch 제외) 이 병합 커밋에는 main push CI 가 돌지 않는다. PR 단계에서 병합 결과를
   검사했고, 다음 push 때 main CI 가 다시 돈다. main 에서도 돌게 하려면 GitHub App 토큰이나 PAT 로 켜야 하는데, 관리할 비밀이 늘어 쓰지 않는다.
+  → 보완(2026-09-27): Dependabot 을 매주 월요일 06:00 KST 로 고정하고, 09:17 에 main 전체 CI · 09:37 에 CodeQL 이 일정으로 돌아
+  그 주에 자동 병합된 main 을 다시 검사한다(`ci.yml` · `codeql.yml` 의 schedule). 공개 저장소의 일정 실행은 60일 동안 활동이 없으면
+  꺼지고, 실패 알림은 cron 을 마지막으로 고친 사람에게 간다(GitHub 규칙).
 - 관리자는 보호를 우회해 main 에 직접 push 하거나 `gh pr merge --admin` 으로 병합할 수 있다(1인 저장소). 그 밖의 병합은 `ci passed` 가 통과해야 한다.
 - 되돌리기: 이 워크플로 파일을 지우거나 저장소 설정의 Allow auto-merge 를 끈다. 이미 켜진 PR 은 `gh pr merge --disable-auto <번호>`.
   브랜치 보호는 `gh api -X DELETE repos/{owner}/{repo}/branches/main/protection`.

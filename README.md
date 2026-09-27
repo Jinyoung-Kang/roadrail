@@ -258,7 +258,7 @@ sequenceDiagram
 | API 통합 (JUnit + Testcontainers) | 판단 카드 · 캐시 · 오류 규약(415 · 406 · ERROR 로그 없음) · 관리 API 401/202/409/400/429 · 수집 상태(오류 상세 · MGET 위치) · 헬스 · 임의 역 쌍(OO발 OO행 · 추정 차종 없음 · 가나다순 · 검색 정렬) · 출발지→도착지(선로 경로 · 캐시 키) · 공휴일(요일별 H · 경고 · 지하철 생략) · 요청 한도 429 · 역 코드 형식 400 · 좌표 NaN 400 · 외부 예산 회계(Lua 한 번) · 캐시 쇄도 방지 | 17 |
 | E2E (Playwright) | 판단 · ⇄ 교환 · 전국 검색 · 검색 칸 빈 목록 · 서비스 소개 · 판단 근거 돌발 목록 · 카드(도착 예정·시간 구성·OSM 출처) · 도로 분석 · 지도 잠금 · 선택 목록 잘림 · 고속도로 실측 · 철도 역 검색 · 가나다순 · 차종은 TAGO 배지로만 · 수집 상태 오류 복사 · 모바일 메뉴 · 보안 헤더 · 콘솔 오류 없음 · X-Forwarded-For 위조 무시 · 지도 라벨 HTML 주입 차단 · 프록시 경로 검증 | 19 |
 
-`make test` (collector 는 compose 컨테이너 안에서, api 는 Testcontainers) · `make e2e` · CI: [.github/workflows/ci.yml](.github/workflows/ci.yml) · 정적 분석: [codeql.yml](.github/workflows/codeql.yml)(PR · main · 매주, 결과는 Security 탭) — main 브랜치 보호의 필수 검사는 `ci passed` 하나이고, Dependabot 의 minor · patch PR 은 이것이 통과하면 자동 병합됩니다 ([ADR-021](docs/adr/021-dependabot-auto-merge.md))
+`make test` (collector 는 compose 컨테이너 안에서, api 는 Testcontainers) · `make e2e` · CI: [.github/workflows/ci.yml](.github/workflows/ci.yml) · 정적 분석: [codeql.yml](.github/workflows/codeql.yml)(PR · main · 매주, 결과는 Security 탭) · 매주 월요일 Dependabot(06:00) 뒤 main 전체 CI(09:17) — main 브랜치 보호의 필수 검사는 `ci passed` 하나이고, Dependabot 의 minor · patch PR 은 이것이 통과하면 자동 병합됩니다 ([ADR-021](docs/adr/021-dependabot-auto-merge.md))
 
 ## 8. 실측 결과 (2026-09-24 첫날)
 
