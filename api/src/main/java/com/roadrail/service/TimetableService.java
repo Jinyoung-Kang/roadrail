@@ -1,5 +1,6 @@
 package com.roadrail.service;
 
+import com.roadrail.common.SingleFlight;
 import com.roadrail.common.Times;
 import com.roadrail.external.TagoTrainClient;
 import org.slf4j.Logger;
@@ -27,7 +28,7 @@ public class TimetableService {
     private final ObjectMapper mapper;
     private final ExecutorService exec;
     private final Semaphore gate = new Semaphore(6);
-    private final Map<String, CompletableFuture<Void>> inflight = new ConcurrentHashMap<>();
+    private final SingleFlight<String, Boolean> inflight = new SingleFlight<>();
 
     public TimetableService(JdbcClient jdbc, TagoTrainClient tago, ObjectMapper mapper, ExecutorService exec) {
         this.exec = exec;
@@ -49,12 +50,9 @@ public class TimetableService {
                 SELECT dep_date FROM rail.tt_fetch WHERE dep_stn_cd = :a AND arr_stn_cd = :b AND dep_date IN (:d)
                   AND (complete OR fetched_at > now() - interval '12 hours')""")
                 .param("a", dep).param("b", arr).param("d", past).query(LocalDate.class).list());
-        List<CompletableFuture<Void>> todo = new ArrayList<>();
+        List<CompletableFuture<Boolean>> todo = new ArrayList<>();
         for (LocalDate d : past) {
-            if (have.contains(d)) continue;
-            String key = dep + ">" + arr + "@" + d;
-            todo.add(inflight.computeIfAbsent(key, k -> CompletableFuture.runAsync(() -> fetch(dep, arr, d), exec)
-                    .whenComplete((v, e) -> inflight.remove(k))));
+            if (!have.contains(d)) todo.add(inflight.run(dep + ">" + arr + "@" + d, () -> fetch(dep, arr, d), exec));
         }
         if (todo.isEmpty()) return true;
         if (wait.isZero()) return false;
@@ -81,21 +79,22 @@ public class TimetableService {
                 .param("a", dep).param("b", arr).param("f", from).param("t", to).query(LocalDate.class).list();
     }
 
-    private void fetch(String dep, String arr, LocalDate date) {
+    /** 받고 기록했으면 true (SingleFlight 의 결과 값 — 기다리는 쪽은 완료 여부만 본다) */
+    private boolean fetch(String dep, String arr, LocalDate date) {
         try {
             gate.acquire();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return;
+            return false;
         }
         try {
             String depNode = tago.nodeId(name(dep)), arrNode = tago.nodeId(name(arr));
             if (depNode == null || arrNode == null) {
                 if (!tago.nodes().isEmpty()) record(dep, arr, date, null, true);  // TAGO 에 없는 역 → 조회 불가로 기록
-                return;
+                return false;
             }
             var plans = tago.plans(depNode, arrNode, date);
-            if (plans == null) return;  // 호출 실패 → 기록하지 않고 다음에 다시
+            if (plans == null) return false;  // 호출 실패 → 기록하지 않고 다음에 다시
             if (!plans.isEmpty()) {
                 List<Map<String, Object>> rows = plans.stream().map(p -> Map.<String, Object>of("no", p.trnNo(),
                         "dep", p.planDep().toString(), "arr", p.planArr().toString(), "grade", p.grade() == null ? "" : p.grade())).toList();
@@ -111,8 +110,10 @@ public class TimetableService {
             int korail = jdbc.sql("SELECT count(*) FROM rail.od_trips(:a, :b, :d, :d)")
                     .param("a", dep).param("b", arr).param("d", date).query(Integer.class).single();
             record(dep, arr, date, plans.size(), plans.size() >= 0.8 * korail);
+            return true;
         } catch (RuntimeException e) {
             log.warn("시간표 저장 실패 {}→{} {}: {}", dep, arr, date, e.getMessage());
+            return false;
         } finally {
             gate.release();
         }
