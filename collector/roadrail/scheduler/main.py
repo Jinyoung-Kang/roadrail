@@ -93,7 +93,7 @@ async def consume_commands() -> None:
                 stream_id = messages[-1][0]  # 다음 pending 묶음
         except asyncio.CancelledError:
             raise
-        except Exception:  # noqa: BLE001
+        except Exception:  # 기록하고 계속 소비
             logger.exception("명령 처리 오류")
             await asyncio.sleep(3)
 
@@ -104,7 +104,7 @@ async def handle_and_ack(msg_id: str, fields: dict) -> None:
         await handle_command(fields)
     except asyncio.CancelledError:
         raise
-    except Exception:  # noqa: BLE001 — 잘못된 명령이 무한히 재배달되지 않게 ACK 한다
+    except Exception:  # 기록하고 ACK — 잘못된 명령이 무한히 재배달되지 않게
         logger.exception("명령 실패", extra={"fields": fields})
     await rds.client().xack(rds.COMMANDS, rds.COMMAND_GROUP, msg_id)
 

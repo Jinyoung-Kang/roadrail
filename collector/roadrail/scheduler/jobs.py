@@ -146,7 +146,7 @@ async def _run_locked(name: str, trigger: str, spec: JobSpec, estimates: dict[st
         # 수집기 종료(SIGTERM) — 'OK' 로 남기지 않고 중단으로 기록한 뒤 취소를 그대로 전파
         status, message = "FAILED", ABORTED_MESSAGE
         raise
-    except Exception as e:  # noqa: BLE001 — 작업 실패는 기록하고 스케줄러는 계속
+    except Exception as e:  # 작업 실패는 기록(logger.exception)하고 스케줄러는 계속
         status, message = "FAILED", f"{type(e).__name__}: {e}"[:1000]
         detail = mask_text(traceback.format_exc())
         logger.exception("작업 실패", extra={"fields": {"job": name}})
