@@ -7,7 +7,7 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    - cron: "27 18 * * 0"   # 월요일 03:27 KST
+    - cron: "37 0 * * 1"   # 월요일 09:37 KST — Dependabot(06:00) 자동 병합 뒤의 main 을 분석 (그 병합은 push 분석을 띄우지 않는다)
 
 concurrency:
   group: codeql-${{ github.ref }}

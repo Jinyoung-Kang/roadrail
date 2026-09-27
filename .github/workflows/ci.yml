@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # 매주 월요일 09:17 KST — Dependabot(06:00) 자동 병합은 GITHUB_TOKEN 병합이라 push CI 가 돌지 않는다.
+  # 그 주에 합쳐진 main 전체를 다시 검사한다 (ADR-021). 정각은 GitHub 일정 실행이 밀리기 쉬워 피한다.
+  schedule:
+    - cron: "17 0 * * 1"
 
 concurrency:
   group: ci-${{ github.ref }}
