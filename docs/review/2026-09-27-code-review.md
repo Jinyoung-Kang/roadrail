@@ -38,7 +38,7 @@
 
 ## 2. 발견 사항
 
-심각도: Critical 0 · **High 2** · Medium 10 · Low 17 (Info 제외). 재현 표시가 있는 항목은 실제로 재현했다.
+심각도: Critical 0 · **High 2** · Medium 10 · Low 24 — 총 36건 (Info 제외). 재현 표시가 있는 항목은 실제로 재현했다.
 
 | ID | 분류 | 심각도 | 위치(파일:라인) | 근거 코드 | 문제와 영향 | 개선안 | 작업량 |
 |---|---|---|---|---|---|---|---|
@@ -147,6 +147,7 @@ PR 병합 순서: [#20](https://github.com/Jinyoung-Kang/roadrail/pull/20) 보�
 | ARC-04 | 해결 | #22 | 재시작 구간 ERROR/WARN 없음 |
 | BUG-07 | 해결 | #22 | ConcurrencyToolsTest — 즉시 완료 · 실패 비고착 (수정 전 패턴은 `Recursive update` 재현) |
 | CODE-03 | 해결 | #22 | 헬퍼로 통합 |
+| CODE-07 | 해결 | #20 | 길 ID 경로 값 encodeURIComponent |
 | PERF-01 · PERF-07 | 해결 (방식 변경) | #20 · #23 | 88.5 → 43.3ms. 계획했던 통계 추정치(`reltuples`)는 화면에 추정치를 내지 않는 원칙(ADR-016)과 맞지 않아 **정확한 값 5분 캐시 + 측정 시각**으로 바꿨다 |
 | PERF-02 | 해결 | #23 | 역 검색 15.5 → 5.6ms · 정렬 특성 테스트(수정 전 SQL 에서 먼저 통과) |
 | PERF-04 | 해결 (확장) | #23 | 전국 비교 캐시 + JsonCache 동시 미적중 합치기(JsonCacheIT) — 철도 화면 첫 로드 231 → 183ms |
