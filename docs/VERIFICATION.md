@@ -1,6 +1,6 @@
 # 실데이터 검증 기록
 
-2026-09-24(추석 연휴 첫날) 실제 API 로 전체 파이프라인을 돌리며 발견한 문제와 조치입니다.
+2026-09-24(추석 연휴 첫날) 실제 API 로 전체 파이프라인을 돌리며 발견한 문제와 조치입니다. 53번부터는 2026-09-27 전체 코드 리뷰([보고서](review/2026-09-27-code-review.md))에서 재현한 결함입니다.
 각 항목은 재현 → 수정 → 회귀 테스트(또는 측정)로 닫았습니다.
 
 | # | 발견 | 원인 | 조치 | 확인 |
@@ -57,6 +57,21 @@
 | 50 | 도로 '평소' 기준선에 추석 정체가 섞임 | 요일 · 슬롯 기준선이 공휴일을 구분하지 않음 | 한국천문연구원 특일 정보로 공휴일 제외(V15). 자료가 모두 추석이라 09-27 까지 기준선 비움 · 이유 표시 | `test_baseline_excludes_holidays` |
 | 51 | 다음 주 목요일 기차 시간표로 추석(09-24)을 씀 | 같은 요일 최근 운행일 규칙 | 평일 목표일이면 공휴일 기준일 제외 · 공휴일 목표일이면 임시열차 미반영을 표시 | 931편(추석) ↔ 875편(평소) |
 | 52 | 공휴일 지하철 시각의 근거 없음 | TAGO 요일 코드에 공휴일이 없음(평일·토·일) | 공휴일엔 지하철 시각 비표시 · 이유 표시 | `ApiIT`(subwayAtDeparture 비어 있음) |
+| 53 | 공유 링크의 장소 이름이 지도 라벨 HTML 로 들어감 (전체 코드 리뷰 SEC-01) | 카카오 CustomOverlay 에 라벨을 HTML 문자열로 넘기며 이스케이프 안 함 — `?from=<b style="color:red">…` 가 지도에 삽입(onerror 는 CSP 가 차단) | 표식을 DOM 노드로, 라벨은 textNode · 스타일은 CSSOM 대입 | E2E '장소 이름은 지도 라벨에 글자로만' |
+| 54 | 좌표 NaN 이 검증을 통과 (SEC-03) | '범위 밖(<, >)' 조건은 NaN 에서 모두 거짓 — `/trip?fromLat=NaN` 이 200 · 0.0km 판단 + 외부 호출 | '범위 안(>=, <=)' 조건 | `ApiIT` NaN · ±Infinity → 400 |
+| 55 | 한 클라이언트가 공용 카카오 하루 예산을 약 25분에 소진 가능 (SEC-02) | 새 조합 1건 = 카카오 10건, 분당 한도만 있음 | 클라이언트별 일일 몫(기본 20%) — 실제 외부 호출만 셈, Lua 한 번 | `QuotaGuardIT` |
+| 56 | 프록시가 인코딩한 `../` 를 API 서버까지 넘김 (SEC-04) | 원본 `req.url` 전달 — `..%2f..%2factuator` 가 Tomcat 400(HTML) | 세그먼트 검증 후 /api/v1 아래로 재조립, 위반은 JSON 400 | E2E '프록시는 정상 경로만' |
+| 57 | 환승 경로가 탈 수 없는 여정을 돌려줌 (BUG-01) | CSA 복원이 출발 후보역을 만나면 무조건 멈춤 — 그 역의 탑승 가능 시각보다 이른 열차 | 탑승 가능 시각 ≤ 출발일 때만 멈추고 아니면 도착 경로를 따라감 | `RailRouterTest` +3 · 실제 시간표 3,000쌍: 17 · 20건 → 0건 |
+| 58 | `Content-Type: text/plain` → 500, `Accept: text/csv` → 빈 406 + ERROR 스택 (BUG-02) | catch-all 이 표준 MVC 예외를 모름 | 415 `UNSUPPORTED_MEDIA_TYPE` · 406 본문 없이 · 그 밖의 4xx 는 그 상태 | `ApiIT` + OutputCapture(ERROR 로그 없음) |
+| 59 | 지하철 부가 정보 파싱 예외가 /trip 전체를 500 으로, TAGO 오류 응답을 빈 결과로 7일 캐시 (BUG-03) | 캐시 로더의 예외가 join 으로 재던져짐 · resultCode 미확인 | 형식 틀린 행 건너뜀 · 실패는 빈 값 · resultCode≠00 은 캐시 안 함 | `TagoSubwayClientTest` |
+| 60 | 같은 좌표 · 다른 역 지정 요청이 앞 결과를 받음 (BUG-04) | 캐시 키가 좌표만 | 역 코드 · 이름을 키에 (`trip:v2`) | `ApiIT` |
+| 61 | 판단 카드의 철도 시각 안내 '매일 03:30 계산' (BUG-08) | 수집 일정(05:30 · 09:30 · 15:30, V12) 변경 뒤 문구가 남음 | '… 운행 기준 시간표' 로 통일 | `ApiIT` |
+| 62 | in-flight 합치기에서 `Recursive update` 후 그 키가 영구히 '진행 중' (BUG-07) | computeIfAbsent 안에서 비동기 작업 + 제거 콜백 — 작업이 먼저 끝나면 잠금 안에서 remove | `SingleFlight`: Future 를 먼저 넣고 잠금 밖에서 시작 · 실패도 제거 | `ConcurrencyToolsTest`(즉시 완료 · 실패 비고착) |
+| 63 | 가상 스레드가 캐리어 스레드를 고정 (ARC-02) | computeIfAbsent(synchronized) 안에서 DB 조회 — `jdk.tracePinnedThreads`: reason:MONITOR | `Memo`: 잠금 밖에서 한 번만 불러옴 | 추적 출력 없음 · `ConcurrencyToolsTest` |
+| 64 | 연결 풀이 차면 30초 뒤 500 (ARC-03) | 가상 스레드는 동시 요청 수 상한 없음 · Hikari 기본 대기 30초 | 대기 3초 · 503 `UNAVAILABLE` + Retry-After | `GlobalExceptionHandlerTest` |
+| 65 | 꼬리 위치를 저장 전에 옮겨, 실패한 수집의 슬롯을 다음 수집이 건너뜀 (BUG-05) | 조회 직후 커서 기록 · 다른 구간 실패 시 받은 행을 버림 | 저장 성공 뒤 커서 기록 · 예외는 저장 뒤 다시 던짐 | `test_tail_cursor_advances_only_for_saved_rows` |
+| 66 | 시작 전 실패 시 작업 잠금이 최대 2시간 남음 · 해제가 비원자적 (BUG-06) | 잠금 획득 후 try 밖 DB 호출 · GET 후 DEL | 획득 직후부터 try/finally · Lua 비교 후 삭제 | `test_failure_before_the_job_body…` · `…someone_elses_lock` |
+| 67 | 60일 재분류가 구간당 13.6초 (PERF-03) | 튀는 값 제거 · 결측 채움이 O(n²) 창 탐색 | 두 포인터 · 이분 탐색 O(n log n), 결과 동일 | 무작위 65세트 동일성 · 13,582 → 14.3ms |
 
 ## 알려진 한계 (수치로 확인됨)
 
