@@ -1,7 +1,8 @@
-package com.roadrail.service;
+package com.roadrail.external;
 
+import com.roadrail.common.JsonCache;
+import com.roadrail.common.SingleFlight;
 import com.roadrail.config.AppProperties;
-import com.roadrail.external.QuotaGuard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -34,13 +35,15 @@ public class KakaoMobilityClient {
     private final AppProperties props;
     private final JsonCache cache;
     private final QuotaGuard quota;
-    private final ExecutorService exec = Executors.newVirtualThreadPerTaskExecutor();
-    private final Map<String, CompletableFuture<Eta>> inflight = new ConcurrentHashMap<>();
+    private final ExecutorService exec;
+    private final SingleFlight<String, Eta> inflight = new SingleFlight<>();
 
     /** path = [[lat, lon], …] (최대 400점, 경로가 필요할 때만) */
     public record Eta(int durationSec, int distanceM, String departAt, List<double[]> path) {}
 
-    public KakaoMobilityClient(RestClient.Builder builder, AppProperties props, JsonCache cache, QuotaGuard quota) {
+    public KakaoMobilityClient(RestClient.Builder builder, AppProperties props, JsonCache cache, QuotaGuard quota,
+                               ExecutorService exec) {
+        this.exec = exec;
         var factory = new JdkClientHttpRequestFactory(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build());
         factory.setReadTimeout(Duration.ofSeconds(4));
         this.http = builder.clone().baseUrl(props.kakaoMobilityBaseUrl()).requestFactory(factory).build();
@@ -59,18 +62,15 @@ public class KakaoMobilityClient {
      */
     public Optional<Eta> futureEta(double oLat, double oLon, double dLat, double dLon, OffsetDateTime departAt, boolean withPath) {
         if (props.kakaoRestApiKey() == null || props.kakaoRestApiKey().isBlank()) return Optional.empty();
-        // 10분 단위로 맞춰 캐시 (같은 시각 반복 호출 방지, 쿼터 보호)
-        OffsetDateTime t = departAt.withMinute(departAt.getMinute() - departAt.getMinute() % 10).withSecond(0).withNano(0);
-        if (t.isBefore(OffsetDateTime.now().plusMinutes(1))) t = t.plusMinutes(10);
-        String dep = t.format(FMT);
-        String key = String.format(Locale.ROOT, "kakao:eta%s:%.4f,%.4f:%.4f,%.4f:%s", withPath ? "p" : "", oLat, oLon, dLat, dLon, dep);
+        String dep = departSlot(departAt);
+        String key = etaKey(oLat, oLon, dLat, dLon, dep, withPath);
         Eta hit = cache.peek(key, Eta.class);
         if (hit != null) return Optional.of(hit);
-        CompletableFuture<Eta> f = inflight.computeIfAbsent(key, k -> CompletableFuture.supplyAsync(() -> {
+        CompletableFuture<Eta> f = inflight.run(key, () -> {
             Eta e = call(oLat, oLon, dLat, dLon, dep, withPath);
-            if (e != null) cache.put(k, e, Duration.ofMinutes(20));
+            if (e != null) cache.put(key, e, Duration.ofMinutes(20));
             return e;
-        }, exec).whenComplete((e, ex) -> inflight.remove(k)));
+        }, exec);
         try {
             return Optional.ofNullable(f.get(WAIT.toMillis(), TimeUnit.MILLISECONDS));
         } catch (TimeoutException e) {
@@ -85,10 +85,18 @@ public class KakaoMobilityClient {
 
     /** 같은 요청이 아직 진행 중인지 (화면이 잠시 뒤 다시 부르도록 알려 주기 위함) */
     public boolean pending(double oLat, double oLon, double dLat, double dLon, OffsetDateTime departAt, boolean withPath) {
+        return inflight.running(etaKey(oLat, oLon, dLat, dLon, departSlot(departAt), withPath));
+    }
+
+    /** 출발 시각을 10분 단위로 맞춘다(같은 시각 반복 호출 방지 · 예산 보호). 1분 안쪽이면 다음 10분 — 카카오는 미래 시각만 받는다 */
+    static String departSlot(OffsetDateTime departAt) {
         OffsetDateTime t = departAt.withMinute(departAt.getMinute() - departAt.getMinute() % 10).withSecond(0).withNano(0);
         if (t.isBefore(OffsetDateTime.now().plusMinutes(1))) t = t.plusMinutes(10);
-        return inflight.containsKey(String.format(Locale.ROOT, "kakao:eta%s:%.4f,%.4f:%.4f,%.4f:%s", withPath ? "p" : "",
-                oLat, oLon, dLat, dLon, t.format(FMT)));
+        return t.format(FMT);
+    }
+
+    private static String etaKey(double oLat, double oLon, double dLat, double dLon, String dep, boolean withPath) {
+        return String.format(Locale.ROOT, "kakao:eta%s:%.4f,%.4f:%.4f,%.4f:%s", withPath ? "p" : "", oLat, oLon, dLat, dLon, dep);
     }
 
     private Eta call(double oLat, double oLon, double dLat, double dLon, String dep, boolean withPath) {
@@ -162,9 +170,7 @@ public class KakaoMobilityClient {
     /** 출발 시각 기준 경로 상세. avoid = null | "motorway" (고속도로 회피). 결과 20분 캐시. */
     public Route route(double oLat, double oLon, double dLat, double dLon, OffsetDateTime departAt, String avoid, boolean detail) {
         if (props.kakaoRestApiKey() == null || props.kakaoRestApiKey().isBlank()) return null;
-        OffsetDateTime t = departAt.withMinute(departAt.getMinute() - departAt.getMinute() % 10).withSecond(0).withNano(0);
-        if (t.isBefore(OffsetDateTime.now().plusMinutes(1))) t = t.plusMinutes(10);
-        String dep = t.format(FMT);
+        String dep = departSlot(departAt);
         String key = String.format(Locale.ROOT, "kakao:route:%s:%s:%.4f,%.4f:%.4f,%.4f:%s", avoid, detail, oLat, oLon, dLat, dLon, dep);
         Route hit = cache.peek(key, Route.class);
         if (hit != null) return hit;

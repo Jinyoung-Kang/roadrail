@@ -1,5 +1,7 @@
 package com.roadrail.service;
 
+import com.roadrail.external.KakaoMobilityClient;
+import com.roadrail.common.Memo;
 import com.roadrail.common.Times;
 import com.roadrail.domain.KmaGrid;
 import com.roadrail.domain.RailRouter;
@@ -32,17 +34,18 @@ public class RailJourneyService {
     private final TagoSubwayClient tago;
     private final TimetableService timetable;
     private final HolidayService holidays;
-    private final ExecutorService exec = Executors.newVirtualThreadPerTaskExecutor();
+    private final ExecutorService exec;
     /** 기준 운행일 → 연결 목록 (하루 약 1만 개) + 열차별 정차역 순서. 하루 단위로 교체 */
     record Day(List<RailRouter.Connection> connections, Map<String, List<String>> stopsByTrip) {}
 
-    private final Map<LocalDate, Day> dayCache = new ConcurrentHashMap<>();
+    private final Memo<LocalDate, Day> dayCache = new Memo<>(7);  // 오늘 · 내일의 기준 운행일 + 여유
     /** (출발역, 도착역) → OSM 선로 경로 [[lat, lon], …] (ref.rail_link, 10분마다 · 비어 있으면 30초마다 다시 읽음) */
     private volatile Map<String, List<double[]>> links = Map.of();
     private volatile long linksLoadedAt = 0;
 
     public RailJourneyService(JdbcClient jdbc, RailService rail, KakaoMobilityClient kakao, TagoSubwayClient tago,
-                              TimetableService timetable, HolidayService holidays) {
+                              TimetableService timetable, HolidayService holidays, ExecutorService exec) {
+        this.exec = exec;
         this.timetable = timetable;
         this.holidays = holidays;
         this.jdbc = jdbc;
@@ -60,9 +63,9 @@ public class RailJourneyService {
     /** 역별 이동 시간 + 카카오 조회가 아직 진행 중인지 (진행 중이면 화면이 잠시 뒤 다시 부른다) */
     record Access(Map<String, Transfer> byStation, boolean pending) {}
 
+    /** 하루 시간표 — 날짜마다 한 번만 읽는다. Memo 라 DB 조회가 맵 잠금 밖에서 돈다(가상 스레드 고정 없음 · ARC-02) */
     Day day(LocalDate refDate) {
-        if (dayCache.size() > 6) dayCache.clear();
-        return dayCache.computeIfAbsent(refDate, d -> {
+        return dayCache.get(refDate, d -> {
             List<RailRouter.Stop> stops = jdbc.sql("SELECT trn_no, run_seq, stn_cd, arr_at, dep_at FROM rail.day_stops(:d)")
                     .param("d", d).query((rs, i) -> new RailRouter.Stop(rs.getString(1), rs.getInt(2), rs.getString(3),
                             epoch(rs.getObject(4, OffsetDateTime.class)), epoch(rs.getObject(5, OffsetDateTime.class)))).list();
@@ -245,9 +248,9 @@ public class RailJourneyService {
         // TAGO 요일 구분은 평일 · 토 · 일뿐이라 공휴일에 어느 시간표가 도는지 알 수 없다 → 공휴일엔 표시하지 않는다(추정하지 않음)
         boolean depHoliday = holidays.is(Times.kst(first.departAt()).toLocalDate());
         boolean arrHoliday = holidays.is(Times.kst(first.arriveAt()).toLocalDate());
-        var fSubDep = depHoliday ? CompletableFuture.completedFuture(List.<TagoSubwayClient.NextSubway>of())
+        var fSubDep = depHoliday ? CompletableFuture.completedFuture(List.<NextSubway>of())
                 : CompletableFuture.supplyAsync(() -> subway(first.access().stationName(), first.departAt().minusMinutes(40)), exec);
-        var fSubArr = arrHoliday ? CompletableFuture.completedFuture(List.<TagoSubwayClient.NextSubway>of())
+        var fSubArr = arrHoliday ? CompletableFuture.completedFuture(List.<NextSubway>of())
                 : CompletableFuture.supplyAsync(() -> subway(first.egress().stationName(), first.arriveAt().plusMinutes(3)), exec);
         return new Plan(journeys, ref.getFirst(), basis.getFirst(), origins.size(), dests.size(), BOARDING_BUFFER_MIN, TRANSFER_MIN,
                 "코레일 여객열차(KTX·ITX·무궁화 등) 기준. 지하철·버스 환승 경로는 공개 데이터가 없어 다루지 않습니다."
@@ -256,9 +259,9 @@ public class RailJourneyService {
     }
 
     /** 갈아탈 지하철 — 부가 정보라 실패해도 여정 응답은 낸다(예전에는 예외가 /trip 전체를 500 으로 만들었다) */
-    private List<TagoSubwayClient.NextSubway> subway(String station, OffsetDateTime after) {
+    private List<NextSubway> subway(String station, OffsetDateTime after) {
         try {
-            return tago.next(station, after);
+            return tago.next(station, after).stream().map(n -> new NextSubway(n.line(), n.toward(), n.times())).toList();
         } catch (RuntimeException e) {
             log.warn("지하철 시각 조회 실패 — 비워 둠 ({}): {}", station, e.toString());
             return List.of();
@@ -356,10 +359,10 @@ public class RailJourneyService {
         return new Journey(a, legs, e, first, last, wait, j.transfers(), total, lastDelay);
     }
 
-    private final Map<String, double[]> coordCache = new ConcurrentHashMap<>();
+    private final Memo<String, double[]> coordCache = new Memo<>(4096);
 
     private double[] coords(String code) {
-        double[] c = coordCache.computeIfAbsent(code, k -> jdbc.sql("SELECT lat, lon FROM ref.station WHERE stn_cd = :c AND lat IS NOT NULL")
+        double[] c = coordCache.get(code, k -> jdbc.sql("SELECT lat, lon FROM ref.station WHERE stn_cd = :c AND lat IS NOT NULL")
                 .param("c", k).query((rs, i) -> new double[]{rs.getDouble(1), rs.getDouble(2)}).optional().orElse(new double[0]));
         return c.length == 2 ? c : null;
     }

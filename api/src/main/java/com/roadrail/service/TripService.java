@@ -1,5 +1,7 @@
 package com.roadrail.service;
 
+import com.roadrail.external.KakaoMobilityClient;
+import com.roadrail.common.JsonCache;
 import com.roadrail.common.ApiException;
 import com.roadrail.common.Times;
 import com.roadrail.config.AppProperties;
@@ -38,7 +40,7 @@ import java.util.concurrent.*;
 public class TripService {
     static final double MIN_RAIL_KM = 15;
     static final Duration DEADLINE = Duration.ofMillis(750);
-    private final ExecutorService exec = Executors.newVirtualThreadPerTaskExecutor();
+    private final ExecutorService exec;
     private final JdbcClient jdbc;
     private final AppProperties props;
     private final RailService rail;
@@ -54,7 +56,8 @@ public class TripService {
 
     public TripService(JdbcClient jdbc, AppProperties props, RailService rail, RoadService road, EnvService env,
                        KakaoMobilityClient mobility, KakaoLocalClient local, KmaClient kma, AirKoreaClient air, JsonCache cache,
-                       RailJourneyService journeys, HolidayService holidays) {
+                       RailJourneyService journeys, HolidayService holidays, ExecutorService exec) {
+        this.exec = exec;
         this.jdbc = jdbc;
         this.props = props;
         this.rail = rail;

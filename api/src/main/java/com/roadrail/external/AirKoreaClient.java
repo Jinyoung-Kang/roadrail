@@ -1,7 +1,7 @@
 package com.roadrail.external;
 
 import com.roadrail.config.AppProperties;
-import com.roadrail.service.JsonCache;
+import com.roadrail.common.JsonCache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;

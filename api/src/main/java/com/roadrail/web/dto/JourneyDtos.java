@@ -1,6 +1,5 @@
 package com.roadrail.web.dto;
 
-import com.roadrail.external.TagoSubwayClient;
 import com.roadrail.web.dto.RailDtos;
 
 import java.time.OffsetDateTime;
@@ -23,8 +22,11 @@ public final class JourneyDtos {
     public record Journey(Transfer access, List<Leg> legs, Transfer egress, OffsetDateTime departAt, OffsetDateTime arriveAt,
                           int waitMin, int transfers, int totalMin, Double expectedDelayMin) {}
 
+    /** 역에서 갈아탈 지하철 한 노선 · 방향의 다음 열차 (TAGO 지하철 시간표) */
+    public record NextSubway(String line, String toward, List<String> times) {}
+
     public record Plan(List<Journey> journeys, String referenceDate, String basis, int originCandidates,
                        int destCandidates, int boardingBufferMin, int transferMin, String note,
-                       List<TagoSubwayClient.NextSubway> subwayAtDeparture, List<TagoSubwayClient.NextSubway> subwayAtArrival,
+                       List<NextSubway> subwayAtDeparture, List<NextSubway> subwayAtArrival,
                        boolean pending) {}
 }
