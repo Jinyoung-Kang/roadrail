@@ -51,7 +51,7 @@
 | **근거 있는 판단** | R-DEC-01 순수 함수: 결론 + 사용한 수치·데이터 시각 목록, 한쪽 데이터가 없으면 결론 대신 '비교할 수 없습니다' | `DecisionRuleTest` 5개 |
 | **응답 시간 예산** | 판단 카드 Redis 60초 캐시 + 카카오 ETA 비동기·최대 0.6초 대기 ([ADR-010](docs/adr/010-kakao-bounded-wait.md)) | 미적중 0.52~0.82초 · 적중 7~9ms (NFR-03) |
 | **쿼리 성능 진단** | `EXPLAIN ANALYZE` 로 실행 시간의 80% 가 PostgreSQL **JIT 컴파일**임을 찾아 끄고(574 → 94ms), 역 쌍 조인을 LATERAL → 해시 조인, 같은 계산 두 번 → `GROUPING SETS` 한 번, 과거 기간 결과 10분 캐시 ([ADR-017](docs/adr/017-query-performance.md)) | 철도 분석 화면 p50 **1,972 → 190ms**(캐시 없음) · 8ms(적중) · `make bench` |
-| **보안 점검 · 하드닝** | IP 별 요청 한도(Redis Lua) — 프록시가 헤더를 넘기는 방식 때문에 생긴 **X-Forwarded-For 위조 우회를 직접 재현하고 막음** · CSP 등 보안 헤더 · 외부 CSS SRI · 입력 형식 제한 · 의존성 감사(npm audit · pip-audit) 0건 · 운영 이미지에서 테스트 도구 분리 · CI 비밀키 검사(gitleaks) · Dependabot ([ADR-018](docs/adr/018-security-hardening.md)) | `RateLimitInterceptorTest` · `ApiIT` 429 · E2E '위조해도 같은 한도' · '보안 헤더 · 콘솔 오류 없음' |
+| **보안 점검 · 하드닝** | IP 별 요청 한도(Redis Lua) — 프록시가 헤더를 넘기는 방식 때문에 생긴 **X-Forwarded-For 위조 우회를 직접 재현하고 막음** · CSP 등 보안 헤더 · 외부 CSS SRI · 입력 형식 제한 · 의존성 감사(npm audit · pip-audit) 0건 · 운영 이미지에서 테스트 도구 분리 · CI 비밀키 검사(gitleaks) · CodeQL 정적 분석(Java · TypeScript · Python · Actions) · Dependabot ([ADR-018](docs/adr/018-security-hardening.md)) | `RateLimitInterceptorTest` · `ApiIT` 429 · E2E '위조해도 같은 한도' · '보안 헤더 · 콘솔 오류 없음' |
 | **공휴일 달력** | 한국천문연구원 특일 정보로 도로 기준선에서 공휴일 제외 · 평일 기차 기준 시간표에서 공휴일(임시열차) 제외 · 요일별 정시율에 공휴일 따로 · 판단 경고 ([ADR-019](docs/adr/019-holiday-calendar.md)) | 추석 09-24 코레일 931편 ↔ 같은 목요일 875편 · `test_baseline_excludes_holidays` |
 | **전체 코드 리뷰** | 아키텍처 = 보안 = 성능 > 가독성 순으로 36건 진단 → 주제별 PR 6개. 지도 라벨 **HTML 주입**, CSA 여정 복원 버그, JDK 21 **가상 스레드 캐리어 고정**, in-flight 맵 `Recursive update` 경쟁을 각각 재현한 뒤 수정 · 캐시 쇄도 방지 · 과부하 503. 자신의 diff 를 다시 리뷰해 회귀 1건 · 결함 2건을 더 고치고, 배포 구조와 맞지 않는 클라이언트별 예산 몫은 되돌림 ([보고서](docs/review/2026-09-27-code-review.md) · [ADR-020](docs/adr/020-code-review-architecture-concurrency.md)) | 탈 수 없는 여정 17건 → 0 · 역 검색 15.5 → 5.6ms · 분석 화면 첫 로드 JS −55% |
 | **실데이터 검증 · 코드 검토** | 실제 API 로 전체를 돌리며 발견한 문제와 코드 검토 결과 70건을 재현 → 수정 → 회귀 테스트로 고정 | [docs/VERIFICATION.md](docs/VERIFICATION.md) |
@@ -258,7 +258,7 @@ sequenceDiagram
 | API 통합 (JUnit + Testcontainers) | 판단 카드 · 캐시 · 오류 규약(415 · 406 · ERROR 로그 없음) · 관리 API 401/202/409/400/429 · 수집 상태(오류 상세 · MGET 위치) · 헬스 · 임의 역 쌍(OO발 OO행 · 추정 차종 없음 · 가나다순 · 검색 정렬) · 출발지→도착지(선로 경로 · 캐시 키) · 공휴일(요일별 H · 경고 · 지하철 생략) · 요청 한도 429 · 역 코드 형식 400 · 좌표 NaN 400 · 외부 예산 회계(Lua 한 번) · 캐시 쇄도 방지 | 17 |
 | E2E (Playwright) | 판단 · ⇄ 교환 · 전국 검색 · 검색 칸 빈 목록 · 서비스 소개 · 판단 근거 돌발 목록 · 카드(도착 예정·시간 구성·OSM 출처) · 도로 분석 · 지도 잠금 · 선택 목록 잘림 · 고속도로 실측 · 철도 역 검색 · 가나다순 · 차종은 TAGO 배지로만 · 수집 상태 오류 복사 · 모바일 메뉴 · 보안 헤더 · 콘솔 오류 없음 · X-Forwarded-For 위조 무시 · 지도 라벨 HTML 주입 차단 · 프록시 경로 검증 | 19 |
 
-`make test` (collector 는 compose 컨테이너 안에서, api 는 Testcontainers) · `make e2e` · CI: [.github/workflows/ci.yml](.github/workflows/ci.yml) — main 브랜치 보호의 필수 검사는 `ci passed` 하나이고, Dependabot 의 minor · patch PR 은 이것이 통과하면 자동 병합됩니다 ([ADR-021](docs/adr/021-dependabot-auto-merge.md))
+`make test` (collector 는 compose 컨테이너 안에서, api 는 Testcontainers) · `make e2e` · CI: [.github/workflows/ci.yml](.github/workflows/ci.yml) · 정적 분석: [codeql.yml](.github/workflows/codeql.yml)(PR · main · 매주, 결과는 Security 탭) — main 브랜치 보호의 필수 검사는 `ci passed` 하나이고, Dependabot 의 minor · patch PR 은 이것이 통과하면 자동 병합됩니다 ([ADR-021](docs/adr/021-dependabot-auto-merge.md))
 
 ## 8. 실측 결과 (2026-09-24 첫날)
 
