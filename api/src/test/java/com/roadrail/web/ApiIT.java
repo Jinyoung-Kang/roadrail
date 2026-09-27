@@ -93,6 +93,8 @@ class ApiIT extends IntegrationTest {
                 .andExpect(jsonPath("$.decision.rule").value("R-DEC-01"))
                 .andExpect(jsonPath("$.decision.reasons", not(empty())))
                 .andExpect(jsonPath("$.freshness.road", containsString("공개 지연")))
+                // 철도 자료 시각 안내가 실제 수집 일정(05:30 · 09:30 · 15:30)과 다르던 문구 '매일 03:30 계산' (BUG-08)
+                .andExpect(jsonPath("$.freshness.rail", allOf(containsString("운행 기준 시간표"), not(containsString("03:30")))))
                 .andExpect(jsonPath("$.caveat", containsString("20분")))
                 .andExpect(jsonPath("$.asOf", endsWith("+09:00")));
         mvc.perform(get("/api/v1/corridors/SEL-DJN/now").param("dir", "DN"))
