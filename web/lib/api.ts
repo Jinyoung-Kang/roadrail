@@ -10,8 +10,14 @@ export class HttpError extends Error {
 export async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...init, headers: { Accept: "application/json", ...(init?.headers ?? {}) } });
   const text = await res.text();
-  const body = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new HttpError(res.status, body);
+  let body: unknown = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    // JSON 이 아닌 본문(프록시 · 서버의 HTML 오류 페이지 등) — 오류면 상태 코드로 알리고, 성공인데 JSON 이 아니면 그대로 알린다
+    if (res.ok) throw new Error("응답을 해석할 수 없습니다 (JSON 아님)");
+  }
+  if (!res.ok) throw new HttpError(res.status, body as ApiError | null);
   return body as T;
 }
 
