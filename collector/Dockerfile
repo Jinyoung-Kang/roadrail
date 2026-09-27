@@ -10,10 +10,11 @@ WORKDIR /app/collector
 COPY collector/pyproject.toml ./
 # 의존성 층을 코드와 분리해 캐시 (코드만 바뀌면 다시 설치하지 않음)
 # 베이스 이미지의 pip 24.0 · setuptools 79.0.1 은 알려진 취약점이 있어(pip-audit) 고친 버전으로 고정
+# 임시 요구 목록은 같은 RUN 에서 지운다 — 루트 소유로 남으면 비루트 사용자가 같은 경로를 못 쓴다
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install pip==26.2.1 setuptools==84.0.0 \
  && python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))" > /tmp/req.txt \
- && pip install -r /tmp/req.txt
+ && pip install -r /tmp/req.txt && rm /tmp/req.txt
 COPY collector/roadrail ./roadrail
 RUN pip install --no-deps -e . && useradd -r -u 10001 app
 COPY seed /app/seed
@@ -24,7 +25,7 @@ FROM runtime AS test
 USER root
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml','rb'))['project']['optional-dependencies']['dev']))" > /tmp/dev.txt \
- && pip install -r /tmp/dev.txt
+ && pip install -r /tmp/dev.txt && rm /tmp/dev.txt
 COPY collector/tests ./tests
 COPY fixtures /app/fixtures
 COPY db/migrations /app/db/migrations

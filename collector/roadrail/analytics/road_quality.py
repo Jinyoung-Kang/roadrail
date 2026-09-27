@@ -17,6 +17,7 @@ Q-v1(속도 < 40km/h ∧ 차량 < 5 → SUSPECT)은 이 정체를 과하게 걸�
 """
 from __future__ import annotations
 
+import bisect
 import datetime as dt
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -42,12 +43,19 @@ def classify(distance_km: float, travel_sec: int, vehicles: int | None, min_sec:
 
 def despike(values: Mapping[dt.datetime, tuple[int, int | None]], window: dt.timedelta = dt.timedelta(minutes=30),
             ratio: float = 2.0, max_vehicles: int = 5) -> tuple[dict[dt.datetime, int], int]:
-    """values[t] = (초, 차량 수) → (튀는 값을 뺀 {t: 초}, 제외 건수)."""
+    """values[t] = (초, 차량 수) → (튀는 값을 뺀 {t: 초}, 제외 건수).
+    창(±window)은 정렬된 시각 위의 두 포인터로 민다 — 시각마다 전체를 훑던 O(n²) 대신 O(n · 창 크기)."""
     keys = sorted(values)
+    secs = [values[k][0] for k in keys]
     out, dropped = {}, 0
+    lo = hi = 0
     for t in keys:
+        while keys[lo] < t - window:
+            lo += 1
+        while hi < len(keys) and keys[hi] <= t + window:
+            hi += 1
         sec, veh = values[t]
-        near = sorted(values[k][0] for k in keys if abs(k - t) <= window)
+        near = sorted(secs[lo:hi])
         med = near[len(near) // 2] if len(near) % 2 else (near[len(near) // 2 - 1] + near[len(near) // 2]) / 2
         if len(near) >= 3 and sec > ratio * med and (veh or 0) < max_vehicles:
             dropped += 1
@@ -92,6 +100,8 @@ def aggregate_corridor(
     stored: list[CorridorSlot] = []
     missing: list[dt.datetime] = []
     total = len(segments)
+    # 구간별 정렬된 관측 시각(한 번만) — 슬롯마다 구간의 모든 값을 훑던 O(슬롯 × 값) 대신 이분 탐색으로 창 안의 값만
+    ordered = {seg.key: sorted((ok_values.get(seg.key) or {}).keys()) for seg in segments}
     for t in slots:
         s_sum, observed = 0, 0
         for seg in segments:
@@ -101,7 +111,9 @@ def aggregate_corridor(
                 observed += 1
                 s_sum += v
                 continue
-            near = [(abs((k - t).total_seconds()), val) for k, val in vals.items() if abs(k - t) <= near_window]
+            ks = ordered[seg.key]
+            window = ks[bisect.bisect_left(ks, t - near_window):bisect.bisect_right(ks, t + near_window)]
+            near = [(abs((k - t).total_seconds()), vals[k]) for k in window]
             if near:
                 s_sum += min(near)[1]
             elif seg.key in seg_median:

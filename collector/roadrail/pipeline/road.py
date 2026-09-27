@@ -57,13 +57,13 @@ def unique_segments(chains: dict[tuple[str, str], list[Segment]]) -> dict[tuple[
     return {s.key: s for segs in chains.values() for s in segs}
 
 
-async def fetch_segment(ctx: JobContext, seg: Segment, full: bool) -> list[tuple]:
-    """꼬리(또는 전체) 페이지를 받아 저장할 행 목록을 돌려준다."""
+async def fetch_segment(ctx: JobContext, seg: Segment, full: bool) -> tuple[list[tuple], str, int]:
+    """꼬리(또는 전체) 페이지를 받아 (저장할 행, 꼬리 키, 새 꼬리 위치)를 돌려준다.
+    꼬리 위치는 여기서 기록하지 않는다 — 행을 저장한 뒤에만 옮겨야 실패한 수집의 슬롯을 다음 수집이 건너뛰지 않는다.
+    키는 읽은 날짜의 것을 그대로 돌려준다 — 수집이 자정을 넘겨도 D일 위치가 D+1 키에 들어가지 않게."""
     s = settings()
-    r = rds.client()
-    today = now_kst().strftime("%Y%m%d")
-    key = rds.tail_key(seg.start, seg.end, today)
-    seen = 0 if full else int(await r.get(key) or 0)
+    key = rds.tail_key(seg.start, seg.end, now_kst().strftime("%Y%m%d"))
+    seen = 0 if full else int(await rds.client().get(key) or 0)
     page = seen // ex.PAGE + 1
     out: list[tuple] = []
     while True:
@@ -78,8 +78,7 @@ async def fetch_segment(ctx: JobContext, seg: Segment, full: bool) -> list[tuple
         if not more:
             break
         page += 1
-    await r.set(key, seen, ex=172800)
-    return out
+    return out, key, seen
 
 
 async def collect_travel_time(ctx: JobContext, full: bool = False, only: set[tuple[str, str]] | None = None) -> int:
@@ -89,17 +88,26 @@ async def collect_travel_time(ctx: JobContext, full: bool = False, only: set[tup
         segs = {k: v for k, v in segs.items() if k in only}
     results = await asyncio.gather(*(fetch_segment(ctx, seg, full) for seg in segs.values()), return_exceptions=True)
     rows: list[tuple] = []
-    failed = 0
+    tails: dict[str, int] = {}
+    failed, unexpected = 0, None
     for seg, res in zip(segs.values(), results, strict=True):
-        if isinstance(res, Exception):
+        if isinstance(res, BaseException):
             failed += 1
             ctx.note(f"구간 {seg.start}->{seg.end} 실패: {res}")
             if not isinstance(res, ProviderError):
-                raise res
+                unexpected = unexpected or res  # 받은 구간을 저장한 뒤에 다시 던진다
             continue
-        rows.extend(res)
+        seg_rows, key, seen = res
+        rows.extend(seg_rows)
+        tails[key] = seen
     await db.executemany(SQL_UPSERT_TT, rows)
     ctx.rows += len(rows)
+    # 저장이 끝난 뒤에만 꼬리 위치를 옮긴다 (BUG-05)
+    if tails:
+        async with rds.client().pipeline(transaction=False) as pipe:
+            for key, seen in tails.items():
+                pipe.set(key, seen, ex=172800)
+            await pipe.execute()
     if failed:
         ctx.notes.append(f"PARTIAL: 구간 {failed}/{len(segs)} 실패")
     if rows:
@@ -108,6 +116,8 @@ async def collect_travel_time(ctx: JobContext, full: bool = False, only: set[tup
         touched = {(r[1], r[2]) for r in rows}
         await recompute_corridors(chains, tmin, tmax, touched)
     await sweep_gaps(now_kst().date())
+    if unexpected is not None:
+        raise unexpected
     return len(rows)
 
 
@@ -159,9 +169,9 @@ async def recompute_corridors(chains: dict[tuple[str, str], list[Segment]], tmin
     await db.executemany(SQL_UPSERT_CORR, out_rows)
     await db.executemany("""INSERT INTO ops.slot_gap (job_name, series_key, slot_ts, reason) VALUES (%s, %s, %s, %s)
                             ON CONFLICT DO NOTHING""", gaps)
-    await db.executemany(f"""UPDATE ops.slot_gap SET backfilled_at = now()
-                             WHERE job_name = '{JOB}' AND series_key = %s AND slot_ts = %s AND backfilled_at IS NULL""",
-                         resolved)
+    await db.executemany("""UPDATE ops.slot_gap SET backfilled_at = now()
+                            WHERE job_name = %s AND series_key = %s AND slot_ts = %s AND backfilled_at IS NULL""",
+                         [(JOB, key, ts) for key, ts in resolved])
     return len(out_rows)
 
 

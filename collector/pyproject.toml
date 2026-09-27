@@ -43,5 +43,5 @@ line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "ASYNC"]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "BLE"]  # BLE: 광범위 except 는 의도를 noqa 로 밝혀야 한다
 ignore = ["E501"]

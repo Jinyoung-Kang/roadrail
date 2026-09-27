@@ -1,4 +1,5 @@
 import datetime as dt
+import random
 
 from roadrail.analytics.road_quality import Segment, aggregate_corridor, classify, despike
 from roadrail.core.timeutil import KST
@@ -70,3 +71,76 @@ def test_aggregate_low_coverage_is_missing():
     ok = {A.key: {T0: 600}}
     stored, missing = aggregate_corridor([A, B, C], slots(2), ok, {})
     assert stored == [] and missing == slots(2)
+
+
+# ---------------------------------------------------------------- 알고리즘 교체 전후 동일성 (PERF-03)
+# 아래 두 함수는 O(n²) 창 탐색이던 예전 구현 그대로다 — 새 구현(정렬 + 이분 탐색)이 같은 결과를 내는지 무작위 자료로 비교한다.
+
+def _despike_reference(values, window=dt.timedelta(minutes=30), ratio=2.0, max_vehicles=5):
+    keys = sorted(values)
+    out, dropped = {}, 0
+    for t in keys:
+        sec, veh = values[t]
+        near = sorted(values[k][0] for k in keys if abs(k - t) <= window)
+        med = near[len(near) // 2] if len(near) % 2 else (near[len(near) // 2 - 1] + near[len(near) // 2]) / 2
+        if len(near) >= 3 and sec > ratio * med and (veh or 0) < max_vehicles:
+            dropped += 1
+            continue
+        out[t] = sec
+    return out, dropped
+
+
+def _aggregate_reference(segments, slots_, ok_values, seg_median, min_observed_ratio=0.6, near_window=dt.timedelta(minutes=15)):
+    stored, missing, total = [], [], len(segments)
+    for t in slots_:
+        s_sum, observed = 0, 0
+        for seg in segments:
+            vals = ok_values.get(seg.key) or {}
+            v = vals.get(t)
+            if v is not None:
+                observed += 1
+                s_sum += v
+                continue
+            near = [(abs((k - t).total_seconds()), val) for k, val in vals.items() if abs(k - t) <= near_window]
+            if near:
+                s_sum += min(near)[1]
+            elif seg.key in seg_median:
+                s_sum += seg_median[seg.key]
+            else:
+                s_sum += seg.free_flow_sec
+        if total == 0 or observed / total < min_observed_ratio:
+            missing.append(t)
+            continue
+        stored.append((t, s_sum, observed, total, "OK" if observed == total else "FILLED"))
+    return stored, missing
+
+
+def _random_series(rng, n, gap=0.25):
+    t0 = dt.datetime(2026, 9, 1, 0, 0, tzinfo=KST)
+    out = {}
+    for i in range(n):
+        if rng.random() < gap:
+            continue  # 결측 슬롯
+        sec = rng.choice([600, 620, 640, 660, 1500, 2000]) if rng.random() < 0.1 else rng.randint(550, 700)
+        out[t0 + dt.timedelta(minutes=5 * i)] = (sec, rng.choice([None, 1, 2, 4, 6, 30]))
+    return out
+
+
+def test_despike_matches_reference_on_random_series():
+    rng = random.Random(7)
+    for _ in range(40):
+        vals = _random_series(rng, rng.randint(0, 400))
+        assert despike(vals) == _despike_reference(vals)
+
+
+def test_aggregate_matches_reference_on_random_series():
+    rng = random.Random(11)
+    for _ in range(25):
+        n = rng.randint(1, 300)
+        ok = {s.key: {k: v for k, (v, _) in _random_series(rng, n, gap=rng.random()).items()} for s in (A, B, C)}
+        med = {A.key: 610} if rng.random() < 0.5 else {}
+        grid = slots(n)
+        stored, missing = aggregate_corridor([A, B, C], grid, ok, med, min_observed_ratio=0.3)
+        ref_stored, ref_missing = _aggregate_reference([A, B, C], grid, ok, med, min_observed_ratio=0.3)
+        assert [(c.slot_ts, c.travel_sec, c.observed, c.total, c.quality) for c in stored] == ref_stored
+        assert missing == ref_missing

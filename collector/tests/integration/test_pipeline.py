@@ -14,7 +14,7 @@ from roadrail.pipeline import rail, road
 from roadrail.pipeline.seed import apply_seed
 from roadrail.providers.base import JobContext
 from roadrail.providers.kma import latlon_to_grid
-from roadrail.scheduler.quota import QuotaBudget
+from roadrail.scheduler.quota import QuotaBudget, QuotaExhausted
 
 SEED = """
 units:
@@ -117,6 +117,42 @@ async def test_tail_cursor_fetches_only_from_last_seen_page(seeded):
     assert first == len(calls) == 3  # 구간당 1페이지
     tail = await rds.client().get(rds.tail_key("101", "103", today))
     assert int(tail) == 5
+
+
+async def test_tail_cursor_advances_only_for_saved_rows(seeded):
+    # 셋째 구간에서 예산이 떨어져 작업이 실패해도, 받은 구간은 저장하고 그 구간만 꼬리 위치를 옮긴다 (BUG-05).
+    # 예전에는 꼬리 위치를 저장 전에 옮기고 실패 시 행을 버려, 다음 수집이 그 슬롯들을 건너뛰었다.
+    today = now_kst().strftime("%Y%m%d")
+    ctx = JobContext(job_name="road_travel_time", http=httpx.AsyncClient(transport=httpx.MockTransport(fake_ex(today))),
+                     budget=QuotaBudget(rds.client(), lambda p: 2))
+    with pytest.raises(QuotaExhausted):
+        await road.collect_travel_time(ctx)
+    saved = {(r["start_unit_code"], r["end_unit_code"]) for r in
+             await db.fetch("SELECT DISTINCT start_unit_code, end_unit_code FROM ts.road_travel_time")}
+    assert len(saved) == 2  # 호출 예산 2건 = 받은 두 구간
+    for seg in (("101", "103"), ("103", "528"), ("528", "101")):
+        tail = await rds.client().get(rds.tail_key(*seg, today))
+        assert (tail is not None) == (seg in saved), seg  # 저장 안 된 구간은 다음 수집이 처음부터
+
+
+async def test_tail_cursor_is_saved_under_the_day_it_was_read(seeded, monkeypatch):
+    # 수집이 자정을 넘기면 D일에 읽은 꼬리 위치를 D+1 키에 쓰면 안 된다 — 다음 날 수집이 3페이지부터 시작해
+    # 00시~15시 슬롯을 건너뛴다(셀프 리뷰로 찾은 회귀: 읽기 · 쓰기가 now_kst 를 따로 불렀다)
+    real_today = now_kst()
+    day = real_today.strftime("%Y%m%d")
+    before = real_today.replace(hour=23, minute=59, second=50, microsecond=0)
+    after = before + dt.timedelta(seconds=20)          # 다음 날 00:00:10
+    calls = {"n": 0}
+
+    def clock():
+        calls["n"] += 1
+        return before if calls["n"] <= 3 else after     # 구간 3개를 읽는 동안은 D일, 그 뒤는 D+1
+
+    monkeypatch.setattr(road, "now_kst", clock)
+    await road.collect_travel_time(ctx_with(fake_ex(day)))
+    for seg in (("101", "103"), ("103", "528"), ("528", "101")):
+        assert await rds.client().get(rds.tail_key(*seg, day)) == "5", seg
+        assert await rds.client().get(rds.tail_key(*seg, after.strftime("%Y%m%d"))) is None, seg
 
 
 async def test_missing_slot_is_recorded_then_backfilled(seeded):
@@ -242,6 +278,31 @@ async def test_restart_recovers_stale_runs_locks_and_reservations(seeded):
     assert (await db.fetchone("SELECT last_status FROM ops.collect_job WHERE job_name = 'kakao_eta'"))["last_status"] == "FAILED"
     assert await r.get(rds.lock_key("kakao_eta")) is None
     assert int(await r.get(rds.quota_key("KAKAO", day))) == 25
+
+
+async def test_failure_before_the_job_body_releases_lock_and_records_run(seeded, monkeypatch):
+    # 잠금을 잡은 뒤 예산 예상치 조회가 실패하면 예전에는 잠금이 TTL(최대 2시간)까지 남고 실행 기록이 RUNNING 으로 남았다 (BUG-06)
+    from roadrail.pipeline import analysis
+    from roadrail.scheduler import jobs
+
+    async def broken_estimate():
+        raise RuntimeError("예상치 조회 실패")
+    monkeypatch.setitem(jobs.JOBS, "maintenance", jobs.JobSpec(analysis.maintenance, broken_estimate))
+    assert await jobs.run_job("maintenance", "ADMIN") == "FAILED"
+    assert await rds.client().get(rds.lock_key("maintenance")) is None
+    r = await db.fetchone("SELECT status, message FROM ops.job_run WHERE job_name = 'maintenance' ORDER BY run_id DESC LIMIT 1")
+    assert r["status"] == "FAILED" and "예상치 조회 실패" in r["message"]
+
+
+async def test_lock_release_does_not_delete_someone_elses_lock(seeded, monkeypatch):
+    # 잠금이 만료돼 다른 실행이 잡은 경우 끝날 때 그 잠금을 지우면 안 된다 (비교 후 삭제, BUG-06)
+    from roadrail.scheduler import jobs
+
+    async def body(ctx):
+        await rds.client().set(rds.lock_key("maintenance"), "someone-else")
+    monkeypatch.setitem(jobs.JOBS, "maintenance", jobs.JobSpec(body, jobs._const({})))
+    assert await jobs.run_job("maintenance", "ADMIN") == "OK"
+    assert await rds.client().get(rds.lock_key("maintenance")) == "someone-else"
 
 
 async def test_cancelled_job_is_recorded_as_aborted_and_unlocked(seeded, monkeypatch):
