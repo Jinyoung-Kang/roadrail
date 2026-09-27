@@ -43,7 +43,7 @@
 | **철도 환승 경로 탐색** | CSA(Connection Scan Algorithm) 순수 함수 — 전국 여객열차 하루 시간표(연결 약 1만 개)에서 역 후보 6×6 조합 · 최소 환승 10분 · 다음 날 첫차까지. 역까지 · 역에서는 카카오 다중 길찾기 실제 경로 ([ADR-014](docs/adr/014-rail-transfers-and-real-access.md)) | `RailRouterTest` 9개 · 실제 하루 시간표 3,000쌍으로 복원 검증 · 전주시→부산역 '오송 환승' |
 | **전국 도로 분석** | 임의 두 지점: 도로별 구간 · 소통 · 고속도로 회피 비교 · 출발 시각별 소요 (카카오 9건 병렬 · 20분 캐시) | `RoadClassTest` · E2E '도로 분석: 전국 어디든' |
 | **전국 임의 지점 판단** | 검색(행정구역·기차역·장소) → 카카오 경로 + 반경 30km 역 6곳씩 조합한 환승 포함 가장 이른 여정(다음 날 첫차 포함) + 조회 시점 날씨·대기. 병렬 실행 · 하나의 응답 마감 · pending 재요청 ([ADR-013](docs/adr/013-free-origin-destination.md)) | 미적중 0.69~0.77초 · E2E '전국 어디든 검색해서 고른다' |
-| **두 프로세스의 공유 호출 예산** | collector(Python)와 api(Java)가 같은 Redis 키로 공급자 한도를 함께 지킴 · 요청이 부르는 호출은 **클라이언트별 몫**(일일 한도의 20%)까지 — 한 사람이 모두의 예산을 소진하지 못하게 | `QuotaGuardIT` · `docs/redis-keys.md` |
+| **두 프로세스의 공유 호출 예산** | collector(Python)와 api(Java)가 같은 Redis 키로 공급자 한도를 함께 지킴 · api 는 한도 확인 · 예약 · 사용 기록을 Lua 한 번으로 | `QuotaGuardIT` · `docs/redis-keys.md` |
 | **데이터 품질 규칙의 진화** | 휴게소 정차 혼입을 거르던 규칙 Q-v1 이 **추석 실제 정체**를 오류로 잘못 거른 것을 발견 → Q-v2 + Hampel 형 필터 H-v1, 저장 데이터 무호출 재분류 ([ADR-012](docs/adr/012-road-quality-rule.md)) | SUSPECT 1,132 → 44행 · `test_real_congestion_even_fastest_is_slow_is_ok` |
 | **정시성 계산** | 계획 × 실제(역별)를 정확 비교 — 시발·종착은 코레일 운행계획(P-v1), 중간역은 TAGO 역별 계획 시각(P-t1). 계획 시각을 모르는 운행은 추정하지 않고 분모에서 제외 | 9개 단위 테스트 (자정 넘김 · 조기 도착 · 확인 불가) |
 | **언어 간 계약** | 같은 예측 식을 Python(백테스트)과 Java(판단 카드)가 구현 → `fixtures/forecast_cases.json` 골든 케이스를 양쪽 테스트가 공유, 반올림까지 통일. 정시성 보간(P-i1)은 SQL 함수와 Python 기준 구현이 같은 값을 내는지 검증 | `test_golden_cases` · `ForecastModelsGoldenTest` · `test_od_trips_matches_python_reference` |
@@ -53,8 +53,8 @@
 | **쿼리 성능 진단** | `EXPLAIN ANALYZE` 로 실행 시간의 80% 가 PostgreSQL **JIT 컴파일**임을 찾아 끄고(574 → 94ms), 역 쌍 조인을 LATERAL → 해시 조인, 같은 계산 두 번 → `GROUPING SETS` 한 번, 과거 기간 결과 10분 캐시 ([ADR-017](docs/adr/017-query-performance.md)) | 철도 분석 화면 p50 **1,972 → 190ms**(캐시 없음) · 8ms(적중) · `make bench` |
 | **보안 점검 · 하드닝** | IP 별 요청 한도(Redis Lua) — 프록시가 헤더를 넘기는 방식 때문에 생긴 **X-Forwarded-For 위조 우회를 직접 재현하고 막음** · CSP 등 보안 헤더 · 외부 CSS SRI · 입력 형식 제한 · 의존성 감사(npm audit · pip-audit) 0건 · 운영 이미지에서 테스트 도구 분리 · CI 비밀키 검사(gitleaks) · Dependabot ([ADR-018](docs/adr/018-security-hardening.md)) | `RateLimitInterceptorTest` · `ApiIT` 429 · E2E '위조해도 같은 한도' · '보안 헤더 · 콘솔 오류 없음' |
 | **공휴일 달력** | 한국천문연구원 특일 정보로 도로 기준선에서 공휴일 제외 · 평일 기차 기준 시간표에서 공휴일(임시열차) 제외 · 요일별 정시율에 공휴일 따로 · 판단 경고 ([ADR-019](docs/adr/019-holiday-calendar.md)) | 추석 09-24 코레일 931편 ↔ 같은 목요일 875편 · `test_baseline_excludes_holidays` |
-| **전체 코드 리뷰** | 아키텍처 = 보안 = 성능 > 가독성 순으로 29건 진단 → 주제별 PR 6개. 지도 라벨 **HTML 주입**, CSA 여정 복원 버그, JDK 21 **가상 스레드 캐리어 고정**, in-flight 맵 `Recursive update` 경쟁을 각각 재현한 뒤 수정 · 캐시 쇄도 방지 · 과부하 503 ([보고서](docs/review/2026-09-27-code-review.md) · [ADR-020](docs/adr/020-code-review-architecture-concurrency.md)) | 탈 수 없는 여정 17건 → 0 · 역 검색 15.5 → 5.6ms · 분석 화면 첫 로드 JS −55% |
-| **실데이터 검증 · 코드 검토** | 실제 API 로 전체를 돌리며 발견한 문제와 코드 검토 결과 67건을 재현 → 수정 → 회귀 테스트로 고정 | [docs/VERIFICATION.md](docs/VERIFICATION.md) |
+| **전체 코드 리뷰** | 아키텍처 = 보안 = 성능 > 가독성 순으로 29건 진단 → 주제별 PR 6개. 지도 라벨 **HTML 주입**, CSA 여정 복원 버그, JDK 21 **가상 스레드 캐리어 고정**, in-flight 맵 `Recursive update` 경쟁을 각각 재현한 뒤 수정 · 캐시 쇄도 방지 · 과부하 503. 자신의 diff 를 다시 리뷰해 회귀 1건 · 결함 2건을 더 고치고, 배포 구조와 맞지 않는 클라이언트별 예산 몫은 되돌림 ([보고서](docs/review/2026-09-27-code-review.md) · [ADR-020](docs/adr/020-code-review-architecture-concurrency.md)) | 탈 수 없는 여정 17건 → 0 · 역 검색 15.5 → 5.6ms · 분석 화면 첫 로드 JS −55% |
+| **실데이터 검증 · 코드 검토** | 실제 API 로 전체를 돌리며 발견한 문제와 코드 검토 결과 70건을 재현 → 수정 → 회귀 테스트로 고정 | [docs/VERIFICATION.md](docs/VERIFICATION.md) |
 
 ---
 
@@ -253,9 +253,9 @@ sequenceDiagram
 |---|---|---|
 | 단위 (pytest) | 슬롯 정렬 · 격자 변환(기상청 격자표 4곳) · 품질 규칙 · 튀는 값 제거 · 길 합산 · 정시성(자정 넘김 · 조기 도착 · 확인 불가 · 보간) · 예측 골든 · 기준선 · 백테스트(결정성 · 누수 없음) · 돌발 매칭 · 역 좌표 매칭 · 선로 그래프(본선 추종 · 지선 · 다른 역 통과 금지 · 단순화 · 구역 캐시) · 공급자별 예산 설정 · 공휴일은 기준선에서 제외 · 창 탐색 알고리즘 교체 전후 동일성(무작위 65세트) | 56 |
 | 계약 (pytest) | 공급자 5종 실제 응답 fixture 파서 · 문자 안내 좌표(altitude = 경도, 범위 밖 · 좌표 없음은 버림) · 특일 정보(한 건 · 0건 형식 포함) | 10 |
-| 통합 (pytest + PostgreSQL · Redis) | 예산 동시성 · 멱등 수집 · 꼬리 커서 · 결측→백필 · seed 멱등 · 철도 일 계산 · SQL `od_trips` ↔ Python 계약 · **시간표(TT)가 보간보다 우선** · 호출 로그 키 마스킹 · 시간 초과가 오류 상세에 남는지 · 재시작 뒤 RUNNING·잠금·예약 정리 · 취소된 작업은 '중단'으로 기록 · 선로 작업 28일 안이면 건너뜀 · 공휴일 동기화 멱등 · 꼬리 위치는 저장 뒤에만 · 시작 전 실패도 잠금 해제 · 남의 잠금은 지우지 않음 | 21 |
-| 단위 (JUnit) | 판단 규칙 · 예측 골든(Python 과 같은 파일) · 기상청 격자 · 행정구역→에어코리아 시도 · **CSA 환승 경로** · 도로 구분 · 경로 요약 · 돌발 좌표↔경로 거리 · TAGO 시각 해석·검증된 역명 별칭 · 요청 한도(버킷 · 믿는 프록시의 맨 오른쪽 주소만 · 요청 동안만 클라이언트 노출) · 공휴일 경고 · SingleFlight · Memo(즉시 완료 · 실패 비고착 · 잠금 밖 로더) · 과부하 503 · TAGO 지하철 오류 응답 · 잘못된 행 | 61 |
-| API 통합 (JUnit + Testcontainers) | 판단 카드 · 캐시 · 오류 규약(415 · 406 · ERROR 로그 없음) · 관리 API 401/202/409/400/429 · 수집 상태(오류 상세 · MGET 위치) · 헬스 · 임의 역 쌍(OO발 OO행 · 추정 차종 없음 · 가나다순 · 검색 정렬) · 출발지→도착지(선로 경로 · 캐시 키) · 공휴일(요일별 H · 경고 · 지하철 생략) · 요청 한도 429 · 역 코드 형식 400 · 좌표 NaN 400 · 외부 예산 클라이언트별 몫 · 캐시 쇄도 방지 | 18 |
+| 통합 (pytest + PostgreSQL · Redis) | 예산 동시성 · 멱등 수집 · 꼬리 커서 · 결측→백필 · seed 멱등 · 철도 일 계산 · SQL `od_trips` ↔ Python 계약 · **시간표(TT)가 보간보다 우선** · 호출 로그 키 마스킹 · 시간 초과가 오류 상세에 남는지 · 재시작 뒤 RUNNING·잠금·예약 정리 · 취소된 작업은 '중단'으로 기록 · 선로 작업 28일 안이면 건너뜀 · 공휴일 동기화 멱등 · 꼬리 위치는 저장 뒤에만 · 자정을 넘겨도 읽은 날짜 키에 · 시작 전 실패도 잠금 해제 · 남의 잠금은 지우지 않음 | 22 |
+| 단위 (JUnit) | 판단 규칙 · 예측 골든(Python 과 같은 파일) · 기상청 격자 · 행정구역→에어코리아 시도 · **CSA 환승 경로** · 도로 구분 · 경로 요약 · 돌발 좌표↔경로 거리 · TAGO 시각 해석·검증된 역명 별칭 · 요청 한도(버킷 · 믿는 프록시의 맨 오른쪽 주소만) · 공휴일 경고 · SingleFlight · Memo(즉시 완료 · 실패 비고착 · Error 뒤 재로드 · 잠금 밖 로더) · 실행기 종료 상한 · 과부하 503 · TAGO 지하철 오류 응답 · 잘못된 행 | 63 |
+| API 통합 (JUnit + Testcontainers) | 판단 카드 · 캐시 · 오류 규약(415 · 406 · ERROR 로그 없음) · 관리 API 401/202/409/400/429 · 수집 상태(오류 상세 · MGET 위치) · 헬스 · 임의 역 쌍(OO발 OO행 · 추정 차종 없음 · 가나다순 · 검색 정렬) · 출발지→도착지(선로 경로 · 캐시 키) · 공휴일(요일별 H · 경고 · 지하철 생략) · 요청 한도 429 · 역 코드 형식 400 · 좌표 NaN 400 · 외부 예산 회계(Lua 한 번) · 캐시 쇄도 방지 | 17 |
 | E2E (Playwright) | 판단 · ⇄ 교환 · 전국 검색 · 검색 칸 빈 목록 · 서비스 소개 · 판단 근거 돌발 목록 · 카드(도착 예정·시간 구성·OSM 출처) · 도로 분석 · 지도 잠금 · 선택 목록 잘림 · 고속도로 실측 · 철도 역 검색 · 가나다순 · 차종은 TAGO 배지로만 · 수집 상태 오류 복사 · 모바일 메뉴 · 보안 헤더 · 콘솔 오류 없음 · X-Forwarded-For 위조 무시 · 지도 라벨 HTML 주입 차단 · 프록시 경로 검증 | 19 |
 
 `make test` (collector 는 compose 컨테이너 안에서, api 는 Testcontainers) · `make e2e` · CI: [.github/workflows/ci.yml](.github/workflows/ci.yml)
