@@ -117,6 +117,7 @@ public class TripService {
 
         // 자동차 · 기차 · 양쪽 날씨·대기 · 수집 중인 길 매칭을 가상 스레드로 동시에 (응답 예산 NFR-03).
         // 외부 조회가 늦으면 WAIT 까지만 기다리고 비워 둔다 — 조회는 계속되어 캐시를 채우고, 화면은 pending 을 보고 다시 부른다.
+        long started = System.nanoTime();
         var fOrigin = CompletableFuture.supplyAsync(() -> pointEnv(from, depart), exec);
         var fDest = CompletableFuture.supplyAsync(() -> pointEnv(to, depart), exec);
         var fRail = CompletableFuture.supplyAsync(() -> km < MIN_RAIL_KM ? null : journeys.plan(from, to, depart, accessMin), exec);
@@ -132,8 +133,9 @@ public class TripService {
                 eta.map(KakaoMobilityClient.Eta::distanceM).orElse(null), eta.map(KakaoMobilityClient.Eta::departAt).orElse(null),
                 eta.map(KakaoMobilityClient.Eta::path).orElse(List.of()), pending, "KAKAO_FUTURE_DIRECTIONS");
 
-        Observed obs = join(fObs, Duration.ofSeconds(3));        // DB 만 — 넉넉히
-        JourneyDtos.Plan railOpt = join(fRail, Duration.ofSeconds(4));  // DB + 카카오 다중 길찾기 (캐시)
+        // 시작 시각 기준 마감 — 앞의 대기가 길어도 뒤의 대기가 그만큼 더해지지 않는다(예전: 3초 + 4초)
+        Observed obs = join(fObs, left(started + Duration.ofSeconds(3).toNanos()));             // DB 만 — 넉넉히
+        JourneyDtos.Plan railOpt = join(fRail, left(started + Duration.ofSeconds(4).toNanos()));  // DB + 카카오 다중 길찾기 (캐시)
         var origin = join(fOrigin, left(deadline));
         var dest = join(fDest, left(deadline));
         boolean envPending = origin == null || dest == null;

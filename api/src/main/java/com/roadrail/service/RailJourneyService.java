@@ -176,6 +176,7 @@ public class RailJourneyService {
                     : kakao.futureEta(s.lat(), s.lon(), p.lat(), p.lon(), depart), exec));
         }
         boolean pending = false;
+        long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();  // 병렬로 띄운 조회들이 마감을 공유 (역마다 2초씩 더해지지 않게)
         for (var s : stations) {
             if (out.containsKey(s.code())) continue;
             var l = legs.get(s.code());
@@ -184,7 +185,7 @@ public class RailJourneyService {
                         (int) Math.max(1, Math.round(l.durationSec() / 60.0)), l.distanceM(), "CAR"));
                 continue;
             }
-            var e = TripService.join(single.get(s.code()), Duration.ofSeconds(2));
+            var e = TripService.join(single.get(s.code()), TripService.left(deadline));
             if (e != null && e.isPresent()) {
                 out.put(s.code(), new Transfer(s.code(), s.name(), s.lat(), s.lon(), s.distanceKm(),
                         (int) Math.max(1, Math.round(e.get().durationSec() / 60.0)), e.get().distanceM(), "CAR"));
@@ -322,14 +323,15 @@ public class RailJourneyService {
                     : CompletableFuture.completedFuture(Map.of()));
         }
         Double lastDelay = null;
+        long deadline = System.nanoTime() + Duration.ofSeconds(3).toNanos();  // 구간마다 3초씩 더해지지 않게 마감을 공유
         for (int i = 0; i < j.legs().size(); i++) {
             var l = j.legs().get(i);
             String trn = l.trip().substring(0, l.trip().indexOf('@'));
-            var st = TripService.join(stats.get(i), Duration.ofSeconds(3));
+            var st = TripService.join(stats.get(i), TripService.left(deadline));
             var s = st == null ? null : st.get(trn);
             OffsetDateTime dep = OffsetDateTime.ofInstant(Instant.ofEpochSecond(l.dep()), Times.KST);
             OffsetDateTime arr = OffsetDateTime.ofInstant(Instant.ofEpochSecond(l.arr()), Times.KST);
-            Planned pl = TripService.join(plans.get(i), Duration.ofSeconds(3));
+            Planned pl = TripService.join(plans.get(i), TripService.left(deadline));
             boolean real = pl != null && pl.dep() != null;
             if (real) {  // 기준일 → 목표일: CSA 가 옮긴 날짜 수만큼
                 long shiftDays = Math.round((l.dep() - pl.dep().toEpochSecond()) / 86400.0);
