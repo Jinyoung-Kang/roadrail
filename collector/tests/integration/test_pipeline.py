@@ -14,7 +14,7 @@ from roadrail.pipeline import rail, road
 from roadrail.pipeline.seed import apply_seed
 from roadrail.providers.base import JobContext
 from roadrail.providers.kma import latlon_to_grid
-from roadrail.scheduler.quota import QuotaBudget
+from roadrail.scheduler.quota import QuotaBudget, QuotaExhausted
 
 SEED = """
 units:
@@ -117,6 +117,22 @@ async def test_tail_cursor_fetches_only_from_last_seen_page(seeded):
     assert first == len(calls) == 3  # 구간당 1페이지
     tail = await rds.client().get(rds.tail_key("101", "103", today))
     assert int(tail) == 5
+
+
+async def test_tail_cursor_advances_only_for_saved_rows(seeded):
+    # 셋째 구간에서 예산이 떨어져 작업이 실패해도, 받은 구간은 저장하고 그 구간만 꼬리 위치를 옮긴다 (BUG-05).
+    # 예전에는 꼬리 위치를 저장 전에 옮기고 실패 시 행을 버려, 다음 수집이 그 슬롯들을 건너뛰었다.
+    today = now_kst().strftime("%Y%m%d")
+    ctx = JobContext(job_name="road_travel_time", http=httpx.AsyncClient(transport=httpx.MockTransport(fake_ex(today))),
+                     budget=QuotaBudget(rds.client(), lambda p: 2))
+    with pytest.raises(QuotaExhausted):
+        await road.collect_travel_time(ctx)
+    saved = {(r["start_unit_code"], r["end_unit_code"]) for r in
+             await db.fetch("SELECT DISTINCT start_unit_code, end_unit_code FROM ts.road_travel_time")}
+    assert len(saved) == 2  # 호출 예산 2건 = 받은 두 구간
+    for seg in (("101", "103"), ("103", "528"), ("528", "101")):
+        tail = await rds.client().get(rds.tail_key(*seg, today))
+        assert (tail is not None) == (seg in saved), seg  # 저장 안 된 구간은 다음 수집이 처음부터
 
 
 async def test_missing_slot_is_recorded_then_backfilled(seeded):
