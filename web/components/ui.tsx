@@ -17,7 +17,8 @@ export function Spec({ value, unit, label, tone = "ink" }: { value: string; unit
 }
 
 export function SpecStrip({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-wrap items-start justify-center gap-y-6 divide-x divide-black/10">{children}</div>;
+  // 구분선은 v3 의 divide-x 처럼 뒤 항목의 왼쪽에 — v4 의 divide-x(앞 항목의 오른쪽)는 모바일에서 줄바꿈되면 첫 줄 끝에 선이 남는다
+  return <div className="flex flex-wrap items-start justify-center gap-y-6 [&>*+*]:border-l [&>*+*]:border-black/10">{children}</div>;
 }
 
 export function Section({ id, eyebrow, title, desc, children, gray = false, wide = false }: {
