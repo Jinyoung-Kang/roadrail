@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
 
 import java.time.DayOfWeek;
 import java.time.Duration;
@@ -78,18 +79,23 @@ public class TagoSubwayClient {
         var h = cache.get("tago:tt:" + st.id() + ":" + dailyType + ":" + upDown, Duration.ofDays(1), Timetable.class, () -> {
             JsonNode items = call("/GetSubwaySttnAcctoSchdulList", Map.of("subwayStationId", st.id(), "dailyTypeCode", dailyType,
                     "upDownTypeCode", upDown, "numOfRows", 400));
-            if (items == null) return null;
-            List<Departure> out = new ArrayList<>();
-            for (JsonNode i : items) {
-                String dep = Http.text(i, "depTime");
-                if (dep == null || dep.length() < 4) continue;
-                int hh = Integer.parseInt(dep.substring(0, 2)) % 24, mm = Integer.parseInt(dep.substring(2, 4));
-                out.add(new Departure(st.line(), Http.text(i, "endSubwayStationNm"), LocalTime.of(hh, mm)));
-            }
-            out.sort(Comparator.comparing(Departure::dep));
-            return new Timetable(out);
+            return items == null ? null : new Timetable(departures(items, st));
         });
         return h.value() == null ? List.of() : h.value().items();
+    }
+
+    /** 역별 시간표 행 → 출발 시각순. 시각이 'HHmm…' 이 아닌 행은 건너뛴다(행 하나 때문에 전체가 실패하지 않게). 24시 이후는 다음 날 시각 */
+    static List<Departure> departures(JsonNode items, SubwayStation st) {
+        List<Departure> out = new ArrayList<>();
+        for (JsonNode i : items) {
+            String dep = Http.text(i, "depTime");
+            if (dep == null || !dep.matches("\\d{4}.*")) continue;
+            int hh = Integer.parseInt(dep.substring(0, 2)) % 24, mm = Integer.parseInt(dep.substring(2, 4));
+            if (mm > 59) continue;
+            out.add(new Departure(st.line(), Http.text(i, "endSubwayStationNm"), LocalTime.of(hh, mm)));
+        }
+        out.sort(Comparator.comparing(Departure::dep));
+        return out;
     }
 
     /** 기차역(이름)에서 after 이후 갈아탈 수 있는 지하철: 노선 · 방향(종착역)별 다음 2편 */
@@ -119,14 +125,21 @@ public class TagoSubwayClient {
             p.put("_type", "json");
             p.put("pageNo", 1);
             p.putAll(params);
-            JsonNode body = http.get().uri(Http.uri(BASE + path, p)).retrieve().body(JsonNode.class);
-            JsonNode items = body == null ? null : body.path("response").path("body").path("items").path("item");
-            if (items == null || items.isMissingNode()) return tools.jackson.databind.node.JsonNodeFactory.instance.arrayNode();
-            if (items.isObject()) return tools.jackson.databind.node.JsonNodeFactory.instance.arrayNode().add(items);
+            JsonNode items = items(http.get().uri(Http.uri(BASE + path, p)).retrieve().body(JsonNode.class));
+            if (items == null) log.warn("TAGO 지하철 {} 응답 오류 — 결과를 캐시하지 않음", path);
             return items;
         } catch (RuntimeException e) {
             log.warn("TAGO 지하철 {} 실패: {}", path, e.getClass().getSimpleName());
             return null;
         }
+    }
+
+    /** 응답 → item 배열. 헤더 resultCode 가 '00' 이 아니면(키 오류 · 한도 초과 등) null — 실패를 '결과 없음'으로 캐시하지 않는다 */
+    static JsonNode items(JsonNode body) {
+        if (body == null || !"00".equals(Http.text(body.path("response").path("header"), "resultCode"))) return null;
+        JsonNode items = body.path("response").path("body").path("items").path("item");
+        if (items.isMissingNode() || items.isNull()) return JsonNodeFactory.instance.arrayNode();
+        if (items.isObject()) return JsonNodeFactory.instance.arrayNode().add(items);
+        return items;
     }
 }

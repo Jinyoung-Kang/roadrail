@@ -7,6 +7,8 @@ import com.roadrail.external.TagoSubwayClient;
 import com.roadrail.web.dto.JourneyDtos.*;
 import com.roadrail.web.dto.RailDtos;
 import com.roadrail.web.dto.TripDtos.Place;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
@@ -21,6 +23,7 @@ import java.util.concurrent.*;
  */
 @Service
 public class RailJourneyService {
+    private static final Logger log = LoggerFactory.getLogger(RailJourneyService.class);
     static final double RADIUS_KM = 30, KAKAO_RADIUS_KM = 9.5, WALK_KM = 1.0;
     static final int CANDIDATES = 6, BOARDING_BUFFER_MIN = 5, TRANSFER_MIN = 10;
     private final JdbcClient jdbc;
@@ -243,13 +246,23 @@ public class RailJourneyService {
         boolean depHoliday = holidays.is(Times.kst(first.departAt()).toLocalDate());
         boolean arrHoliday = holidays.is(Times.kst(first.arriveAt()).toLocalDate());
         var fSubDep = depHoliday ? CompletableFuture.completedFuture(List.<TagoSubwayClient.NextSubway>of())
-                : CompletableFuture.supplyAsync(() -> tago.next(first.access().stationName(), first.departAt().minusMinutes(40)), exec);
+                : CompletableFuture.supplyAsync(() -> subway(first.access().stationName(), first.departAt().minusMinutes(40)), exec);
         var fSubArr = arrHoliday ? CompletableFuture.completedFuture(List.<TagoSubwayClient.NextSubway>of())
-                : CompletableFuture.supplyAsync(() -> tago.next(first.egress().stationName(), first.arriveAt().plusMinutes(3)), exec);
+                : CompletableFuture.supplyAsync(() -> subway(first.egress().stationName(), first.arriveAt().plusMinutes(3)), exec);
         return new Plan(journeys, ref.getFirst(), basis.getFirst(), origins.size(), dests.size(), BOARDING_BUFFER_MIN, TRANSFER_MIN,
                 "코레일 여객열차(KTX·ITX·무궁화 등) 기준. 지하철·버스 환승 경로는 공개 데이터가 없어 다루지 않습니다."
                         + (depHoliday || arrHoliday ? " 공휴일에는 지하철 시간표 구분(평일·토·일)을 알 수 없어 지하철 시각을 표시하지 않습니다." : ""),
                 TripService.join(fSubDep, Duration.ofMillis(1500)), TripService.join(fSubArr, Duration.ofMillis(1500)), pending);
+    }
+
+    /** 갈아탈 지하철 — 부가 정보라 실패해도 여정 응답은 낸다(예전에는 예외가 /trip 전체를 500 으로 만들었다) */
+    private List<TagoSubwayClient.NextSubway> subway(String station, OffsetDateTime after) {
+        try {
+            return tago.next(station, after);
+        } catch (RuntimeException e) {
+            log.warn("지하철 시각 조회 실패 — 비워 둠 ({}): {}", station, e.toString());
+            return List.of();
+        }
     }
 
     private static void pin(List<RailDtos.StationNear> list, Place p) {
