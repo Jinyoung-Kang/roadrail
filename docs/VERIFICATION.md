@@ -1,6 +1,6 @@
 # 실데이터 검증 기록
 
-2026-09-24(추석 연휴 첫날) 실제 API 로 전체 파이프라인을 돌리며 발견한 문제와 조치입니다. 53번부터는 2026-09-27 전체 코드 리뷰([보고서](review/2026-09-27-code-review.md))에서 재현한 결함이고, 68번부터는 그 수정의 셀프 리뷰에서 찾은 것입니다.
+2026-09-24(추석 연휴 첫날) 실제 API 로 전체 파이프라인을 돌리며 발견한 문제와 조치입니다. 53번부터는 2026-09-27 전체 코드 리뷰([보고서](review/2026-09-27-code-review.md))에서 재현한 결함이고, 68번부터는 그 수정의 셀프 리뷰에서, 71번부터는 메이저 의존성 업그레이드를 실제 스택에서 돌려 보며 찾은 것입니다(CI 테스트는 모두 통과한 상태).
 각 항목은 재현 → 수정 → 회귀 테스트(또는 측정)로 닫았습니다.
 
 | # | 발견 | 원인 | 조치 | 확인 |
@@ -75,6 +75,8 @@
 | 68 | 수집이 자정을 넘기면 D일 꼬리 위치가 D+1 키에 기록 (셀프 리뷰 · BUG-05 수정의 회귀) | 읽기 키와 쓰기 키가 now_kst() 를 따로 부름 | 읽은 키를 그대로 돌려받아 기록 | `test_tail_cursor_is_saved_under_the_day_it_was_read` (수정 전 실패) |
 | 69 | Memo 로더가 Error 를 던지면 그 키의 모든 호출이 영원히 대기 (셀프 리뷰) | RuntimeException 만 잡아 Future 미완료 | Throwable 에서 완료 · 제거 · 재던짐 | `ConcurrencyToolsTest` (수정 전 TimeoutException) |
 | 70 | 종료 때 실행기가 쌓인 작업을 끝까지 기다려 종료 유예(10초) 초과 (셀프 리뷰) | close() 대기 상한 없음 | shutdown → 5초 → shutdownNow | `ConcurrencyConfigTest` |
+| 71 | redis-py 8: 관리 명령 스트림 대기(XREADGROUP BLOCK 5초)가 `TimeoutError` 로 끊기고 ERROR 로그 · 3초 쉼 반복 | redis-py 8 이 `socket_timeout` 기본값을 없음 → 5초로 바꿈 — 블록 시간과 같음 | 소켓 읽기 제한을 15초로 명시(블록보다 길게) | `test_command_block_read_outlasts_socket_timeout` (수정 전 5.0초에 TimeoutError) · 실제 스택 75초 오류 0건 · 명령 수신 → ACK |
+| 72 | redis-py 8: 도로 통행시간 작업이 `MaxConnectionsError: Too many connections` 로 실패 (기동 2회 모두) | 연결 풀 기본 상한이 무제한 → 100 — 구간 100여 개의 꼬리 위치를 동시에 읽음 | 상한 100 은 두되 넘치면 기다리는 `BlockingConnectionPool` | `test_burst_beyond_pool_limit_waits_instead_of_failing` (수정 전 동시 150건 중 50건 실패) · 기동 작업 10개 OK |
 
 ## 알려진 한계 (수치로 확인됨)
 
