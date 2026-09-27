@@ -2,7 +2,7 @@ import { useRouter } from "next/router";
 import { useMemo, useState } from "react";
 import Layout from "@/components/Layout";
 import CorridorBar from "@/components/CorridorBar";
-import { Heatmap, TravelChart } from "@/components/Charts";
+import { Heatmap, TravelChart } from "@/components/LazyCharts";
 import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Spec, SpecStrip } from "@/components/ui";
 import { qs, useApi } from "@/lib/api";
 import { DASH, DIR_LABEL, dur, durParts, mdhm, num, pct } from "@/lib/format";
