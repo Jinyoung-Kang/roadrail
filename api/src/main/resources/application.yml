@@ -21,6 +21,8 @@ spring:
     password: roadrail
     hikari:
       maximum-pool-size: 12
+      # 가상 스레드는 동시 요청 수에 상한이 없다 — 풀이 차면 기본 30초를 기다린 뒤 500 이 되던 것을 3초 뒤 503(Retry-After)으로
+      connection-timeout: 3000
       connection-init-sql: SET TIME ZONE 'Asia/Seoul'
   flyway:
     locations: filesystem:../db/migrations

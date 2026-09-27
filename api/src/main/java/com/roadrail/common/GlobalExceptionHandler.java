@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -21,6 +22,7 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private volatile long lastUnavailableWarn = 0;
 
     @ExceptionHandler(ApiException.class)
     ResponseEntity<ErrorResponse> api(ApiException e) {
@@ -79,6 +81,22 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
     ResponseEntity<Void> notAcceptable(HttpMediaTypeNotAcceptableException e) {
         return ResponseEntity.status(ErrorCode.NOT_ACCEPTABLE.status()).build();
+    }
+
+    /**
+     * 연결 풀이 가득 참(과부하) · DB 연결 불가 — 서버 오류(500)가 아니라 잠시 뒤 다시 시도할 일 (ARC-03).
+     * 가상 스레드는 동시 요청 수에 상한이 없어 풀(12)이 차면 대기가 생긴다 → 대기는 짧게(hikari connection-timeout 3초) 끊고 503.
+     */
+    @ExceptionHandler(CannotGetJdbcConnectionException.class)
+    ResponseEntity<ErrorResponse> unavailable(CannotGetJdbcConnectionException e) {
+        long now = System.currentTimeMillis();
+        if (now - lastUnavailableWarn > 10_000) {
+            lastUnavailableWarn = now;
+            log.warn("DB 연결을 얻지 못해 503 으로 응답: {}", e.getMostSpecificCause().getMessage());
+        }
+        return ResponseEntity.status(ErrorCode.UNAVAILABLE.status()).header("Retry-After", "5")
+                .body(new ErrorResponse(ErrorCode.UNAVAILABLE.name(), "요청이 몰려 잠시 처리할 수 없습니다. 몇 초 뒤 다시 시도하세요.",
+                        MDC.get(TraceIdFilter.MDC_KEY)));
     }
 
     @ExceptionHandler(Exception.class)
