@@ -34,13 +34,15 @@ public class KakaoMobilityClient {
     private final AppProperties props;
     private final JsonCache cache;
     private final QuotaGuard quota;
-    private final ExecutorService exec = Executors.newVirtualThreadPerTaskExecutor();
+    private final ExecutorService exec;
     private final Map<String, CompletableFuture<Eta>> inflight = new ConcurrentHashMap<>();
 
     /** path = [[lat, lon], …] (최대 400점, 경로가 필요할 때만) */
     public record Eta(int durationSec, int distanceM, String departAt, List<double[]> path) {}
 
-    public KakaoMobilityClient(RestClient.Builder builder, AppProperties props, JsonCache cache, QuotaGuard quota) {
+    public KakaoMobilityClient(RestClient.Builder builder, AppProperties props, JsonCache cache, QuotaGuard quota,
+                               ExecutorService exec) {
+        this.exec = exec;
         var factory = new JdkClientHttpRequestFactory(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build());
         factory.setReadTimeout(Duration.ofSeconds(4));
         this.http = builder.clone().baseUrl(props.kakaoMobilityBaseUrl()).requestFactory(factory).build();

@@ -25,9 +25,10 @@ public class RoadRouteService {
     static final int[] PROFILE_OFFSETS_MIN = {0, 60, 120, 180, 240, 360, 540, 720};
     private final KakaoMobilityClient kakao;
     private final TripService trips;
-    private final ExecutorService exec = Executors.newVirtualThreadPerTaskExecutor();
+    private final ExecutorService exec;
 
-    public RoadRouteService(KakaoMobilityClient kakao, TripService trips) {
+    public RoadRouteService(KakaoMobilityClient kakao, TripService trips, ExecutorService exec) {
+        this.exec = exec;
         this.kakao = kakao;
         this.trips = trips;
     }

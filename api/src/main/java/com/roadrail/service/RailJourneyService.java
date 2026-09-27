@@ -33,7 +33,7 @@ public class RailJourneyService {
     private final TagoSubwayClient tago;
     private final TimetableService timetable;
     private final HolidayService holidays;
-    private final ExecutorService exec = Executors.newVirtualThreadPerTaskExecutor();
+    private final ExecutorService exec;
     /** 기준 운행일 → 연결 목록 (하루 약 1만 개) + 열차별 정차역 순서. 하루 단위로 교체 */
     record Day(List<RailRouter.Connection> connections, Map<String, List<String>> stopsByTrip) {}
 
@@ -43,7 +43,8 @@ public class RailJourneyService {
     private volatile long linksLoadedAt = 0;
 
     public RailJourneyService(JdbcClient jdbc, RailService rail, KakaoMobilityClient kakao, TagoSubwayClient tago,
-                              TimetableService timetable, HolidayService holidays) {
+                              TimetableService timetable, HolidayService holidays, ExecutorService exec) {
+        this.exec = exec;
         this.timetable = timetable;
         this.holidays = holidays;
         this.jdbc = jdbc;

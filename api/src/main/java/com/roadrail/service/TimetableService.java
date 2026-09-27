@@ -25,11 +25,12 @@ public class TimetableService {
     private final JdbcClient jdbc;
     private final TagoTrainClient tago;
     private final ObjectMapper mapper;
-    private final ExecutorService exec = Executors.newVirtualThreadPerTaskExecutor();
+    private final ExecutorService exec;
     private final Semaphore gate = new Semaphore(6);
     private final Map<String, CompletableFuture<Void>> inflight = new ConcurrentHashMap<>();
 
-    public TimetableService(JdbcClient jdbc, TagoTrainClient tago, ObjectMapper mapper) {
+    public TimetableService(JdbcClient jdbc, TagoTrainClient tago, ObjectMapper mapper, ExecutorService exec) {
+        this.exec = exec;
         this.jdbc = jdbc;
         this.tago = tago;
         this.mapper = mapper;
