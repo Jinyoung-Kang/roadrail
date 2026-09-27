@@ -202,6 +202,23 @@ class ApiIT extends IntegrationTest {
     }
 
     @Test
+    void stationSearchOrdersExactThenPrefixThenTrains() throws Exception {
+        // 역 검색 순서(검색 추천): 이름 정확 일치 → 앞부분 일치 → 최근 7일 정차 편수 → 이름. 캐시로 옮겨도 같아야 한다 (PERF-02)
+        LocalDate ref = LocalDate.now(KST).minusDays(7);
+        jdbc.execute("INSERT INTO ref.station (stn_cd, stn_nm, lat, lon, source) VALUES ('S3', '서대전', 36.32, 127.40, 'KAKAO'), "
+                + "('S4', '대전조차장', 36.35, 127.43, 'KAKAO'), ('S5', '신탄진', 36.45, 127.43, 'KAKAO')");
+        for (int i = 0; i < 3; i++) {  // 서대전 3회 > 대전조차장 1회 — 그래도 앞부분 일치가 먼저
+            jdbc.update("INSERT INTO rail.run_info (run_ymd, trn_no, run_seq, stn_cd, stn_nm, dep_at) VALUES (?, ?, 1, 'S3', '서대전', now())", ref, "0030" + i);
+        }
+        jdbc.update("INSERT INTO rail.run_info (run_ymd, trn_no, run_seq, stn_cd, stn_nm, dep_at) VALUES (?, '00400', 1, 'S4', '대전조차장', now())", ref);
+        mvc.perform(get("/api/v1/stations").param("q", "대전")).andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].name", contains("대전", "대전조차장", "서대전")))  // 신탄진(운행 없음 · 이름 불일치)은 없음
+                .andExpect(jsonPath("$[2].trains7d").value(3));
+        mvc.perform(get("/api/v1/stations").param("sort", "name").param("limit", "400"))
+                .andExpect(jsonPath("$[*].name", contains("대전", "대전조차장", "서대전", "서울")));  // 운행 있는 역만 · 가나다순
+    }
+
+    @Test
     void tripBetweenStationsWithoutKakaoKey() throws Exception {
         // 카카오 키가 없으면 자동차 값 없이 기차만 — 결론 대신 근거와 함께 '비교할 수 없습니다'
         mvc.perform(get("/api/v1/trip").param("fromLat", "37.55").param("fromLon", "126.97").param("fromName", "서울역")

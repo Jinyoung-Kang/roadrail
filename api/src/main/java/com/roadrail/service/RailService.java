@@ -319,21 +319,38 @@ public class RailService {
         return stations(q, limit, false);
     }
 
-    /** byName = true 면 가나다순 (역 선택 목록), 아니면 정확·앞부분 일치 → 운행 편수 순 (검색 추천) */
+    /**
+     * byName = true 면 가나다순 (역 선택 목록), 아니면 정확·앞부분 일치 → 운행 편수 순 (검색 추천).
+     * 이름 순서는 Java 문자열 비교(UTF-16) — 한글 · 영문 · 기호가 모두 BMP 라 UTF-8 바이트순(가나다순, 예전 COLLATE "C")과 같다.
+     */
     public List<Station> stations(String q, int limit, boolean byName) {
-        LocalDate latest = latestDate().orElse(LocalDate.now(Times.KST));
-        return jdbc.sql("""
-                SELECT s.stn_cd, s.stn_nm, s.lat, s.lon, coalesce(c.n, 0) AS n
-                FROM ref.station s
-                LEFT JOIN (SELECT stn_cd, count(*) AS n FROM rail.run_info
-                           WHERE run_ymd > :l::date - 7 AND run_ymd <= :l GROUP BY 1) c USING (stn_cd)
-                WHERE (:q = '' OR s.stn_nm LIKE '%' || :q || '%') AND coalesce(c.n, 0) > 0
-                ORDER BY {order} LIMIT :lim""".replace("{order}", byName ? "s.stn_nm COLLATE \"C\""   // UTF-8 바이트순 = 가나다순
-                        : "(s.stn_nm = :q) DESC, (s.stn_nm LIKE :q || '%') DESC, n DESC, s.stn_nm"))
-                .param("l", latest).param("q", q == null ? "" : q.trim()).param("lim", limit)
-                .query((rs, i) -> new Station(rs.getString(1), rs.getString(2), (Double) rs.getObject(3),
-                        (Double) rs.getObject(4), rs.getInt(5))).list();
+        String term = q == null ? "" : q.trim();
+        Comparator<Station> order = byName ? Comparator.comparing(Station::name)
+                : Comparator.comparing((Station s) -> !s.name().equals(term))
+                        .thenComparing(s -> !s.name().startsWith(term))
+                        .thenComparing(Comparator.comparingInt(Station::trains7d).reversed())
+                        .thenComparing(Station::name);
+        return activeStations().stream().filter(s -> s.name().contains(term)).sorted(order).limit(limit).toList();
     }
+
+    public record ActiveStations(List<Station> items) {}
+
+    /**
+     * 운행 중인 역(최근 7일 정차가 있는 역)과 편수 — 역 검색 · 장소 검색은 입력할 때마다 불리는데 7일치 운행정보(약 7만 행)를
+     * 매번 집계했다(48ms). 값은 운행 자료를 받을 때(하루 세 번)만 바뀌므로 최근 운행일별로 10분 캐시한다 (PERF-02).
+     */
+    private List<Station> activeStations() {
+        LocalDate latest = latestDate().orElse(LocalDate.now(Times.KST));
+        return cache.get("rail:stations:v1:" + latest, Duration.ofMinutes(10), ActiveStations.class, () -> new ActiveStations(jdbc.sql("""
+                SELECT s.stn_cd, s.stn_nm, s.lat, s.lon, c.n
+                FROM ref.station s
+                JOIN (SELECT stn_cd, count(*) AS n FROM rail.run_info
+                      WHERE run_ymd > :l::date - 7 AND run_ymd <= :l GROUP BY 1) c USING (stn_cd)""")
+                .param("l", latest)
+                .query((rs, i) -> new Station(rs.getString(1), rs.getString(2), (Double) rs.getObject(3),
+                        (Double) rs.getObject(4), rs.getInt(5))).list())).value().items();
+    }
+
 
     /** 좌표에서 가까운 (최근 14일 운행이 있는) 역 */
     public List<StationNear> near(double lat, double lon, double radiusKm, int limit) {
