@@ -34,19 +34,20 @@ public class OpsService {
                 SELECT job_name, count(*) FROM ops.slot_gap
                 WHERE backfilled_at IS NULL AND slot_ts > now() - interval '24 hours' AND reason <> 'SOURCE_EXPIRED'
                 GROUP BY 1""").query(rs -> { gaps.put(rs.getString(1), rs.getInt(2)); });
+        List<String> names = jdbc.sql("SELECT job_name FROM ops.collect_job").query(String.class).list();
+        Set<String> running = runningJobs(names);  // 잠금 확인을 작업마다 1번씩 → MGET 1번
         List<Job> jobs = jdbc.sql("""
                 SELECT job_name, provider, cron, description, enabled, last_status, last_run_at, last_duration_ms,
                        last_calls, last_rows, last_message FROM ops.collect_job ORDER BY provider = '-', provider, job_name""")
                 .query((rs, i) -> {
                     String job = rs.getString(1);
                     Double c = completeness.get(job);
-                    boolean running = Boolean.TRUE.equals(safe(() -> redis.hasKey("rr:lock:" + job)));
                     String last = rs.getString(6);
                     boolean warn = (c != null && c < 0.95) || "FAILED".equals(last) || "SKIPPED_QUOTA".equals(last);
                     return new Job(job, rs.getString(2), rs.getString(3), rs.getString(4), rs.getBoolean(5), last,
                             Times.kst(rs.getObject(7, OffsetDateTime.class)), (Integer) rs.getObject(8),
                             (Integer) rs.getObject(9), (Integer) rs.getObject(10), rs.getString(11), c,
-                            gaps.getOrDefault(job, c == null ? null : 0), running, warn);
+                            gaps.getOrDefault(job, c == null ? null : 0), running.contains(job), warn);
                 }).list();
         List<Run> runs = jdbc.sql("""
                 SELECT run_id, job_name, trigger, started_at, finished_at, status, calls, rows, message
@@ -83,6 +84,22 @@ public class OpsService {
                 GROUP BY s ORDER BY s""")
                 .query((rs, i) -> new Lag(rs.getString("s"), RailService.round(rs, "med", 0), RailService.round(rs, "p90", 0),
                         rs.getInt("n"))).list();
+        String hb = safe(() -> redis.opsForValue().get("rr:collector:heartbeat"));
+        return new Status(now, hb != null, hb == null ? null : OffsetDateTime.parse(hb), jobs, quotas(), runs, errors,
+                failures, backfills, lag, volumes());
+    }
+
+    private record Volumes(Map<String, Object> values, long measuredAt) {}
+
+    private volatile Volumes volumes;
+
+    /**
+     * 저장 규모 — 전체 행 수를 정확히 센다(추정치를 내지 않음). 운행정보는 영구 보관이라 행 수에 비례해 느려지므로(84.5만 행 count 63ms)
+     * 30초마다 갱신되는 화면이 부를 때마다 세지 않고 5분에 한 번만, 센 시각(measured_at)과 함께 낸다 (PERF-01).
+     */
+    Map<String, Object> volumes() {
+        Volumes v = volumes;
+        if (v != null && System.currentTimeMillis() - v.measuredAt() < 300_000) return v.values();
         Map<String, Object> vol = new LinkedHashMap<>();
         jdbc.sql("""
                 SELECT (SELECT count(*) FROM ts.road_travel_time) AS road_rows, (SELECT count(*) FROM ts.road_corridor_tt) AS corridor_slots,
@@ -94,9 +111,16 @@ public class OpsService {
                     var md = rs.getMetaData();
                     for (int c = 1; c <= md.getColumnCount(); c++) vol.put(md.getColumnLabel(c), rs.getObject(c));
                 });
-        String hb = safe(() -> redis.opsForValue().get("rr:collector:heartbeat"));
-        return new Status(now, hb != null, hb == null ? null : OffsetDateTime.parse(hb), jobs, quotas(), runs, errors,
-                failures, backfills, lag, vol);
+        vol.put("measured_at", Times.now().format(Times.HM));
+        volumes = new Volumes(vol, System.currentTimeMillis());
+        return vol;
+    }
+
+    private Set<String> runningJobs(List<String> names) {
+        List<String> locks = safe(() -> redis.opsForValue().multiGet(names.stream().map(j -> "rr:lock:" + j).toList()));
+        Set<String> out = new HashSet<>();
+        for (int i = 0; locks != null && i < names.size(); i++) if (locks.get(i) != null) out.add(names.get(i));
+        return out;
     }
 
     /**
@@ -171,11 +195,17 @@ public class OpsService {
 
     public List<Quota> quotas() {
         String day = Times.now().format(YMD);
-        List<Quota> out = new ArrayList<>();
+        List<String> keys = new ArrayList<>();
         for (String p : PROVIDERS) {
+            keys.add("quota:" + p + ":" + day);
+            keys.add("quota:used:" + p + ":" + day);
+        }
+        List<String> v = safe(() -> redis.opsForValue().multiGet(keys));  // 공급자당 GET 2번 → MGET 1번
+        List<Quota> out = new ArrayList<>();
+        for (int i = 0; i < PROVIDERS.size(); i++) {
+            String p = PROVIDERS.get(i);
             int limit = props.quotaOf(p);
-            int total = parse(safe(() -> redis.opsForValue().get("quota:" + p + ":" + day)));
-            int used = parse(safe(() -> redis.opsForValue().get("quota:used:" + p + ":" + day)));
+            int total = parse(v == null ? null : v.get(2 * i)), used = parse(v == null ? null : v.get(2 * i + 1));
             out.add(new Quota(p, Times.now().toLocalDate().toString(), limit, used, Math.max(total - used, 0),
                     Math.max(limit - total, 0)));
         }

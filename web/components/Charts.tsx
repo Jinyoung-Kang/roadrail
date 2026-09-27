@@ -5,8 +5,7 @@ import {
 import { DASH, DOW, dur, hm, mdhm } from "@/lib/format";
 import type { Baseline, Series } from "@/lib/types";
 
-/* 색은 dataviz 기본 팔레트 (검증: scripts/validate_palette.js — CVD ΔE 9.2 · 정상시 27.6) */
-export const C = { road: "#2a78d6", rail: "#eb6834", aqua: "#1baf7a", base: "#898781", grid: "#e1e0d9", rain: "#cde2fb" };
+import { C } from "@/lib/palette";
 const SEQ = ["#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7", "#3987e5", "#2a78d6", "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"];
 
 function Box({ children }: { children: React.ReactNode }) {

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Layout from "@/components/Layout";
-import { MaeChart } from "@/components/Charts";
+import { MaeChart } from "@/components/LazyCharts";
 import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Select } from "@/components/ui";
 import { useApi } from "@/lib/api";
 import { DASH, dur, durMin, hm, mdhm, num, pct } from "@/lib/format";

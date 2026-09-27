@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import Layout from "@/components/Layout";
 import RouteMap, { ROAD, type MapLayers } from "@/components/RouteMap";
 import SearchPicker from "@/components/SearchPicker";
-import { SimpleBars } from "@/components/Charts";
+import { SimpleBars } from "@/components/LazyCharts";
 import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Spec, SpecStrip } from "@/components/ui";
 import { qs, useApi } from "@/lib/api";
 import { DASH, dur, durMin, durParts, hm, num, pct } from "@/lib/format";

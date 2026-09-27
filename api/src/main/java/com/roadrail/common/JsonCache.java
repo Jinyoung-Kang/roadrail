@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
+import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
 
 /** Redis JSON 캐시. Redis 가 없으면 캐시 없이 동작한다 (조회는 계속 가능). */
@@ -15,6 +16,7 @@ public class JsonCache {
     private static final Logger log = LoggerFactory.getLogger(JsonCache.class);
     private final StringRedisTemplate redis;
     private final ObjectMapper mapper;
+    private final SingleFlight<String, Object> loading = new SingleFlight<>();
     private volatile long lastWarn;
 
     public JsonCache(StringRedisTemplate redis, ObjectMapper mapper) {
@@ -24,6 +26,12 @@ public class JsonCache {
 
     public record Hit<T>(T value, boolean cached) {}
 
+    /**
+     * 캐시에 있으면 그 값, 없으면 loader 로 불러와 저장. 같은 키를 동시에 못 찾은 요청은 불러오기를 한 번만 하고 결과를 나눠 쓴다
+     * (캐시 쇄도 방지 — 예: 철도 분석 화면의 동시 요청 3개가 같은 전국 비교 값을 각각 계산하던 것). 첫 요청의 스레드에서 불러오고
+     * 나머지는 Future 를 기다린다. 실패는 캐시하지 않고 기다리던 요청에도 같은 예외를 던진다.
+     * loader 안에서 같은 키로 get 을 다시 부르면 안 된다(자기 자신을 기다림).
+     */
     public <T> Hit<T> get(String key, Duration ttl, Class<T> type, Supplier<T> loader) {
         try {
             String hit = redis.opsForValue().get(key);
@@ -32,13 +40,16 @@ public class JsonCache {
             warn(e);
             return new Hit<>(loader.get(), false);
         }
-        T value = loader.get();
         try {
-            if (value != null) redis.opsForValue().set(key, mapper.writeValueAsString(value), ttl);
-        } catch (RuntimeException e) {
-            warn(e);
+            Object value = loading.run(key, () -> {
+                T v = loader.get();
+                if (v != null) put(key, v, ttl);
+                return v;
+            }, Runnable::run).join();
+            return new Hit<>(type.cast(value), false);
+        } catch (CompletionException e) {
+            throw e.getCause() instanceof RuntimeException re ? re : e;
         }
-        return new Hit<>(value, false);
     }
 
     public <T> T peek(String key, Class<T> type) {
