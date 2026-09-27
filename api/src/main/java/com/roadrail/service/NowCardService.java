@@ -1,5 +1,7 @@
 package com.roadrail.service;
 
+import com.roadrail.external.KakaoMobilityClient;
+import com.roadrail.common.JsonCache;
 import com.roadrail.common.Times;
 import com.roadrail.config.AppProperties;
 import com.roadrail.domain.DecisionRule;

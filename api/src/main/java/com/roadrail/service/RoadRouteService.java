@@ -1,5 +1,6 @@
 package com.roadrail.service;
 
+import com.roadrail.external.KakaoMobilityClient;
 import com.roadrail.common.Times;
 import com.roadrail.domain.KmaGrid;
 import com.roadrail.domain.RoadClass;
