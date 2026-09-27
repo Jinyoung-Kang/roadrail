@@ -31,8 +31,9 @@ export default function RoadPage() {
   const corridors = useCorridors();
   const corridor = corridors.data?.find((c) => c.id === cid);
   const ready = router.isReady;
-  const series = useApi<Series>(ready ? `/api/v1/corridors/${cid}/road/series?${qs({ dir, agg: r.agg, ...win })}` : null);
-  const baseline = useApi<Baseline>(ready ? `/api/v1/corridors/${cid}/road/baseline?dir=${dir}` : null);
+  const path = `/api/v1/corridors/${encodeURIComponent(cid)}/road`;  // cid 는 URL 에서 온 값
+  const series = useApi<Series>(ready ? `${path}/series?${qs({ dir, agg: r.agg, ...win })}` : null);
+  const baseline = useApi<Baseline>(ready ? `${path}/baseline?dir=${dir}` : null);
 
   const pts = series.data?.points ?? [];
   const last = pts[pts.length - 1];

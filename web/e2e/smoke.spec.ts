@@ -177,3 +177,11 @@ test("보안: URL 의 장소 이름은 지도 라벨에 글자로만 들어간�
   await expect(map.getByText(evil, { exact: true })).toBeVisible({ timeout: 15_000 });  // 꺾쇠까지 글자 그대로
   expect(await page.locator("#rr-inj").count()).toBe(0);
 });
+
+test("보안: 프록시는 /api/v1 아래의 정상 경로만 넘긴다", async ({ request }) => {
+  // 인코딩한 '../' 로 API 서버의 다른 경로를 노리는 요청 → 프록시가 JSON 400 으로 거절 (Tomcat HTML 이 아님)
+  const r = await request.get("/api/v1/..%2f..%2factuator/health");
+  expect(r.status()).toBe(400);
+  expect((await r.json()).code).toBe("VALIDATION_ERROR");
+  expect((await request.get("/api/v1/corridors")).ok()).toBe(true);
+});
