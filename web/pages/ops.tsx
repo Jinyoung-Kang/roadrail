@@ -27,7 +27,7 @@ function CopyButton({ text, label = "복사" }: { text: string; label?: string }
   return (
     <>
       <button type="button" onClick={async () => setState((await copyText(text)) ? "ok" : "fail")}
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded bg-white px-3 text-xs font-medium text-ink ring-1 ring-black/10 hover:bg-cloud">
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-sm bg-white px-3 text-xs font-medium text-ink ring-1 ring-black/10 hover:bg-cloud">
         <span aria-hidden>{state === "ok" ? "✓" : "⧉"}</span>
         {state === "ok" ? "복사됨" : state === "fail" ? "복사 실패" : label}
       </button>
@@ -46,7 +46,7 @@ function FailureLog({ f, open }: { f: OpsFailure; open: boolean }) {
         <StatusBadge status={f.status} />
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium">{f.job} <span className="font-normal text-muted">· 실행 #{f.runId} · {f.trigger}</span>
-            {f.resolvedAt && <span className="ml-2 rounded bg-[#e8f6ef] px-1.5 py-0.5 text-[11px] font-medium text-ink2"><span className="text-good" aria-hidden>●</span> 이후 정상 실행 {mdhm(f.resolvedAt)}</span>}</span>
+            {f.resolvedAt && <span className="ml-2 rounded-sm bg-[#e8f6ef] px-1.5 py-0.5 text-[11px] font-medium text-ink2"><span className="text-good" aria-hidden>●</span> 이후 정상 실행 {mdhm(f.resolvedAt)}</span>}</span>
           <span className="block truncate text-xs text-muted">{mdhm(f.startedAt)} · {f.message ?? "메시지 없음"}</span>
         </span>
         <span className="text-xs text-muted" aria-hidden>펼치기 ▾</span>
@@ -131,7 +131,7 @@ export default function Ops() {
                       {failed[j.job] && <a href={`#run-${failed[j.job]}`} className="font-medium text-accent hover:underline">
                         {j.lastStatus === "OK" ? "지난 24시간 오류 보기 ↓" : "오류 상세 보기 ↓"}</a>}
                     </td>
-                    <td className="td"><button className="rounded px-2 py-1 text-xs font-medium text-accent hover:bg-accent/10 disabled:text-faint"
+                    <td className="td"><button className="rounded-sm px-2 py-1 text-xs font-medium text-accent hover:bg-accent/10 disabled:text-faint"
                                               disabled={!token || j.running} onClick={() => run(j.job)}>실행</button></td>
                   </tr>
                 ))}
@@ -143,7 +143,7 @@ export default function Ops() {
           <label className="flex items-center gap-2">
             <span className="text-muted">관리 토큰</span>
             <input type="password" value={token} onChange={(e) => saveToken(e.target.value)} placeholder="X-Admin-Token (.env ADMIN_TOKEN)"
-                   className="h-8 w-72 rounded bg-cloud px-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent" />
+                   className="h-8 w-72 rounded-sm bg-cloud px-3 text-sm focus:outline-hidden focus:ring-2 focus:ring-accent" />
           </label>
           {msg && <span className="text-ink2" role="status">{msg}</span>}
         </div>

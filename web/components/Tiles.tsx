@@ -25,7 +25,7 @@ function Headline({ total, pending, arrive, note }: { total: number | null; pend
 
 function Stats({ items }: { items: { k: string; v: React.ReactNode; sub?: string }[] }) {
   return (
-    <dl className="mt-6 grid grid-cols-3 divide-x divide-line rounded bg-mist py-3">
+    <dl className="mt-6 grid grid-cols-3 divide-x divide-line rounded-sm bg-mist py-3">
       {items.map((it) => (
         <div key={it.k} className="px-3 text-center">
           <dt className="text-[11px] text-muted">{it.k}</dt>
@@ -59,7 +59,7 @@ function TimeBar({ segments, max }: { segments: Segment[]; max: number }) {
       <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink2">
         {seg.map((x) => (
           <li key={x.label} className="flex items-center gap-1.5">
-            <span className={`h-2 w-2 rounded-sm ${x.className}`} aria-hidden />{x.label} <span className="tabular text-muted">{durMin(Math.round(x.min))}</span>
+            <span className={`h-2 w-2 rounded-xs ${x.className}`} aria-hidden />{x.label} <span className="tabular text-muted">{durMin(Math.round(x.min))}</span>
           </li>
         ))}
       </ul>
@@ -89,7 +89,7 @@ export function CarTile({ trip }: { trip: Trip }) {
         <TimeBar max={barMax(trip)} segments={[{ label: "운전", min: drive, className: "bg-road" }]} />
       )}
       {o ? (
-        <div className="mt-6 rounded ring-1 ring-line">
+        <div className="mt-6 rounded-sm ring-1 ring-line">
           <p className="border-b border-line px-4 py-2.5 text-[12px] font-medium text-ink2">
             고속도로 실측 · {o.corridorName} <span className="font-normal text-muted">{hm(o.slotTs)} 기준</span>
           </p>
@@ -124,7 +124,7 @@ function Dot({ tone }: { tone: "ink" | "rail" | "muted" }) {
 function Step({ time, tone, children, last = false }: { time: string; tone: "ink" | "rail" | "muted"; children: React.ReactNode; last?: boolean }) {
   return (
     <li className="grid grid-cols-[44px_10px_1fr] gap-x-3">
-      <span className="pt-[1px] text-right text-[13px] font-medium tabular text-ink">{time}</span>
+      <span className="pt-px text-right text-[13px] font-medium tabular text-ink">{time}</span>
       <span className="relative flex justify-center">
         {!last && <span className="absolute left-1/2 top-3 bottom-[-4px] w-px -translate-x-1/2 bg-line" aria-hidden />}
         <Dot tone={tone} />
@@ -151,7 +151,7 @@ export function JourneyTimeline({ j, trip }: { j: Journey; trip: Trip }) {
     rows.push(
       <Step key={`d${i}`} time={hm(l.dep)} tone="rail">
         <p className="font-medium">{l.fromName}역 {i === 0 ? "승차" : "갈아타기"}{i > 0 && <span className="font-normal text-muted"> · {gap}분 대기</span>}</p>
-        <div className="mt-1.5 rounded bg-mist px-3 py-2">
+        <div className="mt-1.5 rounded-sm bg-mist px-3 py-2">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <TrainName trnNo={l.trnNo} meta={l.meta} grade={l.grade} />
           </div>
@@ -185,7 +185,7 @@ export function SubwayList({ title, items }: { title: string; items: NextSubway[
       <ul className="mt-1.5 space-y-1.5">
         {items.slice(0, 6).map((s) => (
           <li key={s.line + s.toward} className="flex justify-between gap-3 text-xs text-muted">
-            <span><span className="rounded bg-cloud px-1.5 py-0.5 text-ink2">{s.line}</span> {s.toward}</span><span className="tabular">{s.times.join(" · ")}</span>
+            <span><span className="rounded-sm bg-cloud px-1.5 py-0.5 text-ink2">{s.line}</span> {s.toward}</span><span className="tabular">{s.times.join(" · ")}</span>
           </li>
         ))}
       </ul>
@@ -288,9 +288,9 @@ export function TrainTile({ trip }: { trip: Trip }) {
 export function IncidentItem({ i, onLocate }: { i: Incident; onLocate?: (i: Incident) => void }) {
   const located = i.lat != null && i.lon != null;
   return (
-    <li className="rounded bg-white px-4 py-3 ring-1 ring-black/5">
+    <li className="rounded-sm bg-white px-4 py-3 ring-1 ring-black/5">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-        <span className="rounded bg-[#fff1cc] px-1.5 py-0.5 text-[11px] font-medium text-ink">{i.typeName || "돌발"}</span>
+        <span className="rounded-sm bg-[#fff1cc] px-1.5 py-0.5 text-[11px] font-medium text-ink">{i.typeName || "돌발"}</span>
         <span className="font-medium text-ink">{i.routeName}</span>
         {i.direction && <span className="text-ink2">{i.direction}</span>}
         {i.process && <span className="text-xs text-muted">· {i.process}</span>}
@@ -328,7 +328,7 @@ export function Evidence({ decision, freshness, caveat, cache, asOf, incidents =
         {decision.warnings.length > 0 && (
           <ul className="mt-5 space-y-2">
             {decision.warnings.map((w) => (
-              <li key={w} className="rounded bg-[#fff7e6] px-3 py-2 text-sm text-ink2">
+              <li key={w} className="rounded-sm bg-[#fff7e6] px-3 py-2 text-sm text-ink2">
                 <p className="flex items-center gap-2"><span className="text-warn" aria-hidden>▲</span><span className="sr-only">경고: </span>{w}</p>
                 {w.includes("돌발") && incidents.length > 0 && (
                   <ul className="mb-1 mt-2 space-y-2" aria-label="돌발 안내 목록">

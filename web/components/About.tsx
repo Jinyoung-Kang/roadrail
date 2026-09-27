@@ -44,7 +44,7 @@ export default function About() {
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {MENUS.map((m) => (
-            <Link key={m.href} href={m.href} className="group rounded bg-mist px-5 py-4 transition hover:bg-cloud">
+            <Link key={m.href} href={m.href} className="group rounded-sm bg-mist px-5 py-4 transition hover:bg-cloud">
               <p className="flex items-center justify-between text-sm font-medium text-ink">
                 {m.title}<span className="text-muted transition group-hover:translate-x-0.5" aria-hidden>→</span>
               </p>

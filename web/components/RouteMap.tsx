@@ -126,7 +126,7 @@ export default function RouteMap({ layers, interactive = false, className = "", 
       <div ref={ref} className="h-full w-full" />
       {interactive && (
         <button onClick={() => lock(unlocked)}
-                className="absolute bottom-4 right-4 z-10 rounded bg-white/95 px-3 py-2 text-xs font-medium text-ink2 shadow-tile hover:bg-white">
+                className="absolute bottom-4 right-4 z-10 rounded-sm bg-white/95 px-3 py-2 text-xs font-medium text-ink2 shadow-tile hover:bg-white">
           {unlocked ? "지도 조작 끄기" : "지도 조작하기 (이동 · 확대)"}
         </button>
       )}
@@ -146,7 +146,7 @@ export function SvgRoute({ layers, className, note }: { layers: MapLayers | null
   const px = (lon: number) => pad + (lon - x0) * s + ((W - 2 * pad) - (x1 - x0) * s) / 2;
   const py = (lat: number) => H - pad - (lat - y0) * s - ((H - 2 * pad) - (y1 - y0) * s) / 2;
   return (
-    <div className={`${className} bg-gradient-to-b from-[#e9eef3] to-[#f7f8f9]`} title={note}>
+    <div className={`${className} bg-linear-to-b from-[#e9eef3] to-[#f7f8f9]`} title={note}>
       <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full" preserveAspectRatio="xMidYMid meet" aria-label="노선도">
         {layers.lines.map((l, i) => (
           <polyline key={i} points={l.path.map(([la, lo]) => `${px(lo)},${py(la)}`).join(" ")} fill="none" stroke={l.color}

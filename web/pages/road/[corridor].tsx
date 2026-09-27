@@ -78,7 +78,7 @@ export default function RoadPage() {
         <ol className="flex flex-wrap items-center justify-center gap-y-3 text-sm">
           {units.map((u, i) => (
             <li key={u.code + i} className="flex items-center">
-              <span className={`rounded px-3 py-1.5 ${i === 0 || i === units.length - 1 ? "bg-ink text-white" : "bg-cloud text-ink2"}`}>{u.name}</span>
+              <span className={`rounded-sm px-3 py-1.5 ${i === 0 || i === units.length - 1 ? "bg-ink text-white" : "bg-cloud text-ink2"}`}>{u.name}</span>
               {i < units.length - 1 && <span className="mx-1 text-faint" aria-hidden>—</span>}
             </li>
           ))}
