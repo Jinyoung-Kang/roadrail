@@ -158,7 +158,18 @@ class ApiIT extends IntegrationTest {
 
     @Test
     void collectStatusAndHealth() throws Exception {
+        // 잠금 · 예산은 MGET 한 번으로 읽는다 — 위치(작업 · 공급자)가 어긋나지 않는지 (PERF-01 · PERF-07)
+        String day = LocalDate.now(KST).toString().replace("-", "");
+        redis.opsForValue().set("rr:lock:road_travel_time", "x");
+        redis.opsForValue().set("quota:KASI:" + day, "5");
+        redis.opsForValue().set("quota:used:KASI:" + day, "3");
         mvc.perform(get("/api/v1/ops/collect-status")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.jobs[?(@.job == 'road_travel_time')].running").value(hasItem(true)))
+                .andExpect(jsonPath("$.jobs[?(@.job == 'rail_daily')].running").value(hasItem(false)))
+                .andExpect(jsonPath("$.quota[?(@.provider == 'KASI')].used").value(hasItem(3)))
+                .andExpect(jsonPath("$.quota[?(@.provider == 'KASI')].reserved").value(hasItem(2)))
+                .andExpect(jsonPath("$.quota[?(@.provider == 'KASI')].remaining").value(hasItem(95)))
+                .andExpect(jsonPath("$.volumes.measured_at").isNotEmpty())
                 .andExpect(jsonPath("$.jobs[?(@.job == 'road_travel_time')].cron").value(hasItem("*/10 * * * *")))
                 .andExpect(jsonPath("$.quota[?(@.provider == 'AIRKOREA')].limit").value(hasItem(450)))
                 .andExpect(jsonPath("$.failures[0].job").value("road_travel_time"))
