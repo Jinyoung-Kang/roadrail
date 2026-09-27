@@ -58,10 +58,10 @@ public final class RailRouter {
         Map<String, Long> arrival = new HashMap<>();
         Map<String, Connection> tripEntry = new HashMap<>();
         Map<String, Connection[]> via = new HashMap<>(); // 역 → {탄 연결, 내린 연결}
-        Set<String> originSet = new HashSet<>();
+        Map<String, Long> originReady = new HashMap<>(); // 출발 후보역 → 그 역에 갈 수 있는 가장 이른 시각
         for (Origin o : origins) {
             canBoard.merge(o.stn(), o.ready(), Math::min);
-            originSet.add(o.stn());
+            originReady.merge(o.stn(), o.ready(), Math::min);
         }
         Map<String, Long> egress = new HashMap<>();
         for (Dest d : dests) egress.merge(d.stn(), d.egressSec(), Math::min);
@@ -98,10 +98,17 @@ public final class RailRouter {
             if (v == null) break;
             legs.addFirst(new Leg(v[0].trip(), v[0].from(), v[1].to(), v[0].dep(), v[1].arr()));
             stn = v[0].from();
-            if (originSet.contains(stn)) break;
+            // 출발 후보역이라도 그 역에 갈 수 있는 시각이 이 열차 출발보다 늦으면 거기서 탄 것이 아니다
+            // (앞 열차로 도착해 갈아탄 것) → 도착 경로를 계속 거슬러 올라간다
+            if (boardable(originReady, stn, v[0].dep())) break;
         }
-        if (legs.isEmpty() || !originSet.contains(legs.getFirst().from())) return Optional.empty();
+        if (legs.isEmpty() || !boardable(originReady, legs.getFirst().from(), legs.getFirst().dep())) return Optional.empty();
         return Optional.of(new Journey(List.copyOf(legs), legs.getFirst().from(), bestStn, arrival.get(bestStn), best));
+    }
+
+    private static boolean boardable(Map<String, Long> originReady, String stn, long dep) {
+        Long ready = originReady.get(stn);
+        return ready != null && ready <= dep;
     }
 
     /** 첫 여정 이후 출발하는 다음 여정들 (출발 시각이 겹치지 않게) */
