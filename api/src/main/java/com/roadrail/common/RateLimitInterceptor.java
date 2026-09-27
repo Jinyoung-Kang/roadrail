@@ -22,7 +22,6 @@ import java.util.Map;
  * 클라이언트 IP: 요청이 믿을 수 있는 프록시(루프백 · 사설망 = 같은 compose 네트워크의 Next.js)에서 왔으면
  * X-Forwarded-For 의 **맨 오른쪽** 값(그 프록시가 직접 본 주소)을 쓴다. 클라이언트가 넣은 왼쪽 값은 믿지 않는다.
  * Redis 를 쓸 수 없으면 막지 않는다(fail-open) — 가용성이 우선, 외부 호출은 QuotaGuard 가 별도로 지킨다.
- * 한도를 통과한 요청은 클라이언트 주소를 ClientContext 에 넣어 외부 예산을 클라이언트별 몫으로 나눈다(요청이 끝나면 지움).
  */
 @Component
 public class RateLimitInterceptor implements HandlerInterceptor {
@@ -52,31 +51,20 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest req, HttpServletResponse res, Object handler) {
-        String client = clientIp(req);
         String bucket = bucket(req.getRequestURI());
         int limit = bucket == null || props.rateLimit() == null ? 0 : props.rateLimit().getOrDefault(bucket, 0);
-        if (limit > 0) checkLimit(bucket, client, limit, res);
-        ClientContext.set(client);  // 이 요청이 부르는 외부 API 는 이 클라이언트의 몫으로 센다 (QuotaGuard)
-        return true;
-    }
-
-    @Override
-    public void afterCompletion(HttpServletRequest req, HttpServletResponse res, Object handler, Exception ex) {
-        ClientContext.clear();
-    }
-
-    private void checkLimit(String bucket, String client, int limit, HttpServletResponse res) {
+        if (limit <= 0) return true;
         long minute = System.currentTimeMillis() / 60_000;
         Long n;
         try {
-            n = redis.execute(INCR, List.of("rl:" + bucket + ":" + client + ":" + minute));
+            n = redis.execute(INCR, List.of("rl:" + bucket + ":" + clientIp(req) + ":" + minute));
         } catch (RuntimeException e) {
             long now = System.currentTimeMillis();
             if (now - lastWarn > 60_000) {
                 lastWarn = now;
                 log.warn("요청 한도 확인 실패 — 막지 않고 통과: {}", e.getClass().getSimpleName());
             }
-            return;
+            return true;
         }
         long count = n == null ? 0 : n;
         res.setHeader("X-RateLimit-Limit", String.valueOf(limit));
@@ -86,6 +74,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             res.setHeader("Retry-After", String.valueOf(retry));
             throw new ApiException(ErrorCode.RATE_LIMITED, "요청이 너무 많습니다. " + retry + "초 뒤 다시 시도하세요 (분당 " + limit + "회).");
         }
+        return true;
     }
 
     static String bucket(String uri) {
