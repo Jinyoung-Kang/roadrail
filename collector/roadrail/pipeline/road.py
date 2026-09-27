@@ -57,12 +57,13 @@ def unique_segments(chains: dict[tuple[str, str], list[Segment]]) -> dict[tuple[
     return {s.key: s for segs in chains.values() for s in segs}
 
 
-async def fetch_segment(ctx: JobContext, seg: Segment, full: bool) -> tuple[list[tuple], int]:
-    """꼬리(또는 전체) 페이지를 받아 (저장할 행, 새 꼬리 위치)를 돌려준다.
-    꼬리 위치는 여기서 기록하지 않는다 — 행을 저장한 뒤에만 옮겨야 실패한 수집의 슬롯을 다음 수집이 건너뛰지 않는다."""
+async def fetch_segment(ctx: JobContext, seg: Segment, full: bool) -> tuple[list[tuple], str, int]:
+    """꼬리(또는 전체) 페이지를 받아 (저장할 행, 꼬리 키, 새 꼬리 위치)를 돌려준다.
+    꼬리 위치는 여기서 기록하지 않는다 — 행을 저장한 뒤에만 옮겨야 실패한 수집의 슬롯을 다음 수집이 건너뛰지 않는다.
+    키는 읽은 날짜의 것을 그대로 돌려준다 — 수집이 자정을 넘겨도 D일 위치가 D+1 키에 들어가지 않게."""
     s = settings()
-    today = now_kst().strftime("%Y%m%d")
-    seen = 0 if full else int(await rds.client().get(rds.tail_key(seg.start, seg.end, today)) or 0)
+    key = rds.tail_key(seg.start, seg.end, now_kst().strftime("%Y%m%d"))
+    seen = 0 if full else int(await rds.client().get(key) or 0)
     page = seen // ex.PAGE + 1
     out: list[tuple] = []
     while True:
@@ -77,7 +78,7 @@ async def fetch_segment(ctx: JobContext, seg: Segment, full: bool) -> tuple[list
         if not more:
             break
         page += 1
-    return out, seen
+    return out, key, seen
 
 
 async def collect_travel_time(ctx: JobContext, full: bool = False, only: set[tuple[str, str]] | None = None) -> int:
@@ -89,7 +90,6 @@ async def collect_travel_time(ctx: JobContext, full: bool = False, only: set[tup
     rows: list[tuple] = []
     tails: dict[str, int] = {}
     failed, unexpected = 0, None
-    today = now_kst().strftime("%Y%m%d")
     for seg, res in zip(segs.values(), results, strict=True):
         if isinstance(res, BaseException):
             failed += 1
@@ -97,9 +97,9 @@ async def collect_travel_time(ctx: JobContext, full: bool = False, only: set[tup
             if not isinstance(res, ProviderError):
                 unexpected = unexpected or res  # 받은 구간을 저장한 뒤에 다시 던진다
             continue
-        seg_rows, seen = res
+        seg_rows, key, seen = res
         rows.extend(seg_rows)
-        tails[rds.tail_key(seg.start, seg.end, today)] = seen
+        tails[key] = seen
     await db.executemany(SQL_UPSERT_TT, rows)
     ctx.rows += len(rows)
     # 저장이 끝난 뒤에만 꼬리 위치를 옮긴다 (BUG-05)

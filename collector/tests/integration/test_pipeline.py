@@ -135,6 +135,26 @@ async def test_tail_cursor_advances_only_for_saved_rows(seeded):
         assert (tail is not None) == (seg in saved), seg  # 저장 안 된 구간은 다음 수집이 처음부터
 
 
+async def test_tail_cursor_is_saved_under_the_day_it_was_read(seeded, monkeypatch):
+    # 수집이 자정을 넘기면 D일에 읽은 꼬리 위치를 D+1 키에 쓰면 안 된다 — 다음 날 수집이 3페이지부터 시작해
+    # 00시~15시 슬롯을 건너뛴다(셀프 리뷰로 찾은 회귀: 읽기 · 쓰기가 now_kst 를 따로 불렀다)
+    real_today = now_kst()
+    day = real_today.strftime("%Y%m%d")
+    before = real_today.replace(hour=23, minute=59, second=50, microsecond=0)
+    after = before + dt.timedelta(seconds=20)          # 다음 날 00:00:10
+    calls = {"n": 0}
+
+    def clock():
+        calls["n"] += 1
+        return before if calls["n"] <= 3 else after     # 구간 3개를 읽는 동안은 D일, 그 뒤는 D+1
+
+    monkeypatch.setattr(road, "now_kst", clock)
+    await road.collect_travel_time(ctx_with(fake_ex(day)))
+    for seg in (("101", "103"), ("103", "528"), ("528", "101")):
+        assert await rds.client().get(rds.tail_key(*seg, day)) == "5", seg
+        assert await rds.client().get(rds.tail_key(*seg, after.strftime("%Y%m%d"))) is None, seg
+
+
 async def test_missing_slot_is_recorded_then_backfilled(seeded):
     today = now_kst().strftime("%Y%m%d")
     # DN 두 구간 모두 00:10 누락 → 실측 0/2 → 결측
