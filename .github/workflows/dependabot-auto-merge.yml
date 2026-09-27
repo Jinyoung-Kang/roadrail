@@ -1,0 +1,28 @@
+name: dependabot auto-merge
+
+# Dependabot PR 중 minor · patch 만 담은 것은 필수 검사(ci passed)가 통과하면 GitHub 가 병합한다 (ADR-021).
+# 이 워크플로는 자동 병합을 켜기만 한다 — 기다림과 병합은 저장소 설정(Allow auto-merge · main 브랜치 보호)이 맡는다.
+on: pull_request
+
+permissions: {}
+
+jobs:
+  auto-merge:
+    name: dependabot auto-merge (minor · patch)
+    # Dependabot 이 연 PR 을 Dependabot 이 올렸을 때만 — 쓰기 권한 토큰은 이 경우에만 받는다
+    if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # 쓰기 토큰을 쥐는 단계라 태그 대신 커밋 SHA 로 고정 (Dependabot 이 SHA 와 주석을 함께 올린다)
+      - id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+      # update-type 은 PR 안에서 가장 큰 변경 — 묶음에 메이저가 하나라도 있으면 사람이 병합한다
+      - name: minor · patch 면 자동 병합 켜기
+        if: steps.meta.outputs.update-type == 'version-update:semver-minor' || steps.meta.outputs.update-type == 'version-update:semver-patch'
+        run: gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ github.token }}
