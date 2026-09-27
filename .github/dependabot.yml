@@ -1,10 +1,12 @@
 # 의존성 업데이트 — 매주. 버전은 모두 고정해 둔다.
 #   · minor · patch 는 생태계마다 PR 하나로 묶고 (예전: 한 번에 PR 19개), CI 필수 검사(ci passed)가 통과하면 자동 병합한다
 #     (workflows/dependabot-auto-merge.yml · ADR-021)
-#   · 메이저는 따로 PR — 이전 작업이 필요하므로 사람이 CI 와 함께 검토 (Next · React · Tailwind · TypeScript · pandas …).
+#   · 메이저는 따로 PR — 이전 작업이 필요하므로 사람이 CI 와 함께 검토 (Next · Tailwind · TypeScript · pandas …).
 #     actions 묶음은 메이저도 같은 PR 에 들어오므로 메이저가 섞이면 자동 병합하지 않는다
 #   · 런타임에 맞춰 일부러 고정한 것은 올리지 않는다 — 런타임을 올릴 때 함께 바꾼다:
-#     Python 3.11(pyproject requires-python <3.12) · Node 22 LTS(@types/node 도 같이) · JDK 21(Gradle 툴체인과 함께) · React 18(react-is 도 같이)
+#     Python 3.11(pyproject requires-python <3.12) · Node 22 LTS(@types/node 도 같이) · JDK 21(Gradle 툴체인과 함께)
+#     · React 18(react-dom · react-is · 타입 정의도 같이) — 19 는 react-dom 이 커져 페이지마다 첫 로드 JS 가 gzip 23.5KB 늘고
+#       Pages Router 에서 쓸 기능이 없다(실측, ADR-022)
 version: 2
 updates:
   - package-ecosystem: npm
@@ -18,7 +20,9 @@ updates:
     ignore:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
-      - dependency-name: react-is
+      - dependency-name: "react*"          # react · react-dom · react-is
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react*"   # @types/react · @types/react-dom
         update-types: ["version-update:semver-major"]
   - package-ecosystem: pip
     directory: /collector

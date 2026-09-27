@@ -144,7 +144,7 @@ export default function RailPage() {
         </div>
         <ErrorBox error={trains.error} />
         {trains.data && trains.data.trains.length > 0 && trains.data.trains.filter((t) => t.arrDelayMin == null).length >= trains.data.trains.length / 2 && (
-          <p className="mb-4 rounded bg-mist px-4 py-3 text-center text-xs text-muted">
+          <p className="mb-4 rounded-sm bg-mist px-4 py-3 text-center text-xs text-muted">
             이 날짜는 TAGO 열차 시간표가 제공되지 않아 중간역의 계획 시각을 알 수 없습니다 — 계획·지연은 '—' 로 두고 추정하지 않습니다.
           </p>
         )}

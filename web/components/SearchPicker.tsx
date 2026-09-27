@@ -48,10 +48,10 @@ export default function SearchPicker<T>({ label, placeholder, value, onPick, sea
 
   return (
     <div ref={box} className={`relative ${className}`}>
-      <label className="flex h-11 items-center gap-2 rounded bg-white/85 px-3 ring-1 ring-black/10 backdrop-blur focus-within:ring-2 focus-within:ring-accent">
+      <label className="flex h-11 items-center gap-2 rounded-sm bg-white/85 px-3 ring-1 ring-black/10 backdrop-blur-sm focus-within:ring-2 focus-within:ring-accent">
         <span className="shrink-0 text-[12px] font-medium text-muted">{label}</span>
         <input role="combobox" aria-expanded={open} aria-controls={listId} aria-label={label}
-               className="w-full min-w-0 bg-transparent text-[15px] font-medium text-ink placeholder:text-faint focus:outline-none"
+               className="w-full min-w-0 bg-transparent text-[15px] font-medium text-ink placeholder:text-faint focus:outline-hidden"
                placeholder={value || placeholder} value={q}
                onFocus={() => setOpen(true)} onChange={(e) => { setQ(e.target.value); setOpen(true); }}
                onKeyDown={(e) => {
@@ -63,7 +63,7 @@ export default function SearchPicker<T>({ label, placeholder, value, onPick, sea
         {loading && <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-line border-t-ink" aria-hidden />}
       </label>
       {open && (items.length > 0 || q.trim()) && (
-        <ul id={listId} role="listbox" className="absolute left-0 right-0 z-50 mt-1 max-h-[min(22rem,60vh)] overflow-auto overscroll-contain rounded bg-white py-1 text-left shadow-xl ring-1 ring-black/10">
+        <ul id={listId} role="listbox" className="absolute left-0 right-0 z-50 mt-1 max-h-[min(22rem,60vh)] overflow-auto overscroll-contain rounded-sm bg-white py-1 text-left shadow-xl ring-1 ring-black/10">
           {items.length === 0 && !loading && <li className="px-4 py-3 text-sm text-muted">검색 결과가 없습니다</li>}
           {items.map((it, i) => {
             const r = render(it);
@@ -75,7 +75,7 @@ export default function SearchPicker<T>({ label, placeholder, value, onPick, sea
                   <span className="block truncate text-sm font-medium text-ink">{r.title}</span>
                   {r.sub && <span className="block truncate text-xs text-muted">{r.sub}</span>}
                 </span>
-                {r.badge && <span className="shrink-0 rounded bg-cloud px-2 py-0.5 text-[11px] text-ink2">{r.badge}</span>}
+                {r.badge && <span className="shrink-0 rounded-sm bg-cloud px-2 py-0.5 text-[11px] text-ink2">{r.badge}</span>}
               </li>
             );
           })}

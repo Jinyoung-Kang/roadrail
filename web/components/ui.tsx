@@ -17,7 +17,8 @@ export function Spec({ value, unit, label, tone = "ink" }: { value: string; unit
 }
 
 export function SpecStrip({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-wrap items-start justify-center gap-y-6 divide-x divide-black/10">{children}</div>;
+  // 구분선은 v3 의 divide-x 처럼 뒤 항목의 왼쪽에 — v4 의 divide-x(앞 항목의 오른쪽)는 모바일에서 줄바꿈되면 첫 줄 끝에 선이 남는다
+  return <div className="flex flex-wrap items-start justify-center gap-y-6 [&>*+*]:border-l [&>*+*]:border-black/10">{children}</div>;
 }
 
 export function Section({ id, eyebrow, title, desc, children, gray = false, wide = false }: {
@@ -42,7 +43,7 @@ export function Section({ id, eyebrow, title, desc, children, gray = false, wide
 /** 페이지 상단 소형 히어로 (분석 화면용) */
 export function PageHero({ eyebrow, title, sub, children }: { eyebrow?: string; title: string; sub?: React.ReactNode; children?: React.ReactNode }) {
   return (
-    <div className="relative bg-gradient-to-b from-[#eef1f4] to-white">
+    <div className="relative bg-linear-to-b from-[#eef1f4] to-white">
       <div className="mx-auto max-w-[1200px] px-4 sm:px-8 pt-16 sm:pt-20 pb-12 text-center">
         {eyebrow && <p className="eyebrow mb-3">{eyebrow}</p>}
         <h1 className="text-[34px] sm:text-[44px] font-medium tracking-tight text-ink">{title}</h1>
@@ -75,7 +76,7 @@ export function Select({ value, onChange, options, label }: {
     <label className="relative inline-flex items-center">
       <span className="sr-only">{label}</span>
       <select value={value} onChange={(e) => onChange(e.target.value)}
-              className="h-8 appearance-none rounded bg-white/70 pl-3 pr-8 text-[13px] font-medium text-ink ring-1 ring-black/5 backdrop-blur hover:bg-white focus:outline-none focus:ring-2 focus:ring-accent">
+              className="h-8 appearance-none rounded-sm bg-white/70 pl-3 pr-8 text-[13px] font-medium text-ink ring-1 ring-black/5 backdrop-blur-sm hover:bg-white focus:outline-hidden focus:ring-2 focus:ring-accent">
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
       <span className="pointer-events-none absolute right-2.5 text-[10px] text-muted">▼</span>
@@ -118,14 +119,14 @@ export function Loading({ label = "불러오는 중" }: { label?: string }) {
 export function ErrorBox({ error }: { error: Error | null }) {
   if (!error) return null;
   return (
-    <div className="rounded bg-[#fdf1f1] px-4 py-3 text-sm text-ink2" role="alert">
+    <div className="rounded-sm bg-[#fdf1f1] px-4 py-3 text-sm text-ink2" role="alert">
       <span className="text-crit mr-2" aria-hidden>✕</span>{error.message}
     </div>
   );
 }
 
 export function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="rounded bg-cloud px-4 py-10 text-center text-sm text-muted">{children}</div>;
+  return <div className="rounded-sm bg-cloud px-4 py-10 text-center text-sm text-muted">{children}</div>;
 }
 
 export function Note({ children }: { children: React.ReactNode }) {
@@ -145,7 +146,7 @@ export function TrainName({ trnNo, meta, grade, compact = false }: {
   return (
     <span className="block">
       <span className="flex items-center gap-2 whitespace-nowrap">
-        {grade && <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${hs ? "bg-rail/10 text-[#9c3d12]" : "bg-cloud text-ink2"}`}
+        {grade && <span className={`rounded-sm px-1.5 py-0.5 text-[11px] font-medium ${hs ? "bg-rail/10 text-[#9c3d12]" : "bg-cloud text-ink2"}`}
                         title="TAGO 열차 시간표의 그날 배정 차종">{grade}</span>}
         <span className="font-medium tabular">{grade ? no : `${no}열차`}</span>
       </span>

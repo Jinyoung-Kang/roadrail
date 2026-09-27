@@ -70,13 +70,13 @@ export default function Home() {
   return (
     <Layout title="지금 차로 갈까, 기차로 갈까" overlay>
       {/* ---------- 히어로: 지도 배경 + 출발지 → 도착지 + 스펙 + 두 버튼 */}
-      <section className="relative z-10 h-[100svh] min-h-[720px] bg-[#eef1f4]">
+      <section className="relative z-10 h-svh min-h-[720px] bg-[#eef1f4]">
         <RouteMap layers={layers} className="absolute inset-0 h-full w-full" padBottom={120} label="경로 지도" />
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-[50%] bg-gradient-to-b from-white via-white/85 to-transparent" />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[44%] bg-gradient-to-t from-white via-white/90 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[50%] bg-linear-to-b from-white via-white/85 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[44%] bg-linear-to-t from-white via-white/90 to-transparent" />
 
         <div className="relative mx-auto max-w-[1200px] px-4 pt-[13vh] text-center">
-          <a href="#about" className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1 text-[12px] text-ink2 ring-1 ring-black/5 backdrop-blur hover:bg-white">
+          <a href="#about" className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1 text-[12px] text-ink2 ring-1 ring-black/5 backdrop-blur-sm hover:bg-white">
             <b className="font-medium text-ink">로드레일</b> · 공공데이터로 비교하는 자동차 vs 기차 <span className="text-muted">소개 ↓</span>
           </a>
           <p className="eyebrow">{hm(t?.departAt)} 출발 기준 · 직선 {num(t?.distanceKm, 0)}km</p>
@@ -134,7 +134,7 @@ export default function Home() {
 
       <section id="map" className="relative h-[560px] scroll-mt-16 bg-cloud">
         <RouteMap layers={mapLayers} interactive focus={focus} className="absolute inset-0 h-full w-full" label="경로 지도 (확대·이동 가능)" />
-        <div className="pointer-events-none absolute left-4 top-4 sm:left-8 sm:top-8 rounded bg-white/95 px-4 py-3 shadow-tile">
+        <div className="pointer-events-none absolute left-4 top-4 sm:left-8 sm:top-8 rounded-sm bg-white/95 px-4 py-3 shadow-tile">
           <p className="text-sm font-medium">{from?.name} → {to?.name}</p>
           <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-[3px] w-5 bg-road" />자동차 경로 (카카오) {t?.car.distanceM ? `${num(t.car.distanceM / 1000, 0)}km` : ""}</p>
           <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-[3px] w-5 bg-rail" />기차 선로 {t?.rail?.journeys[0] ? t.rail.journeys[0].legs.map((l, i) => (i === 0 ? `${l.fromName}→${l.toName}` : `→${l.toName}`)).join("") : "없음"}</p>
@@ -143,12 +143,12 @@ export default function Home() {
           )}
           {located.length > 0 && (
             <p className="mt-1 flex items-center gap-2 text-xs text-muted">
-              <span className="inline-block h-0 w-0 border-x-[6px] border-b-[10px] border-x-transparent" style={{ borderBottomColor: WARN }} />
+              <span className="inline-block h-0 w-0 border-x-[6px] border-b-10 border-x-transparent" style={{ borderBottomColor: WARN }} />
               돌발 안내 {located.length}건 (도로공사 안내 좌표)
             </p>
           )}
         </div>
-        <p className="pointer-events-none absolute bottom-8 left-2 rounded bg-white/85 px-2 py-0.5 text-[11px] text-muted">선로 © OpenStreetMap contributors (ODbL)</p>
+        <p className="pointer-events-none absolute bottom-8 left-2 rounded-sm bg-white/85 px-2 py-0.5 text-[11px] text-muted">선로 © OpenStreetMap contributors (ODbL)</p>
       </section>
 
       <Section eyebrow="길" title="자주 오가는 길" wide

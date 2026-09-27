@@ -9,7 +9,7 @@ import { C } from "@/lib/palette";
 const SEQ = ["#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7", "#3987e5", "#2a78d6", "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"];
 
 function Box({ children }: { children: React.ReactNode }) {
-  return <div className="rounded bg-white px-3 py-2 text-xs shadow-lg ring-1 ring-black/10">{children}</div>;
+  return <div className="rounded-sm bg-white px-3 py-2 text-xs shadow-lg ring-1 ring-black/10">{children}</div>;
 }
 
 /** 통행시간 추이 — 관측(파랑) · 기준선 p50(회색 점선) · 카카오 ETA(청록 점) · 강수 예보(옅은 음영) */
@@ -92,9 +92,9 @@ export function Heatmap({ baseline }: { baseline: Baseline }) {
       <div className="mt-4 flex flex-wrap items-center justify-between gap-4 text-xs text-muted">
         <div className="flex items-center gap-2">
           <span>{dur(grid.min)}</span>
-          <div className="flex h-2 w-40 overflow-hidden rounded-sm">{SEQ.map((c) => <span key={c} className="flex-1" style={{ background: c }} />)}</div>
+          <div className="flex h-2 w-40 overflow-hidden rounded-xs">{SEQ.map((c) => <span key={c} className="flex-1" style={{ background: c }} />)}</div>
           <span>{dur(grid.max)}</span>
-          <span className="ml-2 inline-block h-3 w-3 rounded-sm bg-cloud ring-1 ring-line" /> 데이터 없음
+          <span className="ml-2 inline-block h-3 w-3 rounded-xs bg-cloud ring-1 ring-line" /> 데이터 없음
         </div>
         <div className="min-h-[18px] tabular text-ink2">
           {hover ? `${hover.dow === 0 ? "전체 요일" : DOW[hover.dow] + "요일"} ${hover.h}시 · p50 ${dur(hover.v)} · 표본 최대 ${hover.n}일` : "칸에 마우스를 올리면 값이 보입니다"}

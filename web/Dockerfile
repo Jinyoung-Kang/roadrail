@@ -1,4 +1,5 @@
-# Next.js 15 (Pages Router, React 18) — standalone 출력
+# Next.js 16 (Pages Router, React 18) — standalone 출력
+# 운영 빌드는 webpack(npm run build = next build --webpack): 16 기본값 Turbopack 은 페이지마다 첫 로드 JS 가 gzip 약 14KB 많다(실측)
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./

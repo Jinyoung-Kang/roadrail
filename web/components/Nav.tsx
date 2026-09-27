@@ -28,7 +28,7 @@ export default function Nav({ overlay = false }: { overlay?: boolean }) {
 
   return (
     <>
-      <header className={`fixed inset-x-0 top-0 z-40 transition-colors duration-300 ${solid ? "bg-white/95 backdrop-blur" : "bg-transparent"}`}>
+      <header className={`fixed inset-x-0 top-0 z-40 transition-colors duration-300 ${solid ? "bg-white/95 backdrop-blur-sm" : "bg-transparent"}`}>
         <div className="mx-auto flex h-14 max-w-[1600px] items-center justify-between px-4 sm:px-8">
           <Link href="/" className="text-[15px] font-semibold tracking-brand text-ink" aria-label="RoadRail 홈">
             ROADRAIL
@@ -46,7 +46,7 @@ export default function Nav({ overlay = false }: { overlay?: boolean }) {
       </header>
       {open && (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setOpen(false)} />
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-xs" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-0 h-full w-[300px] bg-white px-6 pt-5 shadow-xl">
             <div className="flex justify-end">
               <button className="nav-link" onClick={() => setOpen(false)} aria-label="닫기">✕</button>
@@ -54,12 +54,12 @@ export default function Nav({ overlay = false }: { overlay?: boolean }) {
             <ul className="mt-4 space-y-1">
               {LINKS.map((l) => (
                 <li key={l.href}>
-                  <Link href={l.href} className={`block rounded px-4 py-3 text-[15px] font-medium hover:bg-black/5 ${active(l) ? "bg-black/5" : ""}`}>
+                  <Link href={l.href} className={`block rounded-sm px-4 py-3 text-[15px] font-medium hover:bg-black/5 ${active(l) ? "bg-black/5" : ""}`}>
                     {l.label}
                   </Link>
                 </li>
               ))}
-              <li><a href="/docs" className="block rounded px-4 py-3 text-[15px] font-medium hover:bg-black/5">API 문서</a></li>
+              <li><a href="/docs" className="block rounded-sm px-4 py-3 text-[15px] font-medium hover:bg-black/5">API 문서</a></li>
             </ul>
           </div>
         </div>

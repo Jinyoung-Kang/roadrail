@@ -1,25 +1,115 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-:root { color-scheme: light; }
-html, body { background: #fff; color: #171a20; }
-body { font-family: "Pretendard Variable", Pretendard, system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
-       -webkit-font-smoothing: antialiased; }
-.tabular { font-variant-numeric: tabular-nums; }
+@theme {
+  --color-ink: #171a20;
+  --color-ink2: #393c41;
+  --color-muted: #5c5e62;
+  --color-faint: #8e8e8e;
+  --color-line: #e2e3e3;
+  --color-cloud: #f4f4f4;
+  --color-mist: #f9f9f9;
+  --color-accent: #3e6ae1;
+  --color-accentHover: #3457b1;
+  --color-road: #2a78d6;
+  --color-rail: #eb6834;
+  --color-aqua: #1baf7a;
+  --color-good: #0ca30c;
+  --color-warn: #fab219;
+  --color-serious: #ec835a;
+  --color-crit: #d03b3b;
 
-@layer components {
-  .btn { @apply inline-flex items-center justify-center h-10 min-w-[200px] sm:min-w-[264px] px-6 rounded text-sm font-medium transition-colors; }
-  .btn-primary { @apply btn bg-accent text-white hover:bg-accentHover; }
-  .btn-secondary { @apply btn bg-cloud text-ink2 hover:bg-[#e8e8e8]; }
-  .btn-ghost { @apply btn bg-white/80 text-ink2 backdrop-blur hover:bg-white; }
-  .nav-link { @apply px-3 py-1.5 rounded text-sm font-medium text-ink transition-colors hover:bg-black/5; }
-  .chip { @apply h-8 px-3 rounded text-[13px] font-medium text-ink2 bg-white/70 backdrop-blur ring-1 ring-black/5 hover:bg-white transition-colors; }
-  .chip-on { @apply bg-ink text-white ring-ink hover:bg-ink; }
-  .tile { @apply rounded bg-white shadow-tile; }
-  .eyebrow { @apply text-[13px] font-medium text-muted tracking-wide; }
-  .th { @apply text-left font-medium text-muted text-xs py-2 px-3 border-b border-line whitespace-nowrap; }
-  .td { @apply py-2.5 px-3 border-b border-line text-sm tabular whitespace-nowrap; }
+  --font-sans:
+    Pretendard Variable, Pretendard, system-ui, -apple-system,
+    Apple SD Gothic Neo, Segoe UI, sans-serif;
+
+  --tracking-brand: 0.32em;
+
+  --shadow-tile: 0 0 0 1px rgb(0 0 0 / 0.06);
+
+  /* 글자 크기의 줄 높이는 v3 처럼 절대값(rem) — v4 기본값은 비율이라 text-sm 안의 작은 글자(text-[11px] 등)가
+     줄 높이를 다시 계산해 배지 · 표 행이 낮아진다(업그레이드 전후 계산된 스타일 비교로 확인) */
+  --text-xs--line-height: 1rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+}
+
+/* v3 와 같게 보이도록 바뀐 v4 기본값을 되돌린다 (업그레이드 가이드의 호환 스타일):
+   테두리 기본색 currentcolor → gray-200 · 버튼 커서 default → pointer · 입력 안내문 색 → v3 gray-400.
+   테두리 호환을 지우려면 색을 지정하지 않은 테두리마다 border-* 색을 붙여야 한다. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: #9ca3af;
+  }
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center h-10 min-w-[200px] sm:min-w-[264px] px-6 rounded-sm text-sm font-medium transition-colors;
+}
+
+@utility btn-primary {
+  @apply btn bg-accent text-white hover:bg-accentHover;
+}
+
+@utility btn-secondary {
+  @apply btn bg-cloud text-ink2 hover:bg-[#e8e8e8];
+}
+
+@utility btn-ghost {
+  @apply btn bg-white/80 text-ink2 backdrop-blur-sm hover:bg-white;
+}
+
+@utility nav-link {
+  @apply px-3 py-1.5 rounded-sm text-sm font-medium text-ink transition-colors hover:bg-black/5;
+}
+
+@utility chip {
+  @apply h-8 px-3 rounded-sm text-[13px] font-medium text-ink2 bg-white/70 backdrop-blur-sm ring-1 ring-black/5 hover:bg-white transition-colors;
+}
+
+@utility chip-on {
+  @apply bg-ink text-white ring-ink hover:bg-ink;
+}
+
+@utility tile {
+  @apply rounded-sm bg-white shadow-tile;
+}
+
+@utility eyebrow {
+  @apply text-[13px] font-medium text-muted tracking-wide;
+}
+
+@utility th {
+  @apply text-left font-medium text-muted text-xs py-2 px-3 border-b border-line whitespace-nowrap;
+}
+
+@utility td {
+  @apply py-2.5 px-3 border-b border-line text-sm tabular-nums whitespace-nowrap;
+}
+
+/* v3 에서 층 밖(가장 우선)에 있던 기본 규칙 — v4 는 CSS 층을 쓰므로 프리플라이트(base)보다 뒤인 utilities 층에 둔다 */
+@layer utilities {
+  :root { color-scheme: light; }
+  html, body { background: #fff; color: #171a20; }
+  body { font-family: "Pretendard Variable", Pretendard, system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+         -webkit-font-smoothing: antialiased; }
+  .tabular { font-variant-numeric: tabular-nums; }
 }
 
 /* 차트 공통 — 보조선은 옅게 */

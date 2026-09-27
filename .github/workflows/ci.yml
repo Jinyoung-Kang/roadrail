@@ -61,7 +61,7 @@ jobs:
         with: { name: api-test-report, path: api/build/reports/tests }
 
   web:
-    name: web (Next.js 15 · tsc · build)
+    name: web (Next.js 16 · tsc · build)
     runs-on: ubuntu-latest
     defaults:
       run:

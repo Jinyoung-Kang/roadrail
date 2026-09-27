@@ -30,7 +30,7 @@ function TypeBar({ r }: { r: RouteSummary }) {
   if (!r.byType.length) return null;
   return (
     <div>
-      <div className="flex h-3 w-full gap-[2px] overflow-hidden rounded-sm" role="img"
+      <div className="flex h-3 w-full gap-[2px] overflow-hidden rounded-xs" role="img"
            aria-label={r.byType.map((b) => `${b.type} ${pct(b.share)}`).join(", ")}>
         {r.byType.map((b) => <span key={b.type} style={{ width: `${b.share * 100}%`, background: TYPE_COLOR[b.type] }} title={`${b.type} ${pct(b.share)}`} />)}
       </div>
@@ -119,7 +119,7 @@ export default function RoadIndex() {
 
           <section className="relative mt-10 h-[520px] bg-cloud">
             <RouteMap layers={layers} interactive className="absolute inset-0 h-full w-full" label="경로 비교 지도" />
-            <div className="pointer-events-none absolute left-4 top-4 sm:left-8 sm:top-8 rounded bg-white/95 px-4 py-3 shadow-tile">
+            <div className="pointer-events-none absolute left-4 top-4 sm:left-8 sm:top-8 rounded-sm bg-white/95 px-4 py-3 shadow-tile">
               <p className="flex items-center gap-2 text-xs text-muted"><span className="inline-block h-[3px] w-5 bg-road" />추천 경로 {dur(rec?.durationSec)}</p>
               <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-0 w-5 border-t-[3px] border-dashed border-faint" />고속도로 회피 {dur(avo?.durationSec)}</p>
             </div>
