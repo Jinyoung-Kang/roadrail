@@ -5,20 +5,20 @@ description = "RoadRail collector + analytics (Python 3.11 · asyncio · httpx �
 requires-python = ">=3.11,<3.12"
 dependencies = [
   "httpx==0.28.1",
-  "psycopg[binary,pool]==3.2.10",
+  "psycopg[binary,pool]==3.3.6",
   "redis==6.4.0",
-  "APScheduler==3.11.0",
+  "APScheduler==3.11.3",
   "pandas==2.3.2",
-  "numpy==2.3.3",
-  "PyYAML==6.0.2",
-  "pydantic-settings==2.10.1",
+  "numpy==2.4.6",
+  "PyYAML==6.0.3",
+  "pydantic-settings==2.15.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest==9.0.3",       # 8.4.2 는 PYSEC-2026-1845 (pip-audit)
+  "pytest==9.1.1",       # 8.4.2 는 PYSEC-2026-1845 (pip-audit)
   "pytest-asyncio==1.4.0",
-  "ruff==0.13.1",
+  "ruff==0.16.8",
   "pip-audit==2.10.1",
 ]
 
