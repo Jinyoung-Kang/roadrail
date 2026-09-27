@@ -225,6 +225,19 @@ class ApiIT extends IntegrationTest {
     }
 
     @Test
+    void tripCacheKeyIncludesStationPinAndName() throws Exception {
+        // 같은 좌표라도 역 지정 · 이름이 다르면 다른 판단 카드 — 예전 키는 좌표만 봐서 앞 요청의 결과를 돌려주었다 (BUG-04)
+        mvc.perform(get("/api/v1/trip").param("fromLat", "37.55").param("fromLon", "126.97").param("fromName", "서울역")
+                        .param("fromStation", "S1").param("toLat", "36.33").param("toLon", "127.43").param("toName", "대전역"))
+                .andExpect(status().isOk()).andExpect(header().string("X-Cache", "MISS"));
+        var plain = get("/api/v1/trip").param("fromLat", "37.55").param("fromLon", "126.97").param("fromName", "서울 시내")
+                .param("toLat", "36.33").param("toLon", "127.43").param("toName", "대전역");
+        mvc.perform(plain).andExpect(status().isOk()).andExpect(header().string("X-Cache", "MISS"))
+                .andExpect(jsonPath("$.from.name").value("서울 시내")).andExpect(jsonPath("$.from.stationCode").isEmpty());
+        mvc.perform(plain).andExpect(header().string("X-Cache", "HIT"));
+    }
+
+    @Test
     void nonFiniteCoordinatesAreRejected() throws Exception {
         // NaN 은 모든 비교가 거짓이라 '범위 밖(<, >)' 조건을 통과했다 → 200 · 0.0km 판단 · 외부 API 호출 (SEC-03)
         for (String bad : new String[]{"NaN", "Infinity", "-Infinity"}) {
