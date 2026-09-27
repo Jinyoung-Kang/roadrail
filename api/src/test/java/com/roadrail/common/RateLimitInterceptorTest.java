@@ -1,7 +1,11 @@
 package com.roadrail.common;
 
+import com.roadrail.config.AppProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -38,5 +42,17 @@ class RateLimitInterceptorTest {
         assertThat(RateLimitInterceptor.trustedProxy("::1")).isTrue();
         assertThat(RateLimitInterceptor.trustedProxy("8.8.8.8")).isFalse();
         assertThat(RateLimitInterceptor.trustedProxy("evil.example.com")).isFalse();  // 이름은 조회하지 않고 거부
+    }
+
+    @Test
+    void exposesTheClientToExternalBudgetOnlyDuringTheRequest() {
+        // 한도가 꺼진 경로(Redis 불필요)에서도 요청 동안 클라이언트가 보이고, 끝나면 지워진다 (QuotaGuard 의 클라이언트 몫)
+        var props = new AppProperties(null, null, null, null, 5, 10, 60, 20, 90, 60, 360, Map.of(), Map.of(), 20);
+        var interceptor = new RateLimitInterceptor(null, props);
+        var request = req("172.18.0.5", "203.0.113.9");
+        assertThat(interceptor.preHandle(request, new MockHttpServletResponse(), null)).isTrue();
+        assertThat(ClientContext.current()).isEqualTo("203.0.113.9");
+        interceptor.afterCompletion(request, new MockHttpServletResponse(), null, null);
+        assertThat(ClientContext.current()).isNull();
     }
 }

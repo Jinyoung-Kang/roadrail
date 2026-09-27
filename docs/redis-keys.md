@@ -2,8 +2,9 @@
 
 | 키 | 형식 | 쓰는 쪽 | 읽는 쪽 | TTL |
 |---|---|---|---|---|
-| `quota:{P}:{yyyymmdd}` | 정수 — 예약 누계(소비 + 미사용 예약) | collector (Lua 원자 예약·환불) · api `QuotaGuard` (같은 Lua) | api (남은 예산 → 429) | 48h |
+| `quota:{P}:{yyyymmdd}` | 정수 — 예약 누계(소비 + 미사용 예약) | collector (Lua 원자 예약·환불) · api `QuotaGuard` (같은 키, 1건 예약 + 사용 + 클라이언트 몫 Lua) | api (남은 예산 → 429) | 48h |
 | `quota:used:{P}:{yyyymmdd}` | 정수 — 실제 호출 수 | collector · api | api (수집 상태) | 48h |
+| `quota:client:{P}:{yyyymmdd}:{ip}` | 정수 — 클라이언트 한 곳이 오늘 쓴 외부 호출 수 (일일 한도의 `client-share-pct` %, 기본 20% 까지) — 예약 · 사용 · 몫을 Lua 한 번으로 | api `QuotaGuard` | api | 48h |
 | `rr:lock:{job}` | 실행 토큰 | collector (SET NX EX) | api (→ 409 JOB_RUNNING) | 작업별 (15분~2시간) |
 | `rr:commands` | Stream `{type: run_job \| backfill, …}` | api (XADD) | collector (consumer group `collector`, 처리 후 XACK) | — |
 | `rr:collector:heartbeat` | ISO 시각 | collector (30초마다) | api `/health` | 90s |
