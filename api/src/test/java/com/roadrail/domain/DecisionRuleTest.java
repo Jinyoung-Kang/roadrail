@@ -62,4 +62,22 @@ class DecisionRuleTest {
                 new DecisionRule.Params(10, 60, 20));
         org.assertj.core.api.Assertions.assertThat(r.warnings()).containsExactly("출발일이 공휴일(추석) — 도로 기준선은 공휴일을 뺀 평소 값입니다");
     }
+
+    @Test
+    void precipitationTypeWarnsEvenBelowThePopThreshold() {
+        // 초단기예보가 '비'면 강수확률(단기예보 30%)이 기준보다 낮아도 경고 — 강수확률 경고는 겹쳐 쓰지 않는다
+        var car = new DecisionRule.Car(60 * 60, "M1", null, 0, "");
+        var env = new DecisionRule.Env(30, 80, null, null, null, "비", "눈날림");
+        var r = DecisionRule.decide(car, train(5, 60, 1.0), env, 0, P);
+        assertThat(r.warnings()).containsExactly("출발 시각 출발지 비 · 도착지 눈날림 — 도로 지연 가능성");
+    }
+
+    @Test
+    void noPrecipitationTypeFallsBackToPop() {
+        var car = new DecisionRule.Car(60 * 60, "M1", null, 0, "");
+        var r = DecisionRule.decide(car, train(5, 60, 1.0), new DecisionRule.Env(70, 10, null, null, null, "없음", null), 0, P);
+        assertThat(r.warnings()).containsExactly("강수확률 70% — 도로 지연 가능성");
+        assertThat(DecisionRule.wetText("없음", " ")).isNull();
+        assertThat(DecisionRule.wetText(null, "소나기")).isEqualTo("도착지 소나기");
+    }
 }

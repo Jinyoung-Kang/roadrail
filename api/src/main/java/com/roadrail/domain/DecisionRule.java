@@ -11,7 +11,8 @@ import java.util.Locale;
  * 자동차 = 도로 예측(출발 시점, 기본 M1) + IC 접근 시간(기본 0)
  * 기차   = 역 대기(출발 + 역 접근 이후 첫 열차까지) + 역 접근 시간 + 계획 소요 + 최근 30일 평균 도착 지연
  * |차이| &lt; 10분 → "비슷함", 아니면 빠른 쪽
- * 경고: 강수확률 ≥ 60%, 경로 주변(자동차 경로 2km 안 · 수집 중인 길) 돌발 1건 이상, 초미세먼지 나쁨(등급 3) 이상
+ * 경고: 출발 시각 강수(강수형태 비 · 눈 등 — 초단기예보 · 실황이 있으면 그 값) 또는 강수확률 ≥ 60%,
+ *       경로 주변(자동차 경로 2km 안 · 수집 중인 길) 돌발 1건 이상, 초미세먼지 나쁨(등급 3) 이상
  * </pre>
  */
 public final class DecisionRule {
@@ -29,10 +30,15 @@ public final class DecisionRule {
         }
     }
 
-    /** holiday = 출발일이 공휴일이면 이름 (한국천문연구원 특일 정보) */
-    public record Env(Integer popOrigin, Integer popDest, Integer pm25GradeOrigin, Integer pm25GradeDest, String holiday) {
+    /** holiday = 출발일이 공휴일이면 이름 (한국천문연구원 특일 정보) · pty = 출발 시각 강수형태(없음 · 비 · 눈 …) */
+    public record Env(Integer popOrigin, Integer popDest, Integer pm25GradeOrigin, Integer pm25GradeDest, String holiday,
+                      String ptyOrigin, String ptyDest) {
         public Env(Integer popOrigin, Integer popDest, Integer pm25GradeOrigin, Integer pm25GradeDest) {
-            this(popOrigin, popDest, pm25GradeOrigin, pm25GradeDest, null);
+            this(popOrigin, popDest, pm25GradeOrigin, pm25GradeDest, null, null, null);
+        }
+
+        public Env(Integer popOrigin, Integer popDest, Integer pm25GradeOrigin, Integer pm25GradeDest, String holiday) {
+            this(popOrigin, popDest, pm25GradeOrigin, pm25GradeDest, holiday, null, null);
         }
     }
 
@@ -42,6 +48,18 @@ public final class DecisionRule {
                          Integer diffMin, List<String> reasons, List<String> warnings) {}
 
     private DecisionRule() {}
+
+    /** 비 · 눈이 오는 쪽만: "출발지 비 · 도착지 눈" (둘 다 아니면 null) */
+    static String wetText(String ptyOrigin, String ptyDest) {
+        List<String> parts = new ArrayList<>();
+        if (wet(ptyOrigin)) parts.add("출발지 " + ptyOrigin);
+        if (wet(ptyDest)) parts.add("도착지 " + ptyDest);
+        return parts.isEmpty() ? null : String.join(" · ", parts);
+    }
+
+    private static boolean wet(String pty) {
+        return pty != null && !pty.isBlank() && !"없음".equals(pty);
+    }
 
     public static Result decide(Car car, Train train, Env env, int incidentCount, Params p) {
         List<String> reasons = new ArrayList<>();
@@ -76,7 +94,10 @@ public final class DecisionRule {
 
         if (env != null) {
             int popMax = Math.max(nz(env.popOrigin()), nz(env.popDest()));
-            if (popMax >= p.popWarn()) warnings.add("강수확률 " + popMax + "% — 도로 지연 가능성");
+            // 강수형태가 비 · 눈이면 강수확률보다 구체적이다 — 둘 중 하나만 (같은 내용을 두 번 쓰지 않게)
+            String wet = wetText(env.ptyOrigin(), env.ptyDest());
+            if (wet != null) warnings.add("출발 시각 " + wet + " — 도로 지연 가능성");
+            else if (popMax >= p.popWarn()) warnings.add("강수확률 " + popMax + "% — 도로 지연 가능성");
             int gradeMax = Math.max(nz(env.pm25GradeOrigin()), nz(env.pm25GradeDest()));
             if (gradeMax >= 3) warnings.add("초미세먼지 " + (gradeMax >= 4 ? "매우나쁨" : "나쁨"));
             if (env.holiday() != null) warnings.add("출발일이 공휴일(" + env.holiday() + ") — 도로 기준선은 공휴일을 뺀 평소 값입니다");

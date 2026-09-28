@@ -20,8 +20,9 @@ public final class NowDtos {
     public record Rail(String depStation, String arrStation, String referenceDate, String basis,
                        List<RailDtos.NextTrain> nextTrains) {}
 
+    /** rain = 1시간 강수량(초단기, 없으면 null) · weatherSource = 날씨 값의 근거 (단기예보 / 초단기예보 HH:MM 발표 / 초단기실황 HH:MM 관측) */
     public record PointEnv(String name, Integer pop, String pty, Integer tmp, String sky, Integer pm25, Integer pm25Grade,
-                           Integer khaiGrade) {}
+                           Integer khaiGrade, String rain, String weatherSource) {}
 
     public record NowCard(String corridorId, String corridorName, String direction, OffsetDateTime asOf,
                           OffsetDateTime departAt, int accessMin, int carAccessMin, String status, Road road, Rail rail,

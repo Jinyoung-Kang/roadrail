@@ -160,6 +160,9 @@ public class RoadService {
             case "2" -> "비/눈";
             case "3" -> "눈";
             case "4" -> "소나기";
+            case "5" -> "빗방울";           // 5 · 6 · 7 은 초단기예보 · 실황에만
+            case "6" -> "빗방울눈날림";
+            case "7" -> "눈날림";
             default -> code;
         };
     }

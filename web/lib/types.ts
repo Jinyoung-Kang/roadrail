@@ -17,8 +17,9 @@ export interface Decision {
   rule: string; verdict: "CAR" | "TRAIN" | "SIMILAR" | "UNKNOWN"; summary: string;
   carTotalMin: number | null; trainTotalMin: number | null; diffMin: number | null; reasons: string[]; warnings: string[];
 }
+/** rain = 1시간 강수량(초단기) · weatherSource = 날씨 값의 근거 (단기예보 / 초단기예보 HH:MM 발표 / 초단기실황 HH:MM 관측) */
 export interface EnvPoint { name: string; pop: number | null; pty: string | null; tmp: number | null; sky: string | null;
-  pm25: number | null; pm25Grade: number | null; khaiGrade: number | null }
+  pm25: number | null; pm25Grade: number | null; khaiGrade: number | null; rain?: string | null; weatherSource?: string | null }
 /** 도로공사 실시간 문자 안내 — lat·lon·pointName 은 응답에 있을 때만, routeKm 은 안내 좌표가 자동차 경로 2km 안일 때만 */
 export interface Incident { sentAt: string; typeCode: string; typeName: string; routeName: string; direction: string;
   process: string; content: string; corridorIds: string[]; lat: number | null; lon: number | null; pointName: string | null;

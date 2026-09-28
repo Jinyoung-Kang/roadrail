@@ -400,6 +400,11 @@ export function EnvRow({ env }: { env: Record<"origin" | "dest", EnvPoint> }) {
               <div><div className="text-2xl font-medium tabular">{e?.pop ?? DASH}{e?.pop != null && "%"}</div><div className="mt-1 text-xs text-muted">강수확률 · {e?.pty ?? DASH}</div></div>
               <div><div className="text-2xl font-medium tabular">{e?.pm25 ?? DASH}</div><div className="mt-1 text-xs text-muted">초미세먼지 · {pm25Label(e?.pm25Grade)}</div></div>
             </div>
+            {e?.weatherSource && (
+              <p className="mt-4 text-center text-[11px] text-muted">
+                날씨 근거 · {e.weatherSource}{e.rain ? <> · <span className="text-ink2">1시간 강수 {e.rain}</span></> : null}
+              </p>
+            )}
           </div>
         );
       })}
