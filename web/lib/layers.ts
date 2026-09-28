@@ -1,4 +1,5 @@
 import { RAIL, ROAD, type MapLayers } from "@/components/RouteMap";
+import { carLines } from "./traffic";
 import type { Corridor, Dir, Incident, Trip } from "./types";
 
 export const WARN = "#e8a100";
@@ -22,7 +23,7 @@ export function corridorLayers(c: Corridor | null | undefined, dir: Dir, withUni
 }
 
 /**
- * 출발지 → 도착지: 카카오 자동차 경로(파랑) + 기차 여정(주황, 환승역 표시) + 출발·도착 지점.
+ * 출발지 → 도착지: 카카오 자동차 경로(파랑, 지체 · 정체 · 사고 구간은 다른 색) + 기차 여정(주황, 환승역 표시) + 출발·도착 지점.
  * 기차 구간은 OpenStreetMap 선로를 따라 그린 실제 경로(실선). 선로 경로가 없는 구간만 역과 역을 잇는 점선.
  */
 export function tripLayers(t: Trip | null, from?: { lat: number; lon: number; name: string } | null,
@@ -34,7 +35,7 @@ export function tripLayers(t: Trip | null, from?: { lat: number; lon: number; na
     { lat: a.lat, lon: a.lon, label: a.name, color: "#171a20" },
     { lat: b.lat, lon: b.lon, label: b.name, color: "#171a20" },
   ];
-  if (t?.car.path?.length) lines.push({ path: t.car.path, color: ROAD });
+  if (t?.car.path?.length) lines.push(...carLines(t.car.path, t.car.traffic));
   const j = t?.rail?.journeys?.[0];
   if (j) {
     j.legs.forEach((l) => {

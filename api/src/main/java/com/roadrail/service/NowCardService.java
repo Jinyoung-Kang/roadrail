@@ -126,7 +126,7 @@ public class NowCardService {
             envMap.put(role, new PointEnv((String) p[1], w.map(EnvDtos.WeatherHour::pop).orElse(null),
                     w.map(EnvDtos.WeatherHour::pty).orElse(null), w.map(EnvDtos.WeatherHour::tmp).orElse(null),
                     w.map(EnvDtos.WeatherHour::sky).orElse(null), a == null ? null : a.pm25(),
-                    a == null ? null : a.pm25Grade(), a == null ? null : a.khaiGrade()));
+                    a == null ? null : a.pm25Grade(), a == null ? null : a.khaiGrade(), null, w.isPresent() ? "단기예보" : null));
             if (a != null && a.dataTime() != null) airTime = a.dataTime();
         }
         weatherBase = jdbc.sql("SELECT max(base_at) FROM env.weather_fcst").query(OffsetDateTime.class).optional().orElse(null);
@@ -134,7 +134,7 @@ public class NowCardService {
         var d = envMap.get("dest");
         DecisionRule.Env denv = new DecisionRule.Env(o == null ? null : o.pop(), d == null ? null : d.pop(),
                 o == null ? null : o.pm25Grade(), d == null ? null : d.pm25Grade(),
-                holidays.name(Times.kst(depart).toLocalDate()).orElse(null));
+                holidays.name(Times.kst(depart).toLocalDate()).orElse(null), o == null ? null : o.pty(), d == null ? null : d.pty());
 
         // ---- 돌발
         List<EnvDtos.Incident> inc = env.incidents(cid, now.minusHours(6), 5).items();

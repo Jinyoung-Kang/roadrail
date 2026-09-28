@@ -131,7 +131,8 @@ public class TripService {
         boolean pending = eta.isEmpty() && mobility.pending(from.lat(), from.lon(), to.lat(), to.lon(), depart, true);
         Car car = new Car(eta.map(KakaoMobilityClient.Eta::durationSec).orElse(null),
                 eta.map(KakaoMobilityClient.Eta::distanceM).orElse(null), eta.map(KakaoMobilityClient.Eta::departAt).orElse(null),
-                eta.map(KakaoMobilityClient.Eta::path).orElse(List.of()), pending, "KAKAO_FUTURE_DIRECTIONS");
+                eta.map(KakaoMobilityClient.Eta::path).orElse(List.of()), eta.map(KakaoMobilityClient.Eta::traffic).orElse(List.of()),
+                pending, "KAKAO_FUTURE_DIRECTIONS");
 
         // 시작 시각 기준 마감 — 앞의 대기가 길어도 뒤의 대기가 그만큼 더해지지 않는다(예전: 3초 + 4초)
         Observed obs = join(fObs, left(started + Duration.ofSeconds(3).toNanos()));             // DB 만 — 넉넉히
@@ -140,8 +141,8 @@ public class TripService {
         var dest = join(fDest, left(deadline));
         boolean envPending = origin == null || dest == null;
         Map<String, NowDtos.PointEnv> envMap = new LinkedHashMap<>();
-        envMap.put("origin", origin != null ? origin : new NowDtos.PointEnv(from.name(), null, null, null, null, null, null, null));
-        envMap.put("dest", dest != null ? dest : new NowDtos.PointEnv(to.name(), null, null, null, null, null, null, null));
+        envMap.put("origin", origin != null ? origin : new NowDtos.PointEnv(from.name(), null, null, null, null, null, null, null, null, null));
+        envMap.put("dest", dest != null ? dest : new NowDtos.PointEnv(to.name(), null, null, null, null, null, null, null, null, null));
 
         // 돌발: 자동차 경로 2km 안(안내 좌표) + 수집 중인 길에 매칭된 좌표 없는 안내 — 지금 안내 중인 것만
         List<EnvDtos.Incident> inc = env.routeIncidents(car.path(), obs == null ? null : obs.corridorId(), 8);
@@ -168,7 +169,8 @@ public class TripService {
         var decision = DecisionRule.decide(dcar, dtrain,
                 new DecisionRule.Env(o == null ? null : o.pop(), d == null ? null : d.pop(),
                         o == null ? null : o.pm25Grade(), d == null ? null : d.pm25Grade(),
-                        holidays.name(Times.kst(depart).toLocalDate()).orElse(null)), inc.size(), p);
+                        holidays.name(Times.kst(depart).toLocalDate()).orElse(null), o == null ? null : o.pty(), d == null ? null : d.pty()),
+                inc.size(), p);
         if (km < MIN_RAIL_KM) {
             decision = new DecisionRule.Result(decision.rule(), "CAR", "가까운 거리(" + km + "km)라 기차 비교는 하지 않습니다.",
                     decision.carTotalMin(), null, null, decision.reasons(), decision.warnings());
@@ -184,7 +186,7 @@ public class TripService {
                 : "출발 " + car.departAt().substring(8, 10) + ":" + car.departAt().substring(10) + " 기준 경로 예측");
         fresh.put("road", obs == null ? "수집 중인 길 아님" : Times.ago(obs.slotTs(), now) + " 슬롯 (도로공사 공개 지연)");
         fresh.put("rail", railOpt == null || railOpt.referenceDate() == null ? "—" : railOpt.referenceDate() + " 운행 기준 시간표");
-        fresh.put("weather", "단기예보 최근 발표");
+        fresh.put("weather", o != null && o.weatherSource() != null && !"단기예보".equals(o.weatherSource()) ? o.weatherSource() : "단기예보 최근 발표");
         fresh.put("air", "시도 측정소 최근 측정");
         String caveat = "자동차는 카카오 경로 예측(출발 시각 기준)입니다. 기차는 코레일 여객열차의 환승 경로(최소 환승 "
                 + RailJourneyService.TRANSFER_MIN + "분, 승차 여유 " + RailJourneyService.BOARDING_BUFFER_MIN + "분)이며, 역까지·역에서는 "
@@ -236,8 +238,21 @@ public class TripService {
         return b.toString();
     }
 
+    /** 초단기예보가 덮는 출발 시각(발표 뒤 6시간) · 초단기실황을 쓰는 '지금 출발'의 범위 */
+    static final Duration ULTRA_HORIZON = Duration.ofHours(5);
+    static final Duration NOWCAST_WINDOW = Duration.ofMinutes(20);
+
+    /** 날씨 값과 그 근거 — 단기예보 위에 초단기예보 · 실황을 덮어 쓴다 */
+    record Weather(Integer pop, String pty, Integer tmp, String sky, String rain, String source) {}
+
     NowDtos.PointEnv pointEnv(Place p, OffsetDateTime at) {
         var cell = KmaGrid.of(p.lat(), p.lon());
+        Duration ahead = Duration.between(Times.now(), at);
+        // 초단기(매시 발표)는 3시간마다인 단기예보보다 최신 — 가까운 출발이면 함께 받는다. 세 조회를 동시에(캐시 적중이면 즉시)
+        var fUltra = ahead.compareTo(ULTRA_HORIZON) <= 0
+                ? CompletableFuture.supplyAsync(() -> kma.ultraShort(cell.nx(), cell.ny()), exec) : null;
+        var fNow = ahead.abs().compareTo(NOWCAST_WINDOW) <= 0
+                ? CompletableFuture.supplyAsync(() -> kma.nowcast(cell.nx(), cell.ny()), exec) : null;
         Integer pop = null, tmp = null;
         String pty = null, sky = null;
         var stored = env.at(cell.nx(), cell.ny(), at);
@@ -247,8 +262,8 @@ public class TripService {
             pty = stored.get().pty();
             sky = stored.get().sky();
         } else {
-            var fc = kma.forecast(cell.nx(), cell.ny());
-            var h = fc == null ? null : fc.hours().get(KmaClient.hourKey(at));
+            var h = shortTermHour(kma.forecast(cell.nx(), cell.ny()),
+                    () -> kma.forecast(cell.nx(), cell.ny(), KmaClient.latestBase(Times.now()).minusHours(3)), at);
             if (h != null) {
                 pop = RoadService.parseInt(h.get("POP"));
                 tmp = RoadService.parseInt(h.get("TMP"));
@@ -256,6 +271,8 @@ public class TripService {
                 sky = EnvService.skyName(h.get("SKY"));
             }
         }
+        Weather w = mergeWeather(new Weather(pop, pty, tmp, sky, null, pop == null && pty == null && tmp == null ? null : "단기예보"),
+                fUltra == null ? null : join(fUltra, Duration.ofSeconds(5)), fNow == null ? null : join(fNow, Duration.ofSeconds(5)), at);
         var region = local.region(p.lat(), p.lon());
         String sido = region == null ? null : AirKoreaClient.sidoOf(region.region1(), region.region2());
         Integer pm25 = null, g25 = null, khai = null;
@@ -272,6 +289,76 @@ public class TripService {
                 khai = live.khaiGrade();
             }
         }
-        return new NowDtos.PointEnv(p.name(), pop, pty, tmp, sky, pm25, g25, khai);
+        return new NowDtos.PointEnv(p.name(), w.pop(), w.pty(), w.tmp(), w.sky(), pm25, g25, khai, w.rain(), w.source());
+    }
+
+    /**
+     * 단기예보(강수확률 포함) 위에 초단기예보(출발 시각이 발표 6시간 안이면 기온 · 하늘 · 강수형태 · 1시간 강수량)를,
+     * 그 위에 초단기실황(지금 출발이면 관측 강수형태 · 기온 · 1시간 강수량)을 덮는다. 강수확률은 단기예보에만 있어 그대로.
+     */
+    static Weather mergeWeather(Weather base, KmaClient.Forecast ultra, KmaClient.Observation now, OffsetDateTime at) {
+        Weather w = base;
+        var h = ultra == null || ultra.hours() == null ? null : ultra.hours().get(KmaClient.hourKey(at));
+        if (h != null && h.get("PTY") != null) {
+            w = new Weather(w.pop(), RoadService.ptyName(h.get("PTY")), orElse(RoadService.parseInt(h.get("T1H")), w.tmp()),
+                    orElse(EnvService.skyName(h.get("SKY")), w.sky()), forecastRain(h.get("RN1")), "초단기예보 " + hm(ultra.baseAt()) + " 발표");
+        }
+        var v = now == null ? null : now.values();
+        if (v != null && v.get("PTY") != null) {
+            Integer t = v.get("T1H") == null ? null : parseRounded(v.get("T1H"));
+            w = new Weather(w.pop(), RoadService.ptyName(v.get("PTY")), orElse(t, w.tmp()), w.sky(), observedRain(v.get("RN1")),
+                    "초단기실황 " + hm(now.baseAt()) + " 관측");
+        }
+        return w;
+    }
+
+    /**
+     * 단기예보의 출발 시각 값. 새 발표는 발표 +1시간부터라 발표 직후 한 시간은 지금 시간대가 없다
+     * (17:15~18:00 에 '지금 출발'이면 17시 발표에 17시가 없어 날씨가 모두 비었다 — 3시간마다 약 45분). 그때만 직전 발표에서 읽는다.
+     */
+    static Map<String, String> shortTermHour(KmaClient.Forecast latest, java.util.function.Supplier<KmaClient.Forecast> previous,
+                                             OffsetDateTime at) {
+        String key = KmaClient.hourKey(at);
+        var h = latest == null || latest.hours() == null ? null : latest.hours().get(key);
+        if (h != null) return h;
+        var prev = previous.get();
+        return prev == null || prev.hours() == null ? null : prev.hours().get(key);
+    }
+
+    /** 초단기예보 RN1: "강수없음" · "1mm 미만" · "2.0mm" · "30.0~50.0mm" · "50.0mm 이상" → 강수없음만 null */
+    static String forecastRain(String rn1) {
+        return rn1 == null || rn1.isBlank() || rn1.contains("없음") ? null : rn1.trim();
+    }
+
+    /** 초단기실황 RN1: mm 숫자. 0 · 결측(음수 · 비정상 큰 값)은 null */
+    static String observedRain(String rn1) {
+        try {
+            double mm = Double.parseDouble(rn1.trim());
+            return mm > 0 && mm < 300 ? (mm < 1 ? "1mm 미만" : String.format(Locale.ROOT, "%.1fmm", mm)) : null;
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static Integer parseRounded(String s) {
+        try {
+            double d = Double.parseDouble(s.trim());
+            return d < -80 || d > 60 ? null : (int) Math.round(d);   // 결측값(-998.9 등) 거름
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static <T> T orElse(T v, T fallback) {
+        return v != null ? v : fallback;
+    }
+
+    /** baseAt(ISO 오프셋 시각) → HH:mm */
+    private static String hm(String baseAt) {
+        try {
+            return OffsetDateTime.parse(baseAt).format(com.roadrail.common.Times.HM);
+        } catch (RuntimeException e) {
+            return "";
+        }
     }
 }

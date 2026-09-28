@@ -17,8 +17,9 @@ export interface Decision {
   rule: string; verdict: "CAR" | "TRAIN" | "SIMILAR" | "UNKNOWN"; summary: string;
   carTotalMin: number | null; trainTotalMin: number | null; diffMin: number | null; reasons: string[]; warnings: string[];
 }
+/** rain = 1시간 강수량(초단기) · weatherSource = 날씨 값의 근거 (단기예보 / 초단기예보 HH:MM 발표 / 초단기실황 HH:MM 관측) */
 export interface EnvPoint { name: string; pop: number | null; pty: string | null; tmp: number | null; sky: string | null;
-  pm25: number | null; pm25Grade: number | null; khaiGrade: number | null }
+  pm25: number | null; pm25Grade: number | null; khaiGrade: number | null; rain?: string | null; weatherSource?: string | null }
 /** 도로공사 실시간 문자 안내 — lat·lon·pointName 은 응답에 있을 때만, routeKm 은 안내 좌표가 자동차 경로 2km 안일 때만 */
 export interface Incident { sentAt: string; typeCode: string; typeName: string; routeName: string; direction: string;
   process: string; content: string; corridorIds: string[]; lat: number | null; lon: number | null; pointName: string | null;
@@ -116,9 +117,13 @@ export interface NextSubway { line: string; toward: string; times: string[] }
 export interface RailPlan { journeys: Journey[]; referenceDate: string | null; basis: string | null; originCandidates: number;
   destCandidates: number; boardingBufferMin: number; transferMin: number; note: string | null;
   subwayAtDeparture: NextSubway[]; subwayAtArrival: NextSubway[]; pending: boolean }
+/** 자동차 경로 path[from..to](양끝 포함)의 소통 — 원활 · 서행 · 지체 · 정체 · 사고 · 정보 없음. distanceM = 카카오 도로 길이의 합 */
+export interface TrafficRun { from: number; to: number; traffic: string; distanceM: number }
+
 export interface Trip {
   from: Place; to: Place; distanceKm: number; asOf: string; departAt: string; accessMin: number | null;
-  car: { durationSec: number | null; distanceM: number | null; departAt: string | null; path: [number, number][]; pending: boolean; source: string };
+  car: { durationSec: number | null; distanceM: number | null; departAt: string | null; path: [number, number][];
+    traffic?: TrafficRun[]; pending: boolean; source: string };
   observed: { corridorId: string; corridorName: string; direction: Dir; travelSec: number; baselineP50Sec: number | null;
     vsBaselinePct: number | null; slotTs: string; predictedSec: number | null; model: string; leadMin: number } | null;
   rail: RailPlan | null;
@@ -132,9 +137,10 @@ export interface Trip {
 }
 
 // ---- 도로 분석 (전국 임의 두 지점, 카카오 경로)
-export interface RoadRun { name: string; type: string; distanceM: number; durationSec: number; speedKmh: number | null; traffic: string }
+/** traffic = 이 도로에서 가장 나쁜 소통, trafficM = 그 소통인 길이(m) */
+export interface RoadRun { name: string; type: string; distanceM: number; durationSec: number; speedKmh: number | null; traffic: string; trafficM?: number }
 export interface RouteSummary { label: string; durationSec: number | null; distanceM: number | null;
-  path: [number, number][]; byType: { type: string; distanceM: number; durationSec: number; share: number }[];
+  path: [number, number][]; traffic?: TrafficRun[]; byType: { type: string; distanceM: number; durationSec: number; share: number }[];
   roads: RoadRun[]; slow: RoadRun[] }
 export interface ProfilePoint { departAt: string; offsetMin: number; durationSec: number | null }
 export interface RouteAnalysis { from: Place; to: Place; straightKm: number; departAt: string; recommended: RouteSummary;

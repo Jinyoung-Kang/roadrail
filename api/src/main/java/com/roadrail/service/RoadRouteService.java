@@ -57,20 +57,8 @@ public class RoadRouteService {
     }
 
     static RouteSummary summarize(String label, KakaoMobilityClient.Route r) {
-        if (r == null) return new RouteSummary(label, null, null, List.of(), List.of(), List.of(), List.of());
-        List<RoadRun> runs = new ArrayList<>();
-        for (var road : r.roads()) {
-            String name = road.name() == null || road.name().isBlank() ? "(이름 없는 도로)" : road.name();
-            RoadRun last = runs.isEmpty() ? null : runs.getLast();
-            if (last != null && last.name().equals(name)) {
-                int d = last.distanceM() + road.distanceM(), t = last.durationSec() + road.durationSec();
-                String traffic = worse(last.traffic(), RoadClass.traffic(road.trafficState()));
-                runs.set(runs.size() - 1, new RoadRun(name, last.type(), d, t, speed(d, t), traffic));
-            } else {
-                runs.add(new RoadRun(name, RoadClass.of(name), road.distanceM(), road.durationSec(),
-                        speed(road.distanceM(), road.durationSec()), RoadClass.traffic(road.trafficState())));
-            }
-        }
+        if (r == null) return new RouteSummary(label, null, null, List.of(), List.of(), List.of(), List.of(), List.of());
+        List<RoadRun> runs = runs(r.roads(), false);
         Map<String, int[]> agg = new LinkedHashMap<>();
         for (String t : List.of(RoadClass.MOTORWAY, RoadClass.OTHER)) agg.put(t, new int[2]);
         for (var run : runs) {
@@ -80,11 +68,38 @@ public class RoadRouteService {
         int total = Math.max(runs.stream().mapToInt(RoadRun::distanceM).sum(), 1);
         List<Share> shares = new ArrayList<>();
         agg.forEach((k, v) -> { if (v[0] > 0) shares.add(new Share(k, v[0], v[1], Math.round(v[0] * 1000.0 / total) / 1000.0)); });
-        List<RoadRun> slow = runs.stream().filter(x -> ("정체".equals(x.traffic()) || "지체".equals(x.traffic()) || "사고".equals(x.traffic()))
-                && x.distanceM() >= 300).sorted(Comparator.comparingInt(RoadRun::distanceM).reversed()).limit(10).toList();
+        // 느린 구간은 이름과 소통이 모두 같은 도로끼리만 합친다 — 이름만으로 합치면 긴 고속도로 전체가 '정체'로 잡혔다
+        // (실측: 서울역 → 대전역 '경부고속도로 정체 152.5km', 실제 정체는 6.8km)
+        List<RoadRun> slow = runs(r.roads(), true).stream().filter(x -> SLOW.contains(x.traffic()) && x.distanceM() >= 300)
+                .sorted(Comparator.comparingInt(RoadRun::distanceM).reversed()).limit(10).toList();
         List<RoadRun> major = runs.stream().filter(x -> x.distanceM() >= 1000 || RoadClass.MOTORWAY.equals(x.type())).toList();
-        return new RouteSummary(label, r.durationSec(), r.distanceM(), r.path(), shares, major, slow);
+        return new RouteSummary(label, r.durationSec(), r.distanceM(), r.path(), r.traffic(), shares, major, slow);
     }
+
+    /**
+     * 이어진 같은 이름의 도로를 한 줄로 합친다. byTraffic 이면 소통이 같을 때만 합친다(느린 구간 목록).
+     * 합친 줄의 소통은 가장 나쁜 쪽, trafficM 은 그 소통인 길이.
+     */
+    static List<RoadRun> runs(List<KakaoMobilityClient.Road> roads, boolean byTraffic) {
+        List<RoadRun> runs = new ArrayList<>();
+        for (var road : roads) {
+            String name = road.name() == null || road.name().isBlank() ? "(이름 없는 도로)" : road.name();
+            String traffic = RoadClass.traffic(road.trafficState());
+            RoadRun last = runs.isEmpty() ? null : runs.getLast();
+            if (last != null && last.name().equals(name) && (!byTraffic || last.traffic().equals(traffic))) {
+                int d = last.distanceM() + road.distanceM(), t = last.durationSec() + road.durationSec();
+                String w = worse(last.traffic(), traffic);
+                int wm = last.traffic().equals(traffic) ? last.trafficM() + road.distanceM() : w.equals(traffic) ? road.distanceM() : last.trafficM();
+                runs.set(runs.size() - 1, new RoadRun(name, last.type(), d, t, speed(d, t), w, wm));
+            } else {
+                runs.add(new RoadRun(name, RoadClass.of(name), road.distanceM(), road.durationSec(),
+                        speed(road.distanceM(), road.durationSec()), traffic, road.distanceM()));
+            }
+        }
+        return runs;
+    }
+
+    private static final Set<String> SLOW = Set.of("지체", "정체", "사고");
 
     private static Double speed(int m, int sec) { return sec <= 0 ? null : Math.round(m / (double) sec * 3.6 * 10) / 10.0; }
 

@@ -3,6 +3,7 @@ package com.roadrail.external;
 import com.roadrail.common.JsonCache;
 import com.roadrail.common.SingleFlight;
 import com.roadrail.config.AppProperties;
+import com.roadrail.domain.RouteGeometry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -39,7 +40,8 @@ public class KakaoMobilityClient {
     private final SingleFlight<String, Eta> inflight = new SingleFlight<>();
 
     /** path = [[lat, lon], …] (최대 400점, 경로가 필요할 때만) */
-    public record Eta(int durationSec, int distanceM, String departAt, List<double[]> path) {}
+    /** path · traffic 은 경로 좌표를 요청했을 때만 (traffic = path 번호 범위별 소통) */
+    public record Eta(int durationSec, int distanceM, String departAt, List<double[]> path, List<RouteGeometry.TrafficRun> traffic) {}
 
     public KakaoMobilityClient(RestClient.Builder builder, AppProperties props, JsonCache cache, QuotaGuard quota,
                                ExecutorService exec) {
@@ -96,7 +98,8 @@ public class KakaoMobilityClient {
     }
 
     private static String etaKey(double oLat, double oLon, double dLat, double dLon, String dep, boolean withPath) {
-        return String.format(Locale.ROOT, "kakao:eta%s:%.4f,%.4f:%.4f,%.4f:%s", withPath ? "p" : "", oLat, oLon, dLat, dLon, dep);
+        // p2: 경로 좌표에 구간별 소통이 붙은 형식 (예전 p 캐시와 섞이지 않게)
+        return String.format(Locale.ROOT, "kakao:eta%s:%.4f,%.4f:%.4f,%.4f:%s", withPath ? "p2" : "", oLat, oLon, dLat, dLon, dep);
     }
 
     private Eta call(double oLat, double oLon, double dLat, double dLon, String dep, boolean withPath) {
@@ -110,7 +113,9 @@ public class KakaoMobilityClient {
             JsonNode r = body == null ? null : body.path("routes").path(0);
             if (r == null || r.path("result_code").asInt(-1) != 0) return null;
             JsonNode s = r.path("summary");
-            return new Eta(s.path("duration").asInt(), s.path("distance").asInt(), dep, withPath ? path(r) : null);
+            RouteGeometry.Geometry g = withPath ? geometry(r) : null;
+            return new Eta(s.path("duration").asInt(), s.path("distance").asInt(), dep,
+                    g == null ? null : g.path(), g == null ? null : g.traffic());
         } catch (RuntimeException e) {
             log.warn("카카오 미래 운행 정보 조회 실패: {}", e.getClass().getSimpleName());
             return null;
@@ -165,13 +170,14 @@ public class KakaoMobilityClient {
     public record Road(String name, int distanceM, int durationSec, int trafficState) {}
 
     public record Route(int durationSec, int distanceM, Integer tollFare, Integer taxiFare, String departAt,
-                        List<double[]> path, List<Road> roads) {}
+                        List<double[]> path, List<RouteGeometry.TrafficRun> traffic, List<Road> roads) {}
 
     /** 출발 시각 기준 경로 상세. avoid = null | "motorway" (고속도로 회피). 결과 20분 캐시. */
     public Route route(double oLat, double oLon, double dLat, double dLon, OffsetDateTime departAt, String avoid, boolean detail) {
         if (props.kakaoRestApiKey() == null || props.kakaoRestApiKey().isBlank()) return null;
         String dep = departSlot(departAt);
-        String key = String.format(Locale.ROOT, "kakao:route:%s:%s:%.4f,%.4f:%.4f,%.4f:%s", avoid, detail, oLat, oLon, dLat, dLon, dep);
+        // route2: 경로 좌표에 구간별 소통이 붙은 형식 (예전 route 캐시와 섞이지 않게)
+        String key = String.format(Locale.ROOT, "kakao:route2:%s:%s:%.4f,%.4f:%.4f,%.4f:%s", avoid, detail, oLat, oLon, dLat, dLon, dep);
         Route hit = cache.peek(key, Route.class);
         if (hit != null) return hit;
         if (!quota.take("KAKAO")) return null;
@@ -191,10 +197,11 @@ public class KakaoMobilityClient {
                 roads.add(new Road(road.path("name").asString(""), road.path("distance").asInt(), road.path("duration").asInt(),
                         road.path("traffic_state").asInt(0)));
             }
+            RouteGeometry.Geometry g = detail ? geometry(r) : RouteGeometry.Geometry.EMPTY;
             Route out = new Route(s.path("duration").asInt(), s.path("distance").asInt(),
                     s.path("fare").path("toll").isMissingNode() ? null : s.path("fare").path("toll").asInt(),
                     s.path("fare").path("taxi").isMissingNode() ? null : s.path("fare").path("taxi").asInt(), dep,
-                    detail ? path(r) : List.of(), roads);
+                    g.path(), g.traffic(), roads);
             cache.put(key, out, Duration.ofMinutes(20));
             return out;
         } catch (RuntimeException e) {
@@ -203,19 +210,20 @@ public class KakaoMobilityClient {
         }
     }
 
-    /** vertexes = [x1, y1, x2, y2, …] (경도, 위도) → [[lat, lon]] 을 최대 400점으로 균등 추출 */
-    static List<double[]> path(JsonNode route) {
-        List<double[]> all = new ArrayList<>();
+    /**
+     * vertexes = [x1, y1, x2, y2, …] (경도, 위도) → 도로별 [[위도, 경도]] + 소통 코드 → 최대 400점 경로와 구간별 소통.
+     * 좌표 수는 긴 경로에서 수천 개 — 소통이 같은 구간마다 Douglas–Peucker 로 줄여 지도에 색을 나눠 그릴 수 있게 한다.
+     */
+    static RouteGeometry.Geometry geometry(JsonNode route) {
+        List<RouteGeometry.RoadPath> roads = new ArrayList<>();
         for (JsonNode sec : route.path("sections")) {
             for (JsonNode road : sec.path("roads")) {
                 JsonNode v = road.path("vertexes");
-                for (int i = 0; i + 1 < v.size(); i += 2) all.add(new double[]{v.get(i + 1).asDouble(), v.get(i).asDouble()});
+                List<double[]> pts = new ArrayList<>(v.size() / 2);
+                for (int i = 0; i + 1 < v.size(); i += 2) pts.add(new double[]{v.get(i + 1).asDouble(), v.get(i).asDouble()});
+                roads.add(new RouteGeometry.RoadPath(road.path("traffic_state").asInt(0), road.path("distance").asInt(0), pts));
             }
         }
-        if (all.size() <= MAX_PATH_POINTS) return all;
-        List<double[]> out = new ArrayList<>(MAX_PATH_POINTS);
-        double step = (all.size() - 1) / (double) (MAX_PATH_POINTS - 1);
-        for (int i = 0; i < MAX_PATH_POINTS; i++) out.add(all.get((int) Math.round(i * step)));
-        return out;
+        return RouteGeometry.build(roads, MAX_PATH_POINTS);
     }
 }

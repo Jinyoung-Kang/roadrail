@@ -5,12 +5,14 @@ import About from "@/components/About";
 import Layout from "@/components/Layout";
 import RouteMap from "@/components/RouteMap";
 import SearchPicker from "@/components/SearchPicker";
+import TrafficLegend from "@/components/TrafficLegend";
 import { CarTile, EnvRow, Evidence, TrainTile } from "@/components/Tiles";
 import { ErrorBox, Loading, Section, Segmented, Select, Spec, SpecStrip } from "@/components/ui";
 import { qs, useApi } from "@/lib/api";
 import { DASH, durParts, hm, num } from "@/lib/format";
 import { locatedIncidents, tripLayers, WARN } from "@/lib/layers";
 import { corridorEnds, decodePlace, encodePlace, KIND_LABEL } from "@/lib/places";
+import { slowSummary } from "@/lib/traffic";
 import type { Incident, Place, Trip } from "@/lib/types";
 import { useCorridors } from "@/lib/useCorridors";
 
@@ -53,6 +55,7 @@ export default function Home() {
   const layers = useMemo(() => tripLayers(t, from, to), [t, from, to]);
   const mapLayers = useMemo(() => tripLayers(t, from, to, true), [t, from, to]);
   const located = locatedIncidents(t);
+  const carSlow = t ? slowSummary(t.car.path ?? [], t.car.traffic) : null;
   // 돌발 안내 '지도에서 보기' → 아래 지도로 내려가 그 지점으로 확대
   const [focus, setFocus] = useState<{ lat: number; lon: number; n: number } | null>(null);
   const locate = (i: Incident) => {
@@ -137,6 +140,7 @@ export default function Home() {
         <div className="pointer-events-none absolute left-4 top-4 sm:left-8 sm:top-8 rounded-sm bg-white/95 px-4 py-3 shadow-tile">
           <p className="text-sm font-medium">{from?.name} → {to?.name}</p>
           <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-[3px] w-5 bg-road" />자동차 경로 (카카오) {t?.car.distanceM ? `${num(t.car.distanceM / 1000, 0)}km` : ""}</p>
+          <TrafficLegend states={carSlow?.present ?? []} />
           <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-[3px] w-5 bg-rail" />기차 선로 {t?.rail?.journeys[0] ? t.rail.journeys[0].legs.map((l, i) => (i === 0 ? `${l.fromName}→${l.toName}` : `→${l.toName}`)).join("") : "없음"}</p>
           {t?.rail?.journeys[0]?.legs.some((l) => !l.pathOnTrack) && (
             <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-0 w-5 border-t-[3px] border-dashed border-rail" />선로 형상이 없는 구간 (역 사이 직선)</p>
