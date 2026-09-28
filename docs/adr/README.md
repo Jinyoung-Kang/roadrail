@@ -24,3 +24,4 @@
 | [020](020-code-review-architecture-concurrency.md) | 전체 코드 리뷰 — 의존 방향 · 가상 스레드 동시성 · 오류 규약 · 외부 예산 클라이언트별 몫 |
 | [021](021-dependabot-auto-merge.md) | Dependabot minor · patch 자동 병합 — 필수 검사 하나(ci passed)로 게이트 |
 | [022](022-web-major-upgrades.md) | 웹 메이저 업그레이드 — Next 16(webpack 빌드) · Tailwind 4(v3 모양 유지) · TypeScript 7 · React 18 유지 |
+| [023](023-route-traffic-and-nowcast.md) | 기능 고도화 — 자동차 경로 구간별 소통(지도 색) · 초단기 날씨 · 보유 API 검토 |

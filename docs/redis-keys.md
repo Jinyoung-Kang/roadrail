@@ -9,14 +9,15 @@
 | `rr:collector:heartbeat` | ISO 시각 | collector (30초마다) | api `/health` | 90s |
 | `ex:tail:{start}-{end}:{yyyymmdd}` | 정수 — 오늘 본 1종 행 수 (꼬리 페이지 커서) | collector | — | 48h |
 | `now:{id}:{dir}:{departIn}:{access}:{carAccess}` | 판단 카드 JSON | api | api | 60s |
-| `kakao:eta[p]:{o}:{d}:{yyyyMMddHHmm}` | 카카오 ETA JSON (`p` = 경로 좌표 포함) | api | api | 20분 |
+| `kakao:eta[p2]:{o}:{d}:{yyyyMMddHHmm}` | 카카오 ETA JSON (`p2` = 경로 좌표 + 좌표 범위별 소통 — 예전 `p` 형식과 섞이지 않게 바꿈) | api | api | 20분 |
 | `trip:v2:{from}:{역 코드}:{이름}:{to}:{역 코드}:{이름}:{departIn}:{access}` | 출발지→도착지 판단 카드 (pending 이면 저장 안 함) — 역 지정 · 이름도 결과를 바꾸므로 키에 포함 | api | api | 60s |
 | `kakao:addr:{q}` · `kakao:kw:{q}` | 지역 · 장소 검색 결과 | api | api | 1일 |
 | `kakao:c2r:{lat,lon}` | 좌표 → 행정구역 (에어코리아 시도) | api | api | 30일 |
 | `kakao:many:{origins\|destinations}:{좌표}:{역 코드들}` | 역까지 · 역에서 실제 운전 시간 (다중 길찾기) | api | api | 20분 |
-| `kakao:route:{avoid}:{detail}:{o}:{d}:{출발}` | 도로 분석 경로 (도로별 구간 · 소통) | api | api | 20분 |
+| `kakao:route2:{avoid}:{detail}:{o}:{d}:{출발}` | 도로 분석 경로 (도로별 구간 · 소통 · 좌표 범위별 소통) | api | api | 20분 |
 | `tago:stn:{역명}` · `tago:tt:{역 ID}:{요일}:{U\|D}` | TAGO 지하철 역 목록 · 역별 시간표 | api | api | 7일 · 1일 |
-| `kma:{nx}:{ny}:{base}` | 조회 시점 단기예보 (수집 대상이 아닌 격자) | api | api | 3시간 |
+| `kma:{nx}:{ny}:{base}` | 조회 시점 단기예보 (수집 대상이 아닌 격자) — 발표 직후엔 직전 발표도 읽는다 | api | api | 3시간 |
+| `kma:u:{nx}:{ny}:{base}` · `kma:n:{nx}:{ny}:{base}` | 초단기예보(6시간 앞, 매시 30분 발표) · 초단기실황(매시 정각 관측) — 가까운 출발 · 지금 출발의 날씨 | api | api | 75분 |
 | `air:{sido}` | 조회 시점 대기질 (수집 대상이 아닌 시도) | api | api | 50분 |
 | `rr:osm:tile:{0-3}` | OSM 선로 구역 응답 (zlib + base64, way id · 노드 · 좌표) — 공개 미러가 느릴 때 다시 실행하면 못 받은 구역만 받음 | collector | collector | 3일 |
 | `tago:train:nodes` | TAGO 열차정보 역명 → 역 ID (전국 16개 시도 목록) — 역 쌍 시간표를 부를 때 씀 | api | api | 7일 |

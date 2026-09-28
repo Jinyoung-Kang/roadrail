@@ -233,11 +233,11 @@ sequenceDiagram
 | 12 | `POST /admin/jobs/{job}/run` | 즉시 실행 202 · 실행 중 409 |
 | 13 | `POST /admin/backfill` | 기간 재수집 202 (예상 호출 수 먼저 계산) · 기간 400 · 예산 429 · 실행 중 409 |
 | 14 | `GET /places/search?q` | 출발지·도착지 검색 — 행정구역 · 기차역 · 장소 (전국) |
-| 15 | `GET /trip?fromLat&fromLon&fromName[&fromStation]&toLat&toLon&toName[&toStation]&departIn&accessMin` | 출발지 → 도착지 판단 카드 — car(경로 좌표) · observed · rail(여정 3개: 역까지 · 열차 구간(선로 경로 · 차종 `grade` · 실제 시간표 여부 `timetable`) · 환승 · 역에서, 지하철 연결) · `incidents`(경로 주변 돌발: 좌표 · 경로와의 거리) · env · decision · `pending` |
+| 15 | `GET /trip?fromLat&fromLon&fromName[&fromStation]&toLat&toLon&toName[&toStation]&departIn&accessMin` | 출발지 → 도착지 판단 카드 — car(경로 좌표 · `traffic`: 좌표 번호 범위별 소통 원활 · 서행 · 지체 · 정체 · 사고와 길이) · observed · rail(여정 3개: 역까지 · 열차 구간(선로 경로 · 차종 `grade` · 실제 시간표 여부 `timetable`) · 환승 · 역에서, 지하철 연결) · `incidents`(경로 주변 돌발: 좌표 · 경로와의 거리) · env(날씨 · 대기, `weatherSource`: 단기예보 / 초단기예보 / 초단기실황 · `rain`: 1시간 강수량) · decision · `pending` |
 | 16 | `GET /stations?q&limit&sort=trains\|name` | 운행 중인 기차역 검색 — `trains`: 정확 일치·정차 편수 순, `name`: 가나다순(역 선택 목록) |
 | 17 | `GET /rail/od/punctuality?dep&arr&from&to&groupBy&thresholdMin` | 임의 역 쌍 정시율 |
 | 18 | `GET /rail/od/trains?dep&arr&date` | 임의 역 쌍 날짜별 열차 + 30일 정시성 + 차종(`grade`, TAGO) · `meta`(OO발 OO행). basis: EXACT · TT · NONE. 날짜를 안 주면 계획 시각을 확인할 수 있는 가장 최근 날 |
-| 19 | `GET /road/route?fromLat&fromLon&fromName&toLat&toLon&toName&departIn` | 도로 분석 — 추천 · 고속도로 회피 경로, 도로별 구성 · 느린 구간, 출발 시각별 소요 |
+| 19 | `GET /road/route?fromLat&fromLon&fromName&toLat&toLon&toName&departIn` | 도로 분석 — 추천 · 고속도로 회피 경로(좌표 · 구간별 소통 `traffic`), 도로별 구성(가장 나쁜 소통과 그 길이) · 느린 구간(소통이 같은 도로만 합침), 출발 시각별 소요 |
 
 오류 규약: `{code, message, traceId}` — `VALIDATION_ERROR` 400 · `UNAUTHORIZED` 401 · `CORRIDOR_NOT_FOUND` 404 · `JOB_RUNNING` 409 · `QUOTA_EXHAUSTED` 429 · `RATE_LIMITED` 429(`Retry-After`, `X-RateLimit-Limit/Remaining`). 시각은 ISO-8601(+09:00), 소요시간은 `Sec`/`Min` 접미사.
 
@@ -254,9 +254,9 @@ sequenceDiagram
 | 단위 (pytest) | 슬롯 정렬 · 격자 변환(기상청 격자표 4곳) · 품질 규칙 · 튀는 값 제거 · 길 합산 · 정시성(자정 넘김 · 조기 도착 · 확인 불가 · 보간) · 예측 골든 · 기준선 · 백테스트(결정성 · 누수 없음) · 돌발 매칭 · 역 좌표 매칭 · 선로 그래프(본선 추종 · 지선 · 다른 역 통과 금지 · 단순화 · 구역 캐시) · 공급자별 예산 설정 · 공휴일은 기준선에서 제외 · 창 탐색 알고리즘 교체 전후 동일성(무작위 65세트) | 56 |
 | 계약 (pytest) | 공급자 5종 실제 응답 fixture 파서 · 문자 안내 좌표(altitude = 경도, 범위 밖 · 좌표 없음은 버림) · 특일 정보(한 건 · 0건 형식 포함) | 10 |
 | 통합 (pytest + PostgreSQL · Redis) | 예산 동시성 · 멱등 수집 · 꼬리 커서 · 결측→백필 · seed 멱등 · 철도 일 계산 · SQL `od_trips` ↔ Python 계약 · **시간표(TT)가 보간보다 우선** · 호출 로그 키 마스킹 · 시간 초과가 오류 상세에 남는지 · 재시작 뒤 RUNNING·잠금·예약 정리 · 취소된 작업은 '중단'으로 기록 · 선로 작업 28일 안이면 건너뜀 · 공휴일 동기화 멱등 · 꼬리 위치는 저장 뒤에만 · 자정을 넘겨도 읽은 날짜 키에 · 시작 전 실패도 잠금 해제 · 남의 잠금은 지우지 않음 · 명령 스트림 대기가 소켓 읽기 제한에 끊기지 않음 · 연결 풀 상한을 넘는 동시 요청은 기다림 | 24 |
-| 단위 (JUnit) | 판단 규칙 · 예측 골든(Python 과 같은 파일) · 기상청 격자 · 행정구역→에어코리아 시도 · **CSA 환승 경로** · 도로 구분 · 경로 요약 · 돌발 좌표↔경로 거리 · TAGO 시각 해석·검증된 역명 별칭 · 요청 한도(버킷 · 믿는 프록시의 맨 오른쪽 주소만) · 공휴일 경고 · SingleFlight · Memo(즉시 완료 · 실패 비고착 · Error 뒤 재로드 · 잠금 밖 로더) · 실행기 종료 상한 · 과부하 503 · TAGO 지하철 오류 응답 · 잘못된 행 | 63 |
+| 단위 (JUnit) | 판단 규칙 · 예측 골든(Python 과 같은 파일) · 기상청 격자 · 행정구역→에어코리아 시도 · **CSA 환승 경로** · 도로 구분 · 경로 요약 · 돌발 좌표↔경로 거리 · TAGO 시각 해석·검증된 역명 별칭 · 요청 한도(버킷 · 믿는 프록시의 맨 오른쪽 주소만) · 공휴일 경고 · SingleFlight · Memo(즉시 완료 · 실패 비고착 · Error 뒤 재로드 · 잠금 밖 로더) · 실행기 종료 상한 · 과부하 503 · TAGO 지하철 오류 응답 · 잘못된 행 · **경로 좌표 줄이기 · 구간별 소통**(DP 중요도 · 경계 공유 · 400점 상한) · 카카오 응답 해석 · 기상청 초단기 발표 시각 · 날씨 합치기(초단기 · 실황 · 직전 발표) · 강수형태 경고 | 82 |
 | API 통합 (JUnit + Testcontainers) | 판단 카드 · 캐시 · 오류 규약(415 · 406 · ERROR 로그 없음) · 관리 API 401/202/409/400/429 · 수집 상태(오류 상세 · MGET 위치) · 헬스 · 임의 역 쌍(OO발 OO행 · 추정 차종 없음 · 가나다순 · 검색 정렬) · 출발지→도착지(선로 경로 · 캐시 키) · 공휴일(요일별 H · 경고 · 지하철 생략) · 요청 한도 429 · 역 코드 형식 400 · 좌표 NaN 400 · 외부 예산 회계(Lua 한 번) · 캐시 쇄도 방지 | 17 |
-| E2E (Playwright) | 판단 · ⇄ 교환 · 전국 검색 · 검색 칸 빈 목록 · 서비스 소개 · 판단 근거 돌발 목록 · 카드(도착 예정·시간 구성·OSM 출처) · 도로 분석 · 지도 잠금 · 선택 목록 잘림 · 고속도로 실측 · 철도 역 검색 · 가나다순 · 차종은 TAGO 배지로만 · 수집 상태 오류 복사 · 모바일 메뉴 · 보안 헤더 · 콘솔 오류 없음 · X-Forwarded-For 위조 무시 · 지도 라벨 HTML 주입 차단 · 프록시 경로 검증 | 19 |
+| E2E (Playwright) | 판단 · ⇄ 교환 · 전국 검색 · 검색 칸 빈 목록 · 서비스 소개 · 판단 근거 돌발 목록 · 카드(도착 예정·시간 구성·OSM 출처) · 도로 분석 · 지도 잠금 · 선택 목록 잘림 · 고속도로 실측 · 철도 역 검색 · 가나다순 · 차종은 TAGO 배지로만 · 수집 상태 오류 복사 · 모바일 메뉴 · 보안 헤더 · 콘솔 오류 없음 · X-Forwarded-For 위조 무시 · 지도 라벨 HTML 주입 차단 · 프록시 경로 검증 · 자동차 경로 구간별 소통(경로 전체를 빈틈없이 · 길이 합 · 범례) | 20 |
 
 `make test` (collector 는 compose 컨테이너 안에서, api 는 Testcontainers) · `make e2e` · CI: [.github/workflows/ci.yml](.github/workflows/ci.yml) · 정적 분석: [codeql.yml](.github/workflows/codeql.yml)(PR · main · 매주, 결과는 Security 탭) · 매주 월요일 Dependabot(06:00) 뒤 main 전체 CI(09:17) — main 브랜치 보호의 필수 검사는 `ci passed` 하나이고, Dependabot 의 minor · patch PR 은 이것이 통과하면 자동 병합됩니다 ([ADR-021](docs/adr/021-dependabot-auto-merge.md))
 
