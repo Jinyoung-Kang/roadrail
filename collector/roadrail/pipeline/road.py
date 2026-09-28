@@ -11,13 +11,13 @@ import asyncio
 import datetime as dt
 import logging
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 from ..analytics.road_quality import Segment, aggregate_corridor, classify, despike
 from ..core import db, rds
 from ..core.config import settings
 from ..core.timeutil import KST, day_start, now_kst, slots_between
-from ..providers import ex
+from ..providers import ex, utic
 from ..providers.base import JobContext, ProviderError
 
 logger = logging.getLogger(__name__)
@@ -285,6 +285,28 @@ async def collect_incidents(ctx: JobContext) -> int:
           corridor_ids = EXCLUDED.corridor_ids, lat = EXCLUDED.lat, lon = EXCLUDED.lon, point_name = EXCLUDED.point_name""", rows)
     ctx.rows += len(rows)
     return len(rows)
+
+
+async def collect_utic_incidents(ctx: JobContext) -> int:
+    """경찰청 UTIC 돌발정보(일반 도로 포함) → ts.road_incident(source='UTIC').
+    응답 목록 = 지금 진행 중 — 도로공사 문자와 같이 last_seen_at 이 최근이면 '안내 중'으로 본다. 키가 없으면 부르지 않는다."""
+    if not settings().utic_api_key:
+        ctx.note("UTIC 키 없음 — 건너뜀 (.env UTIC_API_KEY)")
+        return 0
+    items = utic.parse_incidents(await utic.incidents(ctx))
+    await db.executemany("""
+        INSERT INTO ts.road_incident (msg_hash, sent_at, type_code, type_name, route_name, content, lat, lon, point_name,
+                                      source, end_at, lane)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'UTIC', %s, %s)
+        ON CONFLICT (msg_hash) DO UPDATE SET last_seen_at = now(), type_name = EXCLUDED.type_name,
+          route_name = EXCLUDED.route_name, content = EXCLUDED.content, lat = EXCLUDED.lat, lon = EXCLUDED.lon,
+          point_name = EXCLUDED.point_name, end_at = EXCLUDED.end_at, lane = EXCLUDED.lane""",
+        [(i["msg_hash"], i["sent_at"], i["type_code"], i["type_name"], i["route_name"], i["content"], i["lat"], i["lon"],
+          i["point_name"], i["end_at"], i["lane"]) for i in items])
+    by = Counter(i["type_name"] for i in items)
+    ctx.note(f"UTIC 돌발 {len(items)}건" + (" (" + " · ".join(f"{k} {v}" for k, v in by.most_common()) + ")" if items else ""))
+    ctx.rows += len(items)
+    return len(items)
 
 
 async def sync_toll_units(ctx: JobContext) -> int:

@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+
+<result>
+<record>
+<incidentId>L90173916274</incidentId>
+<incidenteTypeCd>1</incidenteTypeCd>
+<incidenteSubTypeCd>2</incidenteSubTypeCd>
+<addressJibun>서울 강서구 염창동 221-2</addressJibun>
+<addressJibunCd>1150010100</addressJibunCd>
+<addressNew></addressNew>
+<linkId>1180005702</linkId>
+<locationDataX>126.8777449</locationDataX>
+<locationDataY>37.55312895528298</locationDataY>
+<locationTypeCd>C0101</locationTypeCd>
+<locationData>POINT(126.8777449 37.55312895528298)</locationData>
+<incidenteTrafficCd>A0503</incidenteTrafficCd>
+<incidenteGradeCd>A0402</incidenteGradeCd>
+<incidentTitle>[사고] 올림픽대로 염창교 에서 강서구영등포구 방향 차로 차량사고 올림픽대로 성산대교 → 가양대교 김포방향, [차량사고] 올림픽대로 (김포방향) 성산대교 → 가양대교  2차로 통제,  사고 차량</incidentTitle>
+<incTrafficCode>A0503</incTrafficCode>
+<incidentRegionCd>01</incidentRegionCd>
+<startDate>2026년 09월 28일  17시 30분</startDate>
+<endDate>2026년 09월 28일  18시 00분</endDate>
+<lane>차로</lane>
+<roadName>올림픽대로</roadName>
+<sourceCode>K000</sourceCode>
+<lineLinkId>null</lineLinkId>
+<controlType>0</controlType>
+<important>00</important>
+<updateDate>2026년 09월 28일  17시 52분</updateDate>
+</record>
+<record>
+<incidentId>L91148067426</incidentId>
+<incidenteTypeCd>2</incidenteTypeCd>
+<incidenteSubTypeCd>255</incidenteSubTypeCd>
+<addressJibun>경기 고양시 일산동구 장항동 626-89</addressJibun>
+<addressJibunCd>4128510400</addressJibunCd>
+<addressNew>경기도 고양시 일산동구 장대길 386-40</addressNew>
+<linkId>2410174200</linkId>
+<locationDataX>126.740637</locationDataX>
+<locationDataY>37.652028</locationDataY>
+<locationTypeCd>C0101</locationTypeCd>
+<locationData>POINT(126.740637 37.652028)</locationData>
+<incidenteTrafficCd>A0502</incidenteTrafficCd>
+<incidenteGradeCd>A0402</incidenteGradeCd>
+<incidentTitle>[공사] 제2자유로 킨텍스3교지하차도 산염교   </incidentTitle>
+<incTrafficCode>A0502</incTrafficCode>
+<incidentRegionCd>19</incidentRegionCd>
+<startDate>2024년 12월 28일  00시 00분</startDate>
+<endDate>2027년 08월 31일  00시 00분</endDate>
+<lane></lane>
+<roadName>제2자유로</roadName>
+<sourceCode>H000</sourceCode>
+<lineLinkId>null</lineLinkId>
+<controlType>0</controlType>
+<important>00</important>
+<updateDate>2025년 03월 28일  00시 01분</updateDate>
+</record>
+<record>
+<incidentId>L90169008540</incidentId>
+<incidenteTypeCd>5</incidenteTypeCd>
+<incidenteSubTypeCd>10</incidenteSubTypeCd>
+<addressJibun>경기 의왕시 고천동 439-283</addressJibun>
+<addressJibunCd>4143010100</addressJibunCd>
+<addressNew></addressNew>
+<linkId>2260004501</linkId>
+<locationDataX>126.97798902</locationDataX>
+<locationDataY>37.34093520006634</locationDataY>
+<locationTypeCd>C0101</locationTypeCd>
+<locationData>POINT(126.97798902 37.34093520006634)</locationData>
+<incidenteTrafficCd>A0503</incidenteTrafficCd>
+<incidenteGradeCd>A0402</incidenteGradeCd>
+<incidentTitle>[통제] 과천의왕간고속도로 의왕IC남측 에서 의왕IC북측 방향 차로 공사 봉담과천로 신부곡IC → 의왕IC 과천방향, [공사] 봉담과천로 (과천방향) 신부곡IC → 의왕IC  4차로 통제,  의왕IC 작업</incidentTitle>
+<incTrafficCode>A0503</incTrafficCode>
+<incidentRegionCd>01</incidentRegionCd>
+<startDate>2026년 05월 28일  10시 36분</startDate>
+<endDate>2026년 09월 30일  00시 00분</endDate>
+<lane>차로</lane>
+<roadName>과천의왕간고속도로</roadName>
+<sourceCode>K000</sourceCode>
+<lineLinkId>null</lineLinkId>
+<controlType>0</controlType>
+<important>00</important>
+<updateDate>2026년 06월 08일  09시 33분</updateDate>
+</record>
+<record>
+<incidentId></incidentId>
+<incidenteTypeCd>1</incidenteTypeCd>
+<incidenteSubTypeCd>2</incidenteSubTypeCd>
+<addressJibun>서울 강서구 염창동 221-2</addressJibun>
+<addressJibunCd>1150010100</addressJibunCd>
+<addressNew></addressNew>
+<linkId>1180005702</linkId>
+<locationDataX>126.8777449</locationDataX>
+<locationDataY>37.55312895528298</locationDataY>
+<locationTypeCd>C0101</locationTypeCd>
+<locationData>POINT(126.8777449 37.55312895528298)</locationData>
+<incidenteTrafficCd>A0503</incidenteTrafficCd>
+<incidenteGradeCd>A0402</incidenteGradeCd>
+<incidentTitle>[사고] 올림픽대로 염창교 에서 강서구영등포구 방향 차로 차량사고 올림픽대로 성산대교 → 가양대교 김포방향, [차량사고] 올림픽대로 (김포방향) 성산대교 → 가양대교  2차로 통제,  사고 차량</incidentTitle>
+<incTrafficCode>A0503</incTrafficCode>
+<incidentRegionCd>01</incidentRegionCd>
+<startDate>2026년 09월 28일  17시 30분</startDate>
+<endDate>2026년 09월 28일  18시 00분</endDate>
+<lane>차로</lane>
+<roadName>올림픽대로</roadName>
+<sourceCode>K000</sourceCode>
+<lineLinkId>null</lineLinkId>
+<controlType>0</controlType>
+<important>00</important>
+<updateDate>2026년 09월 28일  17시 52분</updateDate>
+</record>
+<record>
+<incidentId>TEST-OUTSIDE</incidentId>
+<incidenteTypeCd>1</incidenteTypeCd>
+<incidenteSubTypeCd>2</incidenteSubTypeCd>
+<addressJibun>서울 강서구 염창동 221-2</addressJibun>
+<addressJibunCd>1150010100</addressJibunCd>
+<addressNew></addressNew>
+<linkId>1180005702</linkId>
+<locationDataX>0</locationDataX>
+<locationDataY>0</locationDataY>
+<locationTypeCd>C0101</locationTypeCd>
+<locationData>POINT(126.8777449 37.55312895528298)</locationData>
+<incidenteTrafficCd>A0503</incidenteTrafficCd>
+<incidenteGradeCd>A0402</incidenteGradeCd>
+<incidentTitle>[사고] 올림픽대로 염창교 에서 강서구영등포구 방향 차로 차량사고 올림픽대로 성산대교 → 가양대교 김포방향, [차량사고] 올림픽대로 (김포방향) 성산대교 → 가양대교  2차로 통제,  사고 차량</incidentTitle>
+<incTrafficCode>A0503</incTrafficCode>
+<incidentRegionCd>01</incidentRegionCd>
+<startDate>2026년 09월 28일  17시 30분</startDate>
+<endDate>2026년 09월 28일  18시 00분</endDate>
+<lane>차로</lane>
+<roadName>올림픽대로</roadName>
+<sourceCode>K000</sourceCode>
+<lineLinkId>null</lineLinkId>
+<controlType>0</controlType>
+<important>00</important>
+<updateDate>2026년 09월 28일  17시 52분</updateDate>
+</record>
+<record>
+<incidentId>TEST-UNKNOWN</incidentId>
+<incidenteTypeCd>9</incidenteTypeCd>
+<incidenteSubTypeCd>2</incidenteSubTypeCd>
+<addressJibun>서울 강서구 염창동 221-2</addressJibun>
+<addressJibunCd>1150010100</addressJibunCd>
+<addressNew></addressNew>
+<linkId>1180005702</linkId>
+<locationDataX>126.8777449</locationDataX>
+<locationDataY>37.55312895528298</locationDataY>
+<locationTypeCd>C0101</locationTypeCd>
+<locationData>POINT(126.8777449 37.55312895528298)</locationData>
+<incidenteTrafficCd>A0503</incidenteTrafficCd>
+<incidenteGradeCd>A0402</incidenteGradeCd>
+<incidentTitle>[행사] 시청 앞 광장 행사로 차로 통제</incidentTitle>
+<incTrafficCode>A0503</incTrafficCode>
+<incidentRegionCd>01</incidentRegionCd>
+<startDate>2026년 09월 28일  17시 30분</startDate>
+<endDate>2026년 09월 28일  18시 00분</endDate>
+<lane>차로</lane>
+<roadName>*올림픽대로,</roadName>
+<sourceCode>K000</sourceCode>
+<lineLinkId>null</lineLinkId>
+<controlType>0</controlType>
+<important>00</important>
+<updateDate>2026년 09월 28일  17시 52분</updateDate>
+</record>
+<record>
+<incidentId>TEST-BADTIME</incidentId>
+<incidenteTypeCd>1</incidenteTypeCd>
+<incidenteSubTypeCd>2</incidenteSubTypeCd>
+<addressJibun>서울 강서구 염창동 221-2</addressJibun>
+<addressJibunCd>1150010100</addressJibunCd>
+<addressNew></addressNew>
+<linkId>1180005702</linkId>
+<locationDataX>126.8777449</locationDataX>
+<locationDataY>37.55312895528298</locationDataY>
+<locationTypeCd>C0101</locationTypeCd>
+<locationData>POINT(126.8777449 37.55312895528298)</locationData>
+<incidenteTrafficCd>A0503</incidenteTrafficCd>
+<incidenteGradeCd>A0402</incidenteGradeCd>
+<incidentTitle>[사고] 올림픽대로 염창교 에서 강서구영등포구 방향 차로 차량사고 올림픽대로 성산대교 → 가양대교 김포방향, [차량사고] 올림픽대로 (김포방향) 성산대교 → 가양대교  2차로 통제,  사고 차량</incidentTitle>
+<incTrafficCode>A0503</incTrafficCode>
+<incidentRegionCd>01</incidentRegionCd>
+<startDate>어제</startDate>
+<endDate>2026년 09월 28일  18시 00분</endDate>
+<lane>차로</lane>
+<roadName>올림픽대로</roadName>
+<sourceCode>K000</sourceCode>
+<lineLinkId>null</lineLinkId>
+<controlType>0</controlType>
+<important>00</important>
+<updateDate></updateDate>
+</record>
+</result>

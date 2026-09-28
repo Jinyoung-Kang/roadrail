@@ -55,7 +55,29 @@ test("판단 근거: 돌발 경고가 있으면 무슨 안내인지 목록으로
   if (await warn.count() === 0) return;  // 지금 안내가 없으면 여기까지
   const list = page.getByRole("list", { name: "돌발 안내 목록" });
   await expect(list.getByRole("listitem").first()).toBeVisible();
-  await expect(list.getByText(/발송/).first()).toBeVisible();
+  // 시각의 뜻은 출처마다 다르다 — 도로공사 문자는 발송, 경찰청 UTIC 는 돌발 시작(· 종료 예정)
+  await expect(list.getByText(/발송|시작/).first()).toBeVisible();
+});
+
+test("판단 근거: 경찰청 UTIC 돌발은 경로 위의 것만 · 출처와 시작 시각을 단다", async ({ page }) => {
+  // 화면이 실제로 받은 응답으로 확인한다 (계산 중이면 화면이 다시 부른다 — 마지막 응답까지 기다림)
+  const done = page.waitForResponse(async (r) => r.url().includes("/api/v1/trip?") && !(await r.json()).pending,
+    { timeout: 30_000 });
+  await page.goto("/");
+  const d = await (await done).json();
+  const utic: { routeKm: number | null }[] = (d.incidents ?? []).filter((i: { source?: string }) => i.source === "UTIC");
+  test.skip(utic.length === 0, "지금 경로 주변에 UTIC 돌발이 없거나 UTIC 키가 없는 환경");
+  // 일반 도로 돌발은 경로에서 0.5km 안만 (2km 로는 강변북로 · 성북로처럼 나란한 다른 길이 섞였다 — 검증 기록 75)
+  for (const i of utic) expect(i.routeKm).not.toBeNull();
+  for (const i of utic) expect(i.routeKm!).toBeLessThanOrEqual(0.5);
+  // 경고의 건수는 목록 상한과 무관한 전체 건수 (예전엔 8건 상한에 걸려 건수까지 줄었다)
+  await expect(page.getByText(`경로 주변 돌발 안내 ${d.incidentTotal}건`)).toBeVisible();
+  const more = page.getByRole("button", { name: /나머지 \d+건 더 보기/ });
+  if (await more.count()) await more.click();   // 처음 5건만 펼쳐 둔다
+  const list = page.getByRole("list", { name: "돌발 안내 목록" });
+  await expect(list.getByRole("listitem")).toHaveCount(d.incidents.length);
+  await expect(list.getByText("경찰청 UTIC", { exact: true })).toHaveCount(utic.length);
+  await expect(list.getByText(/시작/).first()).toBeVisible();
 });
 
 test("판단 화면: 자동차·기차 카드 — 도착 예정 · 시간 구성 · 선로 지도 출처", async ({ page }) => {

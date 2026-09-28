@@ -1,6 +1,7 @@
 package com.roadrail.service;
 
 import com.roadrail.common.Times;
+import com.roadrail.domain.KmaGrid;
 import com.roadrail.web.dto.EnvDtos.*;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -73,7 +74,7 @@ public class EnvService {
     public Incidents incidents(String cid, OffsetDateTime since, int limit) {
         String where = cid == null ? "sent_at >= :s" : "sent_at >= :s AND :c = ANY(corridor_ids)";
         var q = jdbc.sql("SELECT " + INCIDENT_COLS + """
-                 FROM ts.road_incident WHERE %s AND coalesce(type_code, '') <> '15'
+                 FROM ts.road_incident WHERE %s AND source = 'EX' AND coalesce(type_code, '') <> '15'
                 ORDER BY sent_at DESC LIMIT :l""".formatted(where)).param("s", since).param("l", limit);
         if (cid != null) q = q.param("c", cid);
         List<Incident> items = q.query((rs, i) -> incident(rs)).list();
@@ -82,26 +83,35 @@ public class EnvService {
                         + "corridorIds 가 비어 있으면 '전체'. 이벤트/홍보(유형 15)는 제외. 좌표(lat·lon)는 응답에 있을 때만.");
     }
 
-    static final String INCIDENT_COLS =
-            "sent_at, type_code, type_name, route_name, direction_txt, process_name, content, corridor_ids, lat, lon, point_name, last_seen_at";
+    static final String INCIDENT_COLS = "sent_at, type_code, type_name, route_name, direction_txt, process_name, content, corridor_ids, "
+            + "lat, lon, point_name, last_seen_at, source, end_at, lane";
 
     static Incident incident(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new Incident(Times.kst(rs.getObject("sent_at", OffsetDateTime.class)), rs.getString("type_code"),
                 rs.getString("type_name"), rs.getString("route_name"), rs.getString("direction_txt"), rs.getString("process_name"),
                 rs.getString("content"), Arrays.asList((String[]) rs.getArray("corridor_ids").getArray()),
                 (Double) rs.getObject("lat"), (Double) rs.getObject("lon"), rs.getString("point_name"),
-                Times.kst(rs.getObject("last_seen_at", OffsetDateTime.class)), null);
+                Times.kst(rs.getObject("last_seen_at", OffsetDateTime.class)), null, rs.getString("source"),
+                rs.getObject("end_at") == null ? null : Times.kst(rs.getObject("end_at", OffsetDateTime.class)), rs.getString("lane"));
     }
 
-    /** 문자 안내 목록을 5분마다 받으므로, 20분 안에 목록에서 본 안내를 '지금 안내 중'으로 본다 */
+    /** 문자 안내 · UTIC 목록을 5분마다 받으므로, 20분 안에 목록에서 본 안내를 '지금 안내 중'으로 본다 */
     static final String ACTIVE = "last_seen_at > now() - interval '20 minutes' AND coalesce(type_code, '') <> '15'";
     static final double ROUTE_KM = 2.0;
+    /**
+     * UTIC(일반 도로 포함)는 경로 0.5km 안만 — 도시 도로는 촘촘해 2km 로 보면 옆 도로의 돌발까지 '경로 위'로 잡힌다
+     * (실측: 서울역 → 부산역에서 경로 0.8~2km 밖 강변북로 · 올림픽로 · 성북로 사고가 '경로 위'로 들어옴 — 검증 기록 75). 경로 좌표 단순화 오차(수십 m)보다 넉넉하다.
+     */
+    static final double UTIC_ROUTE_KM = 0.5;
+    /** 같은 돌발을 두 기관이 함께 알리는 거리 — 고속도로 사고 · 공사는 도로공사 문자와 UTIC 에 모두 나온다 */
+    static final double DUPLICATE_KM = 0.5;
 
     /**
-     * 판단 카드용 — 지금 안내 중인 문자 중
-     * ① 안내 좌표가 자동차 경로에서 2km 안 (경로 위) ② 좌표는 없지만 수집 중인 길에 매칭(M-v1) — 좌표가 있는데 경로에서 먼 것은 뺀다.
+     * 판단 카드용 — 지금 안내 중인 돌발(도로공사 문자 · 경찰청 UTIC) 중
+     * ① 안내 좌표가 자동차 경로 위 (도로공사 2km · UTIC 0.5km 안) ② 좌표는 없지만 수집 중인 길에 매칭(M-v1) — 좌표가 있는데 경로에서 먼 것은 뺀다.
+     * 두 기관이 함께 알린 고속도로 돌발은 도로공사 문자 하나만 남긴다. 전부 돌려준다 — 건수는 판단 경고에 그대로 쓰고, 응답 목록의 상한은 부르는 쪽이 정한다.
      */
-    public List<Incident> routeIncidents(List<double[]> path, String corridorId, int limit) {
+    public List<Incident> routeIncidents(List<double[]> path, String corridorId) {
         List<Incident> out = new ArrayList<>();
         if (path != null && path.size() >= 2) {
             double s = 90, w = 180, n = -90, e = -180;
@@ -113,8 +123,11 @@ public class EnvService {
                     .query((rs, i) -> incident(rs)).list()
                     .forEach(inc -> {
                         double km = distanceToPathKm(inc.lat(), inc.lon(), path);
-                        if (km <= ROUTE_KM) out.add(inc.withRouteKm(Math.round(km * 10) / 10.0));
+                        if (km <= routeLimitKm(inc.source())) out.add(inc.withRouteKm(Math.round(km * 10) / 10.0));
                     });
+            List<Incident> kept = withoutDuplicates(out);
+            out.clear();
+            out.addAll(kept);
             out.sort(Comparator.comparing(Incident::sentAt).reversed());
         }
         if (corridorId != null) {
@@ -122,7 +135,19 @@ public class EnvService {
                             + " AND lat IS NULL AND :c = ANY(corridor_ids) ORDER BY sent_at DESC LIMIT 10")
                     .param("c", corridorId).query((rs, i) -> incident(rs)).list().forEach(out::add);
         }
-        return out.size() > limit ? out.subList(0, limit) : out;
+        return out;
+    }
+
+    /** 출처별 '경로 위' 거리 — 도로공사 문자(고속도로) 2km · UTIC 0.5km */
+    static double routeLimitKm(String source) {
+        return "UTIC".equals(source) ? UTIC_ROUTE_KM : ROUTE_KM;
+    }
+
+    /** 도로공사 문자 0.5km 안의 UTIC 돌발은 뺀다 — 고속도로는 도로공사 문자가 공식 안내이고, 같은 사고를 두 번 세지 않게 */
+    static List<Incident> withoutDuplicates(List<Incident> items) {
+        List<Incident> ex = items.stream().filter(i -> !"UTIC".equals(i.source()) && i.lat() != null).toList();
+        return items.stream().filter(i -> !"UTIC".equals(i.source()) || i.lat() == null
+                || ex.stream().noneMatch(e -> KmaGrid.km(e.lat(), e.lon(), i.lat(), i.lon()) <= DUPLICATE_KM)).toList();
     }
 
     /** 점과 꺾은선 사이 최단 거리(km) — 짧은 거리라 위도 보정한 평면 근사 */

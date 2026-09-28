@@ -40,6 +40,8 @@ import java.util.concurrent.*;
 public class TripService {
     static final double MIN_RAIL_KM = 15;
     static final Duration DEADLINE = Duration.ofMillis(750);
+    /** 응답에 싣는 경로 돌발 목록의 상한 (최근 순) — 건수는 상한과 무관하게 전체를 경고 · incidentTotal 에 */
+    static final int INCIDENT_LIST = 20;
     private final ExecutorService exec;
     private final JdbcClient jdbc;
     private final AppProperties props;
@@ -144,8 +146,10 @@ public class TripService {
         envMap.put("origin", origin != null ? origin : new NowDtos.PointEnv(from.name(), null, null, null, null, null, null, null, null, null));
         envMap.put("dest", dest != null ? dest : new NowDtos.PointEnv(to.name(), null, null, null, null, null, null, null, null, null));
 
-        // 돌발: 자동차 경로 2km 안(안내 좌표) + 수집 중인 길에 매칭된 좌표 없는 안내 — 지금 안내 중인 것만
-        List<EnvDtos.Incident> inc = env.routeIncidents(car.path(), obs == null ? null : obs.corridorId(), 8);
+        // 돌발: 자동차 경로 위(안내 좌표 — 도로공사 2km · UTIC 0.5km) + 수집 중인 길에 매칭된 좌표 없는 안내 — 지금 안내 중인 것만.
+        // 경고의 건수는 전체, 응답 목록은 최근 INCIDENT_LIST 건 (UTIC 를 더하자 긴 경로가 예전 상한 8건에 걸려 건수까지 줄어 보였다)
+        List<EnvDtos.Incident> near = env.routeIncidents(car.path(), obs == null ? null : obs.corridorId());
+        List<EnvDtos.Incident> inc = near.size() > INCIDENT_LIST ? List.copyOf(near.subList(0, INCIDENT_LIST)) : near;
 
         // ---- 판단 R-DEC-01
         DecisionRule.Car dcar = null;
@@ -170,7 +174,7 @@ public class TripService {
                 new DecisionRule.Env(o == null ? null : o.pop(), d == null ? null : d.pop(),
                         o == null ? null : o.pm25Grade(), d == null ? null : d.pm25Grade(),
                         holidays.name(Times.kst(depart).toLocalDate()).orElse(null), o == null ? null : o.pty(), d == null ? null : d.pty()),
-                inc.size(), p);
+                near.size(), p);
         if (km < MIN_RAIL_KM) {
             decision = new DecisionRule.Result(decision.rule(), "CAR", "가까운 거리(" + km + "km)라 기차 비교는 하지 않습니다.",
                     decision.carTotalMin(), null, null, decision.reasons(), decision.warnings());
@@ -192,7 +196,7 @@ public class TripService {
                 + RailJourneyService.TRANSFER_MIN + "분, 승차 여유 " + RailJourneyService.BOARDING_BUFFER_MIN + "분)이며, 역까지·역에서는 "
                 + (accessMin == null ? "카카오 실제 운전 경로(1km 미만만 도보 추정, 경로를 얻지 못한 역은 제외)" : "역까지 입력값 " + accessMin + "분 · 역에서는 카카오 실제 경로")
                 + "입니다. 지하철·버스 환승은 포함하지 않습니다. 참고 정보이며 교통 안내 서비스가 아닙니다.";
-        return new Trip(from, to, km, now, depart, accessMin, car, obs, railOpt, envMap, inc, decision, fresh, caveat,
+        return new Trip(from, to, km, now, depart, accessMin, car, obs, railOpt, envMap, inc, near.size(), decision, fresh, caveat,
                 pending || envPending || (railOpt != null && railOpt.pending()), "MISS");
     }
 

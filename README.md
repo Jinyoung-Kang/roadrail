@@ -63,7 +63,7 @@
 ```bash
 cd ~/Projects/roadrail
 cp .env.example .env      # 키 입력 (make up 은 .env 가 없으면 만들고 ADMIN_TOKEN 도 생성)
-make smoke                # 키 5종이 실제로 동작하는지 확인 (10개 오퍼레이션)
+make smoke                # 키가 실제로 동작하는지 확인 (공급자 6종 · 11개 오퍼레이션, UTIC 는 키가 있을 때만)
 make up                   # db · redis · api · collector · web 기동 (처음 빌드 약 3분)
 open http://localhost:3300
 ```
@@ -77,6 +77,7 @@ open http://localhost:3300
 | `EX_API_KEY` | 고속도로 공공데이터 포털 (data.ex.co.kr) | 영업소 간 통행시간 · 전국 교통량 · 문자 안내 · 톨게이트 |
 | `DATA_GO_KR_KEY` | 공공데이터포털 일반 인증키 (Decoding) | 코레일 열차운행정보 v2 · 기상청 단기예보 · 에어코리아 · 국토교통부(TAGO) 지하철정보 · **TAGO 열차정보**(역별 시간표 · 차종) · **한국천문연구원 특일 정보**(공휴일) (각각 활용신청) |
 | `KAKAO_REST_API_KEY` | 카카오 REST 키 | 출발지·도착지 검색 · 역 좌표 보정(로컬) · 미래 운행 정보 길찾기(모빌리티) |
+| `UTIC_API_KEY` | 경찰청 도시교통정보센터(UTIC) 개방 데이터 | 돌발정보 — 일반 도로 포함 사고 · 공사 · 행사 · 통제. 없으면 돌발은 도로공사 문자만 |
 | `NEXT_PUBLIC_KAKAO_JS_KEY` | 카카오 JavaScript 키 (플랫폼 Web 도메인에 `http://localhost:3300`) | 지도. 없으면 SVG 노선도로 대체 |
 | `ADMIN_TOKEN` | `make up` 이 자동 생성 | 관리 API (`X-Admin-Token`) |
 | `POSTGRES_PASSWORD` | 선택 (기본 `roadrail`, 포트는 127.0.0.1 에만) | DB 비밀번호 — 공개 환경에 둘 때 바꾸기 (기존 볼륨이면 `ALTER ROLE` 도 함께) |
@@ -148,7 +149,7 @@ sequenceDiagram
 
 | 영역 | 선택 | 메모 |
 |---|---|---|
-| 수집 · 분석 | Python 3.11 · asyncio · httpx · APScheduler · psycopg 3 · pandas | 공급자 어댑터 5종 · 작업 12개 · CLI (`roadrail …`) |
+| 수집 · 분석 | Python 3.11 · asyncio · httpx · APScheduler · psycopg 3 · pandas | 공급자 어댑터 8종 · 작업 17개 · CLI (`roadrail …`) |
 | API | Java 21 · **Spring Boot 4.1.1** · JdbcClient · Flyway · Spring Data Redis · springdoc | 3.4 는 OSS 지원 종료 → 4.1 ([ADR-007](docs/adr/007-polyglot-stack.md)). 가상 스레드 |
 | 화면 | Next.js 16 (Pages Router) · React 18 · TypeScript · Tailwind · Recharts 3 · 카카오 지도 | 테슬라 톤 라이트 모드. 차트 팔레트는 CVD 검증(ΔE 9.2) |
 | 저장 | PostgreSQL 16 (월 파티션 · BRIN · SQL 함수 `rail.od_trips`) · Redis 7 | 6 스키마 · 24 테이블 |
@@ -182,6 +183,7 @@ sequenceDiagram
 | `road_travel_time` | 도로공사 | 10분 | ≈ 15,300 (구간 106 × 144) |
 | `road_gap_backfill` | 도로공사 | 2시간 | 결측 있을 때만 |
 | `road_volume_all` · `road_incident_sms` | 도로공사 | 15분 · 5분 | 96 · 288 |
+| `utic_incident` | 경찰청 UTIC | 5분 | 288 (한 번에 전국의 진행 중 목록 · 예산 1,000) |
 | `rail_daily` | 코레일 | 05:30 · 09:30 · 15:30 | 3 × 3 (계획 1 + 운행정보 2 · 전날은 매번 다시 · 누락일은 최대 7일 누적 재시도 — 03:30 에는 전날 자료가 아직 없었음) |
 | `weather_vilage` | 기상청 | 발표 +15분 (8회) | 격자 7 × 8 = 56 (같은 발표는 다시 받지 않음) |
 | `air_quality_sido` | 에어코리아 | 매시 15분 | 시도 7 × 24 = 168 (**한도 500**, 예산 450) |
@@ -207,7 +209,7 @@ sequenceDiagram
   TAGO 시간표가 없는 날의 중간역 운행은 계획 시각을 알 수 없어 '확인 불가'로 빼고 계산합니다. 이전에 쓰던 선형 보간(P-i1)은 지연을 과소 추정했습니다 — 서울→대전 30일 정시율 89.7%(보간) → **83.9%(시간표 비교)**.
 - **차종** — TAGO 시간표에 적힌 그날의 배정 차종(KTX · KTX-산천(A/B-type) · KTX-청룡 · ITX-새마을 · ITX-마음 · 무궁화호 …). 시간표가 없으면 표시하지 않습니다(열차 번호로 짐작하지 않음).
 - **판단 R-DEC-01** — 자동차 = 카카오 미래 운행 정보(출발 시각 기준 경로) / 기차 = 역까지 + 대기 + 계획 소요 + 30일 평균 도착 지연 + 역에서, '출발 + 역까지' 이후 첫 직통 열차(그날 없으면 다음 날 첫차). |차이| < 10분이면 '비슷함'. 한쪽이 없으면 결론 대신 근거와 함께 '비교할 수 없습니다'. 경고: 강수확률 ≥ 60% · 경로 주변 돌발 · 초미세먼지 나쁨 이상.
-- **돌발 안내** — 도로공사 실시간 문자 안내 중 지금 안내 중인 것(최근 조회 목록에 있음). 안내에 좌표가 있으면(응답의 `latitude`, 경도는 `altitude` 필드) 카카오 자동차 경로에서 2km 안인 것을 '경로 위'로, 좌표가 없으면 수집 중인 길과 같은 노선(M-v1)인 것만 보여 줍니다. 판단 근거에서 내용을 펼쳐 보고 '지도에서 보기'로 위치로 이동합니다.
+- **돌발 안내** — 도로공사 실시간 문자 안내(고속도로)와 경찰청 UTIC 돌발정보(일반 도로 포함 사고 · 공사 · 행사 · 통제) 중 지금 안내 중인 것(최근 조회 목록에 있음). 안내에 좌표가 있으면(문자는 응답의 `latitude`, 경도는 `altitude` 필드) 카카오 자동차 경로에서 도로공사 2km · UTIC 0.5km 안인 것을 '경로 위'로, 좌표가 없으면 수집 중인 길과 같은 노선(M-v1)인 것만 보여 줍니다. UTIC 는 도심의 나란한 다른 길이 섞이지 않게 더 좁게 보고, 좌표 있는 도로공사 안내 0.5km 안의 UTIC 건은 같은 돌발로 봐 하나만 남깁니다. 경고의 건수는 전체, 목록은 최근 20건입니다. 판단 근거에서 내용(출처 · 시각 · 통제 차로)을 펼쳐 보고 '지도에서 보기'로 위치로 이동합니다.
 - **공휴일** — 한국천문연구원 특일 정보(공휴일 · 대체공휴일 · 선거일). 도로 기준선 입력에서 빼고(명절 정체가 '평소'를 오염시키지 않게), 평일 목표일의 기차 기준 시간표로 공휴일(임시열차 포함 — 추석 09-24 931편 ↔ 09-17 875편)을 고르지 않으며, 요일별 정시율에서 공휴일을 따로 묶고, 출발일이 공휴일이면 판단에 경고합니다. TAGO 지하철 요일 코드(평일·토·일)에는 공휴일이 없어 공휴일엔 지하철 시각을 표시하지 않습니다.
 - **도로 구분** — 카카오 경로에는 도로 등급이 없어, 이름에 '고속도로'가 있는 구간만 고속도로로 구분하고 나머지는 '그 외 도로'로 둡니다(국도를 이름으로 짐작하지 않음).
 - **기차 여정** — 출발지·도착지 반경 30km 안의 운행 역 최대 6곳씩. 역까지·역에서: 1km 미만 도보 추정 · 그 밖은 카카오 실제 운전 경로(9.5km 안은 다중 길찾기 1건, 밖은 역마다 1건) — 경로를 얻지 못한 역은 후보에서 뺍니다. CSA 로 가장 이른 도착(승차 여유 5분 · 최소 환승 10분 · 다음 날 첫차 포함)을 찾은 뒤, 화면에 내는 구간 시각은 **기준일의 실제 시간표**(운행계획 · TAGO)로 바꾸고 그 시각으로 승차 · 환승이 되는지 다시 확인합니다. 코레일 여객열차끼리만 환승 — 지하철·버스 경로는 공개 데이터가 없어 제외하고, 출발역·도착역의 지하철 노선과 다음 열차 시각(TAGO)만 안내.
@@ -228,12 +230,12 @@ sequenceDiagram
 | 7 | `GET /corridors/{id}/rail/trains?dir&date` | 날짜별 길 열차 + 열차별 30일 정시성 |
 | 8 | `GET /rail/punctuality?corridorId&from&to&dir&groupBy=train\|dow\|hour&thresholdMin` | 정시율 집계 · 지연 분포 · 전국 비교 |
 | 9 | `GET /corridors/{id}/env?hours` | 지점별 시간별 예보 · 대기질 |
-| 10 | `GET /incidents?corridorId&since` | 돌발 문자 안내 (길 매칭 M-v1) |
+| 10 | `GET /incidents?corridorId&since` | 돌발 문자 안내 (길 매칭 M-v1 — 도로공사 문자만) |
 | 11 | `GET /ops/collect-status` | 작업별 상태 · 24h 완전성 · 예산 · 공개 지연 · 오류 · `failures`(오류 실행의 전체 내용: 작업 메모 · 실패한 외부 호출 · 스택 트레이스, 키 마스킹) |
 | 12 | `POST /admin/jobs/{job}/run` | 즉시 실행 202 · 실행 중 409 |
 | 13 | `POST /admin/backfill` | 기간 재수집 202 (예상 호출 수 먼저 계산) · 기간 400 · 예산 429 · 실행 중 409 |
 | 14 | `GET /places/search?q` | 출발지·도착지 검색 — 행정구역 · 기차역 · 장소 (전국) |
-| 15 | `GET /trip?fromLat&fromLon&fromName[&fromStation]&toLat&toLon&toName[&toStation]&departIn&accessMin` | 출발지 → 도착지 판단 카드 — car(경로 좌표 · `traffic`: 좌표 번호 범위별 소통 원활 · 서행 · 지체 · 정체 · 사고와 길이) · observed · rail(여정 3개: 역까지 · 열차 구간(선로 경로 · 차종 `grade` · 실제 시간표 여부 `timetable`) · 환승 · 역에서, 지하철 연결) · `incidents`(경로 주변 돌발: 좌표 · 경로와의 거리) · env(날씨 · 대기, `weatherSource`: 단기예보 / 초단기예보 / 초단기실황 · `rain`: 1시간 강수량) · decision · `pending` |
+| 15 | `GET /trip?fromLat&fromLon&fromName[&fromStation]&toLat&toLon&toName[&toStation]&departIn&accessMin` | 출발지 → 도착지 판단 카드 — car(경로 좌표 · `traffic`: 좌표 번호 범위별 소통 원활 · 서행 · 지체 · 정체 · 사고와 길이) · observed · rail(여정 3개: 역까지 · 열차 구간(선로 경로 · 차종 `grade` · 실제 시간표 여부 `timetable`) · 환승 · 역에서, 지하철 연결) · `incidents`(경로 주변 돌발 최근 20건: 좌표 · 경로와의 거리 · `source` EX / UTIC · `endAt` · `lane`) · `incidentTotal`(전체 건수) · env(날씨 · 대기, `weatherSource`: 단기예보 / 초단기예보 / 초단기실황 · `rain`: 1시간 강수량) · decision · `pending` |
 | 16 | `GET /stations?q&limit&sort=trains\|name` | 운행 중인 기차역 검색 — `trains`: 정확 일치·정차 편수 순, `name`: 가나다순(역 선택 목록) |
 | 17 | `GET /rail/od/punctuality?dep&arr&from&to&groupBy&thresholdMin` | 임의 역 쌍 정시율 |
 | 18 | `GET /rail/od/trains?dep&arr&date` | 임의 역 쌍 날짜별 열차 + 30일 정시성 + 차종(`grade`, TAGO) · `meta`(OO발 OO행). basis: EXACT · TT · NONE. 날짜를 안 주면 계획 시각을 확인할 수 있는 가장 최근 날 |
@@ -243,7 +245,7 @@ sequenceDiagram
 
 ## 6. 데이터 모델
 
-`ref`(길 · 구간 체인 · 영업소 · 역 · 환경 지점 · 역 쌍 선로 경로 `rail_link`) · `ts`(구간 통행시간 · 길 합산 · 교통량 — 월 파티션 + BRIN, 돌발 문자) ·
+`ref`(길 · 구간 체인 · 영업소 · 역 · 환경 지점 · 역 쌍 선로 경로 `rail_link`) · `ts`(구간 통행시간 · 길 합산 · 교통량 — 월 파티션 + BRIN, 돌발 — 도로공사 문자 · 경찰청 UTIC) ·
 `rail`(운행계획 · 운행정보(월 파티션) · 열차 정시성 · 임의 역 쌍 함수 `od_trips`) · `env`(단기예보(월 파티션) · 대기질) ·
 `ana`(기준선 · 백테스트 · 카카오 ETA) · `ops`(작업 · 실행 이력 · 예산 · 결측 · 호출 로그 · 백필). DDL: [db/migrations](db/migrations).
 
@@ -252,11 +254,11 @@ sequenceDiagram
 | 층 | 대상 | 수 |
 |---|---|---|
 | 단위 (pytest) | 슬롯 정렬 · 격자 변환(기상청 격자표 4곳) · 품질 규칙 · 튀는 값 제거 · 길 합산 · 정시성(자정 넘김 · 조기 도착 · 확인 불가 · 보간) · 예측 골든 · 기준선 · 백테스트(결정성 · 누수 없음) · 돌발 매칭 · 역 좌표 매칭 · 선로 그래프(본선 추종 · 지선 · 다른 역 통과 금지 · 단순화 · 구역 캐시) · 공급자별 예산 설정 · 공휴일은 기준선에서 제외 · 창 탐색 알고리즘 교체 전후 동일성(무작위 65세트) | 56 |
-| 계약 (pytest) | 공급자 5종 실제 응답 fixture 파서 · 문자 안내 좌표(altitude = 경도, 범위 밖 · 좌표 없음은 버림) · 특일 정보(한 건 · 0건 형식 포함) | 10 |
-| 통합 (pytest + PostgreSQL · Redis) | 예산 동시성 · 멱등 수집 · 꼬리 커서 · 결측→백필 · seed 멱등 · 철도 일 계산 · SQL `od_trips` ↔ Python 계약 · **시간표(TT)가 보간보다 우선** · 호출 로그 키 마스킹 · 시간 초과가 오류 상세에 남는지 · 재시작 뒤 RUNNING·잠금·예약 정리 · 취소된 작업은 '중단'으로 기록 · 선로 작업 28일 안이면 건너뜀 · 공휴일 동기화 멱등 · 꼬리 위치는 저장 뒤에만 · 자정을 넘겨도 읽은 날짜 키에 · 시작 전 실패도 잠금 해제 · 남의 잠금은 지우지 않음 · 명령 스트림 대기가 소켓 읽기 제한에 끊기지 않음 · 연결 풀 상한을 넘는 동시 요청은 기다림 | 24 |
-| 단위 (JUnit) | 판단 규칙 · 예측 골든(Python 과 같은 파일) · 기상청 격자 · 행정구역→에어코리아 시도 · **CSA 환승 경로** · 도로 구분 · 경로 요약 · 돌발 좌표↔경로 거리 · TAGO 시각 해석·검증된 역명 별칭 · 요청 한도(버킷 · 믿는 프록시의 맨 오른쪽 주소만) · 공휴일 경고 · SingleFlight · Memo(즉시 완료 · 실패 비고착 · Error 뒤 재로드 · 잠금 밖 로더) · 실행기 종료 상한 · 과부하 503 · TAGO 지하철 오류 응답 · 잘못된 행 · **경로 좌표 줄이기 · 구간별 소통**(DP 중요도 · 경계 공유 · 400점 상한) · 카카오 응답 해석 · 기상청 초단기 발표 시각 · 날씨 합치기(초단기 · 실황 · 직전 발표) · 강수형태 경고 | 82 |
-| API 통합 (JUnit + Testcontainers) | 판단 카드 · 캐시 · 오류 규약(415 · 406 · ERROR 로그 없음) · 관리 API 401/202/409/400/429 · 수집 상태(오류 상세 · MGET 위치) · 헬스 · 임의 역 쌍(OO발 OO행 · 추정 차종 없음 · 가나다순 · 검색 정렬) · 출발지→도착지(선로 경로 · 캐시 키) · 공휴일(요일별 H · 경고 · 지하철 생략) · 요청 한도 429 · 역 코드 형식 400 · 좌표 NaN 400 · 외부 예산 회계(Lua 한 번) · 캐시 쇄도 방지 | 17 |
-| E2E (Playwright) | 판단 · ⇄ 교환 · 전국 검색 · 검색 칸 빈 목록 · 서비스 소개 · 판단 근거 돌발 목록 · 카드(도착 예정·시간 구성·OSM 출처) · 도로 분석 · 지도 잠금 · 선택 목록 잘림 · 고속도로 실측 · 철도 역 검색 · 가나다순 · 차종은 TAGO 배지로만 · 수집 상태 오류 복사 · 모바일 메뉴 · 보안 헤더 · 콘솔 오류 없음 · X-Forwarded-For 위조 무시 · 지도 라벨 HTML 주입 차단 · 프록시 경로 검증 · 자동차 경로 구간별 소통(경로 전체를 빈틈없이 · 길이 합 · 범례) | 20 |
+| 계약 (pytest) | 공급자 5종 실제 응답 fixture 파서 · 문자 안내 좌표(altitude = 경도, 범위 밖 · 좌표 없음은 버림) · 특일 정보(한 건 · 0건 형식 포함) · UTIC 돌발 XML(시각 형식 · 범위 밖 좌표 · 모르는 유형 · 도로명 앞뒤 기호) | 12 |
+| 통합 (pytest + PostgreSQL · Redis) | 예산 동시성 · 멱등 수집 · 꼬리 커서 · 결측→백필 · seed 멱등 · 철도 일 계산 · SQL `od_trips` ↔ Python 계약 · **시간표(TT)가 보간보다 우선** · 호출 로그 키 마스킹 · 시간 초과가 오류 상세에 남는지 · 재시작 뒤 RUNNING·잠금·예약 정리 · 취소된 작업은 '중단'으로 기록 · 선로 작업 28일 안이면 건너뜀 · 공휴일 동기화 멱등 · 꼬리 위치는 저장 뒤에만 · 자정을 넘겨도 읽은 날짜 키에 · 시작 전 실패도 잠금 해제 · 남의 잠금은 지우지 않음 · 명령 스트림 대기가 소켓 읽기 제한에 끊기지 않음 · 연결 풀 상한을 넘는 동시 요청은 기다림 · UTIC 돌발 멱등 upsert · HTTPS · 키 마스킹 · 키 오류 응답(HTTP 200 + JSON)은 기관 코드로 · 키 없으면 호출 안 함 | 27 |
+| 단위 (JUnit) | 판단 규칙 · 예측 골든(Python 과 같은 파일) · 기상청 격자 · 행정구역→에어코리아 시도 · **CSA 환승 경로** · 도로 구분 · 경로 요약 · 돌발 좌표↔경로 거리 · TAGO 시각 해석·검증된 역명 별칭 · 요청 한도(버킷 · 믿는 프록시의 맨 오른쪽 주소만) · 공휴일 경고 · SingleFlight · Memo(즉시 완료 · 실패 비고착 · Error 뒤 재로드 · 잠금 밖 로더) · 실행기 종료 상한 · 과부하 503 · TAGO 지하철 오류 응답 · 잘못된 행 · **경로 좌표 줄이기 · 구간별 소통**(DP 중요도 · 경계 공유 · 400점 상한) · 카카오 응답 해석 · 기상청 초단기 발표 시각 · 날씨 합치기(초단기 · 실황 · 직전 발표) · 강수형태 경고 · UTIC 겹침 제거 · 도심 돌발은 경로 위(0.5km)만 | 84 |
+| API 통합 (JUnit + Testcontainers) | 판단 카드 · 캐시 · 오류 규약(415 · 406 · ERROR 로그 없음) · 관리 API 401/202/409/400/429 · 수집 상태(오류 상세 · MGET 위치) · 헬스 · 임의 역 쌍(OO발 OO행 · 추정 차종 없음 · 가나다순 · 검색 정렬) · 출발지→도착지(선로 경로 · 캐시 키) · 공휴일(요일별 H · 경고 · 지하철 생략) · 요청 한도 429 · 역 코드 형식 400 · 좌표 NaN 400 · 외부 예산 회계(Lua 한 번) · 캐시 쇄도 방지 · 길 돌발 목록은 도로공사 문자만 · 경로 돌발 전부 최근 순(출처별 거리 · 겹침 · 끝난 돌발 제외) | 19 |
+| E2E (Playwright) | 판단 · ⇄ 교환 · 전국 검색 · 검색 칸 빈 목록 · 서비스 소개 · 판단 근거 돌발 목록 · 카드(도착 예정·시간 구성·OSM 출처) · 도로 분석 · 지도 잠금 · 선택 목록 잘림 · 고속도로 실측 · 철도 역 검색 · 가나다순 · 차종은 TAGO 배지로만 · 수집 상태 오류 복사 · 모바일 메뉴 · 보안 헤더 · 콘솔 오류 없음 · X-Forwarded-For 위조 무시 · 지도 라벨 HTML 주입 차단 · 프록시 경로 검증 · 자동차 경로 구간별 소통(경로 전체를 빈틈없이 · 길이 합 · 범례) · UTIC 돌발(경로 위만 · 경고 건수 = 전체 · 출처 표시) | 21 |
 
 `make test` (collector 는 compose 컨테이너 안에서, api 는 Testcontainers) · `make e2e` · CI: [.github/workflows/ci.yml](.github/workflows/ci.yml) · 정적 분석: [codeql.yml](.github/workflows/codeql.yml)(PR · main · 매주, 결과는 Security 탭) · 매주 월요일 Dependabot(06:00) 뒤 main 전체 CI(09:17) — main 브랜치 보호의 필수 검사는 `ci passed` 하나이고, Dependabot 의 minor · patch PR 은 이것이 통과하면 자동 병합됩니다 ([ADR-021](docs/adr/021-dependabot-auto-merge.md))
 
@@ -312,12 +314,13 @@ sequenceDiagram
 - 요청 한도는 접속 주소별입니다. 같은 공유기 · 프록시 뒤의 사용자는 한도를 나눠 씁니다. 앞에 다른 프록시(nginx 등)를 두면 그 프록시가 `X-Forwarded-For` 를 덮어쓰게 설정해야 합니다.
 - **공개 배포 체크리스트** — 지금은 모든 포트가 127.0.0.1 에만 열린 로컬 서비스라 다음을 열어 두었습니다: Redis 비밀번호 · `maxmemory`(검색어가 캐시 키가 됨), Swagger 공개(`springdoc.*.enabled`), 수집 상태의 오류 상세(스택 트레이스 · 외부 호출 파라미터 — 키는 마스킹). 공개 배포 전에는 Redis `requirepass` · `maxmemory`, Swagger 끄기, `/ops/collect-status` 의 상세를 관리 토큰 뒤로 옮겨야 합니다 ([ADR-018](docs/adr/018-security-hardening.md)).
 - 도로공사 호출 한도는 공식 수치가 없어 보수적 예산(2만/일)으로 운영합니다 (U-3).
+- 같은 돌발이 도로공사 문자와 경찰청 UTIC 에 함께 있어도 문자에 좌표가 없으면 비교할 수 없어 두 건으로 보일 수 있습니다. UTIC 응답은 지금 진행 중인 목록뿐이라 끝난 돌발은 마지막으로 본 시각까지만 남습니다.
 
 ## 10. 디렉터리
 
 ```
 roadrail/
-├─ collector/roadrail/    # Python: core(설정·DB·Redis·로그 마스킹·슬롯) · providers(ex·korail·kma·airkorea·kakao)
+├─ collector/roadrail/    # Python: core(설정·DB·Redis·로그 마스킹·슬롯) · providers(ex·korail·kma·airkorea·kakao·osm·kasi·utic)
 │                          #   pipeline(seed·road·rail·env·analysis) · analytics(순수 함수) · scheduler(quota·jobs·main) · cli
 ├─ collector/tests/       # unit · contract · integration
 ├─ api/src/main/java/com/roadrail/  # common(오류 규약 · 요청 한도 · JsonCache · SingleFlight · Memo) · config · domain(ForecastModels·DecisionRule·RailRouter(CSA)·RoadClass·KmaGrid)
@@ -325,9 +328,9 @@ roadrail/
 ├─ web/                   # pages(index=출발지→도착지 · road · rail · forecast · ops) · components · lib · e2e
 ├─ db/migrations/         # V1 스키마·파티션 함수 · V2 ref · V3 ts · V4 rail/env/ana · V5 ops · V6 역 쌍(od_trips) · V7 하루 시간표(day_stops)
 │                          #   V8 선로 경로 · 오류 상세 · V9 용어 · V10 돌발 좌표 · V11 TAGO 시간표 · V12 시간표 완전성 · 철도 수집 시각 · V13 실제 비교만(od_trips_real)
-│                          #   V14 성능(JIT 끔 · 역 쌍 해시 조인) · V15 공휴일 달력
+│                          #   V14 성능(JIT 끔 · 역 쌍 해시 조인) · V15 공휴일 달력 · V16 돌발 출처(UTIC)
 ├─ seed/corridors.yaml    # 길 정의 (tools/build_seed.py 생성)
 ├─ fixtures/              # 공급자 응답 fixture · 예측 골든 케이스(언어 공유)
 ├─ tools/                 # smoke.py · build_seed.py · bench.py(make bench) (표준 라이브러리만)
-└─ docs/                  # adr(20) · review(코드 리뷰 진단 보고서) · W1-smoke · VERIFICATION · DATA-PROVENANCE · redis-keys · images
+└─ docs/                  # adr(23) · review(코드 리뷰 진단 보고서) · W1-smoke · VERIFICATION · DATA-PROVENANCE · redis-keys · images
 ```

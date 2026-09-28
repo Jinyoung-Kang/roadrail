@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     ex_api_key: str = ""
     data_go_kr_key: str = ""
     kakao_rest_api_key: str = ""
+    utic_api_key: str = ""           # 경찰청 도시교통정보센터 개방데이터 (돌발정보)
 
     quota_ex: int = 20000
     quota_korail: int = 9000
@@ -28,6 +29,7 @@ class Settings(BaseSettings):
     quota_kakao_local: int = 50000   # 카카오 로컬 검색 (공식 100,000/일)
     quota_osm: int = 60              # Overpass (공개 미러 공정 사용 — 한 번 실행에 최대 24회)
     quota_kasi: int = 100            # 특일 정보 (한 번 실행에 3회)
+    quota_utic: int = 1000           # UTIC 돌발정보 (5분마다 1회 = 하루 288회)
 
     on_time_threshold_min: int = 5
     forecast_tau_min: int = 90
@@ -47,10 +49,11 @@ class Settings(BaseSettings):
             "EX": self.quota_ex, "KORAIL": self.quota_korail, "KMA": self.quota_kma,
             "AIRKOREA": self.quota_airkorea, "KAKAO": self.quota_kakao,
             "KAKAO_LOCAL": self.quota_kakao_local, "OSM": self.quota_osm, "KASI": self.quota_kasi,
+            "UTIC": self.quota_utic,
         }[provider]
 
     def secrets(self) -> list[str]:
-        return [s for s in (self.ex_api_key, self.data_go_kr_key, self.kakao_rest_api_key) if s]
+        return [s for s in (self.ex_api_key, self.data_go_kr_key, self.kakao_rest_api_key, self.utic_api_key) if s]
 
 
 @lru_cache

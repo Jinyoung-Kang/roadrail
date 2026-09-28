@@ -1,10 +1,12 @@
-"""계약 테스트: W1 스모크에서 저장한 실제 응답(fixtures/<provider>/*.json)의 필드 매핑 (10장).
+"""계약 테스트: W1 스모크에서 저장한 실제 응답(fixtures/<provider>/*.json · UTIC 는 XML)의 필드 매핑 (10장).
 응답 형식이 바뀌면 `python3 tools/smoke.py --save` 로 갱신하고 이 테스트가 무엇이 깨졌는지 알려 준다."""
 import datetime as dt
+import hashlib
 import json
+import xml.etree.ElementTree as ET
 
 from roadrail.core.timeutil import KST
-from roadrail.providers import airkorea, ex, kakao, kasi, kma, korail
+from roadrail.providers import airkorea, ex, kakao, kasi, kma, korail, utic
 
 
 def load(fixtures_dir, provider, name):
@@ -102,3 +104,26 @@ def test_kasi_rest_days(fixtures_dir):
     one = {"response": {"body": {"items": {"item": {"locdate": 20261225, "dateName": "기독탄신일", "isHoliday": "Y"}}}}}
     assert [r["day"] for r in kasi.parse_rest_days(one)] == [dt.date(2026, 12, 25)]
     assert kasi.parse_rest_days({"response": {"body": {"items": ""}}}) == []
+
+
+def test_utic_incidents(fixtures_dir):
+    # 실제 응답의 사고 · 공사 · 통제 3건 + 경계 사례 4건 (fixtures/utic/ims.xml)
+    items = utic.parse_incidents(ET.parse(fixtures_dir / "utic" / "ims.xml").getroot())
+    assert len(items) == 5                       # 식별자 없음 · 시각 형식이 깨진 행은 버린다
+    acc, work, ctrl, outside, unknown = items
+    assert (acc["type_code"], acc["type_name"], acc["route_name"]) == ("U1", "사고", "올림픽대로")
+    assert acc["sent_at"] == dt.datetime(2026, 9, 28, 17, 30, tzinfo=KST)
+    assert acc["end_at"] == dt.datetime(2026, 9, 28, 18, 0, tzinfo=KST)
+    assert 37.5 < acc["lat"] < 37.6 and 126.8 < acc["lon"] < 126.9          # locationDataX = 경도
+    assert acc["content"].startswith("[사고]") and acc["lane"] == "차로"
+    assert acc["msg_hash"] == hashlib.sha256(b"UTIC:L90173916274").hexdigest()
+    assert (work["type_name"], ctrl["type_name"]) == ("공사", "통제")
+    assert outside["lat"] is None and outside["lon"] is None                 # 대한민국 밖 좌표는 위치 없음으로
+    assert (unknown["type_code"], unknown["type_name"]) == ("U9", "행사")    # 모르는 코드는 제목 머리를 쓴다
+    assert unknown["route_name"] == "올림픽대로"                               # 도로명 앞뒤 기호('*…,')는 걷어 낸다
+
+
+def test_utic_time():
+    assert utic.parse_time("2026년 09월 28일  17시 30분") == dt.datetime(2026, 9, 28, 17, 30, tzinfo=KST)
+    assert utic.parse_time("2026년 02월 30일 10시 00분") is None             # 없는 날짜
+    assert utic.parse_time("") is None and utic.parse_time(None) is None

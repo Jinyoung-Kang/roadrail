@@ -128,7 +128,7 @@ export default function Home() {
 
       <Section id="evidence" eyebrow="R-DEC-01" title="왜 이렇게 판단했나요">
         {t ? <Evidence decision={t.decision} freshness={t.freshness} caveat={t.caveat} cache={t.cache} asOf={t.asOf}
-                       incidents={t.incidents} onLocate={locate} /> : <Loading />}
+                       incidents={t.incidents} incidentTotal={t.incidentTotal} onLocate={locate} /> : <Loading />}
       </Section>
 
       <Section eyebrow="날씨 · 대기" title="출발지와 도착지" gray>
@@ -148,7 +148,7 @@ export default function Home() {
           {located.length > 0 && (
             <p className="mt-1 flex items-center gap-2 text-xs text-muted">
               <span className="inline-block h-0 w-0 border-x-[6px] border-b-10 border-x-transparent" style={{ borderBottomColor: WARN }} />
-              돌발 안내 {located.length}건 (도로공사 안내 좌표)
+              돌발 안내 {located.length}건 (도로공사 {located.filter((i) => i.source !== "UTIC").length} · 경찰청 UTIC {located.filter((i) => i.source === "UTIC").length})
             </p>
           )}
         </div>

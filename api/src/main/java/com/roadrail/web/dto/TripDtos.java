@@ -25,14 +25,15 @@ public final class TripDtos {
                            Integer baselineP50Sec, Double vsBaselinePct, OffsetDateTime slotTs, Integer predictedSec,
                            String model, int leadMin) {}
 
+    /** incidents: 경로 돌발 최근 순 최대 20건 · incidentTotal: 전체 건수 (판단 경고의 건수와 같다) */
     public record Trip(TripDtos.Place from, TripDtos.Place to, double distanceKm, OffsetDateTime asOf,
                        OffsetDateTime departAt, Integer accessMin, Car car, Observed observed, JourneyDtos.Plan rail,
-                       Map<String, NowDtos.PointEnv> env, List<EnvDtos.Incident> incidents, DecisionRule.Result decision,
-                       Map<String, String> freshness, String caveat, boolean pending, String cache) {
+                       Map<String, NowDtos.PointEnv> env, List<EnvDtos.Incident> incidents, int incidentTotal,
+                       DecisionRule.Result decision, Map<String, String> freshness, String caveat, boolean pending, String cache) {
 
         public Trip withCache(String c) {
-            return new Trip(from, to, distanceKm, asOf, departAt, accessMin, car, observed, rail, env, incidents, decision,
-                    freshness, caveat, pending, c);
+            return new Trip(from, to, distanceKm, asOf, departAt, accessMin, car, observed, rail, env, incidents, incidentTotal,
+                    decision, freshness, caveat, pending, c);
         }
     }
 }
