@@ -385,7 +385,7 @@ async def test_holiday_sync_is_idempotent(seeded, fixtures_dir):
 
 async def test_utic_incidents_are_upserted_with_source_and_key_masked(fixtures_dir, monkeypatch):
     from roadrail.core.config import settings
-    monkeypatch.setattr(settings(), "utic_api_key", "TESTKEY-utic-123")
+    monkeypatch.setattr(settings(), "utic_api_key", "SECRET456")
     body = (fixtures_dir / "utic" / "ims.xml").read_text()
     urls = []
 
@@ -401,15 +401,15 @@ async def test_utic_incidents_are_upserted_with_source_and_key_masked(fixtures_d
     assert len(rows) == 5
     assert [r["type_name"] for r in rows] == ["사고", "사고", "공사", "통제", "행사"]
     assert rows[0]["end_at"] is not None and rows[0]["lane"] == "차로"
-    assert urls[0].scheme == "https" and urls[0].params["key"] == "TESTKEY-utic-123"
-    assert all("TESTKEY-utic-123" not in c[3] for c in ctx.api_calls)    # 호출 기록에는 키를 가린다
+    assert urls[0].scheme == "https" and urls[0].params["key"] == "SECRET456"
+    assert all("SECRET456" not in c[3] for c in ctx.api_calls)    # 호출 기록에는 키를 가린다
     assert ctx.notes[-1].startswith("UTIC 돌발 5건")
 
 
 async def test_utic_key_error_is_reported_with_its_code_and_not_retried(monkeypatch):
     # 키가 틀리거나 만료되면 HTTP 200 + JSON 오류 본문 (실측) — 'XML 아님' 이 아니라 기관의 오류 코드 · 문구를 남긴다
     from roadrail.core.config import settings
-    monkeypatch.setattr(settings(), "utic_api_key", "TESTKEY-utic-123")
+    monkeypatch.setattr(settings(), "utic_api_key", "SECRET456")
     calls = []
 
     def handler(request):

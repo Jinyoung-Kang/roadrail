@@ -1,0 +1,5 @@
+# gitleaks 허용 목록 — 진짜 비밀이 아닌 것이 확인된 발견만, 규칙이 아니라 지문(커밋:파일:규칙:줄)으로 하나씩.
+# c04afce: UTIC 통합 테스트의 가짜 키 문자열("TESTKEY-…") 두 줄 — 다음 커밋에서 이 저장소 관례(SECRET123 꼴)로 바꿨고,
+#          이력 검사(CI 는 전체 이력을 본다)에서만 남는다. 실제 키는 .env 에만 있고 커밋된 적 없다.
+c04afced5e4793c64fb1a45dee04e935863d862b:collector/tests/integration/test_pipeline.py:generic-api-key:388
+c04afced5e4793c64fb1a45dee04e935863d862b:collector/tests/integration/test_pipeline.py:generic-api-key:412
