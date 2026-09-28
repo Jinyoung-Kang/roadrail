@@ -12,7 +12,7 @@ from roadrail.core import db, rds
 from roadrail.core.timeutil import KST, now_kst
 from roadrail.pipeline import rail, road
 from roadrail.pipeline.seed import apply_seed
-from roadrail.providers.base import JobContext
+from roadrail.providers.base import JobContext, ProviderError
 from roadrail.providers.kma import latlon_to_grid
 from roadrail.scheduler.quota import QuotaBudget, QuotaExhausted
 
@@ -381,3 +381,55 @@ async def test_holiday_sync_is_idempotent(seeded, fixtures_dir):
     assert ctx.calls == 3  # 작년 · 올해 · 내년
     assert await count("SELECT count(*) AS n FROM ref.holiday") == 22  # 같은 응답을 세 번 받아도 날짜당 한 행
     assert dt.date(2026, 9, 24) in await holidays.holiday_days(dt.date(2026, 1, 1))
+
+
+async def test_utic_incidents_are_upserted_with_source_and_key_masked(fixtures_dir, monkeypatch):
+    from roadrail.core.config import settings
+    monkeypatch.setattr(settings(), "utic_api_key", "TESTKEY-utic-123")
+    body = (fixtures_dir / "utic" / "ims.xml").read_text()
+    urls = []
+
+    def handler(request):
+        urls.append(request.url)
+        return httpx.Response(200, text=body, headers={"content-type": "text/xml;charset=utf-8"})
+
+    await db.execute("DELETE FROM ts.road_incident WHERE source = 'UTIC'")
+    ctx = ctx_with(handler)
+    assert await road.collect_utic_incidents(ctx) == 5
+    assert await road.collect_utic_incidents(ctx) == 5                     # 같은 목록을 다시 받아도 행은 그대로 (멱등)
+    rows = await db.fetch("SELECT type_name, end_at, lane, lat FROM ts.road_incident WHERE source = 'UTIC' ORDER BY type_code")
+    assert len(rows) == 5
+    assert [r["type_name"] for r in rows] == ["사고", "사고", "공사", "통제", "행사"]
+    assert rows[0]["end_at"] is not None and rows[0]["lane"] == "차로"
+    assert urls[0].scheme == "https" and urls[0].params["key"] == "TESTKEY-utic-123"
+    assert all("TESTKEY-utic-123" not in c[3] for c in ctx.api_calls)    # 호출 기록에는 키를 가린다
+    assert ctx.notes[-1].startswith("UTIC 돌발 5건")
+
+
+async def test_utic_key_error_is_reported_with_its_code_and_not_retried(monkeypatch):
+    # 키가 틀리거나 만료되면 HTTP 200 + JSON 오류 본문 (실측) — 'XML 아님' 이 아니라 기관의 오류 코드 · 문구를 남긴다
+    from roadrail.core.config import settings
+    monkeypatch.setattr(settings(), "utic_api_key", "TESTKEY-utic-123")
+    calls = []
+
+    def handler(request):
+        calls.append(request.url)
+        return httpx.Response(200, text='[{"resultCode":"02","resultMsg":"유효한 KEY값이 아닙니다."}]',
+                              headers={"content-type": "application/json;charset=UTF-8"})
+
+    ctx = ctx_with(handler)
+    with pytest.raises(ProviderError) as e:
+        await road.collect_utic_incidents(ctx)
+    assert e.value.code == "02" and "유효한 KEY값이 아닙니다" in e.value.detail
+    assert len(calls) == 1                                                  # 키 오류는 다시 불러도 같다 — 재시도 안 함
+    assert ctx.api_calls[-1][5] == "02"                                     # 호출 기록의 결과 코드
+
+
+async def test_utic_without_key_makes_no_call(monkeypatch):
+    from roadrail.core.config import settings
+    monkeypatch.setattr(settings(), "utic_api_key", "")
+
+    def handler(request):
+        raise AssertionError("키 없이 호출하면 안 된다")
+
+    assert await road.collect_utic_incidents(ctx_with(handler)) == 0

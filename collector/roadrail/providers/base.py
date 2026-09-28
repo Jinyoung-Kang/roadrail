@@ -5,7 +5,10 @@ import asyncio
 import json
 import logging
 import time
+import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 import httpx
 
@@ -14,15 +17,18 @@ from ..scheduler.quota import Allowance, QuotaBudget
 
 logger = logging.getLogger(__name__)
 
-CONCURRENCY = {"EX": 4, "KORAIL": 2, "KMA": 4, "AIRKOREA": 2, "KAKAO": 4, "KAKAO_LOCAL": 4, "OSM": 1, "KASI": 1}
-TIMEOUT = {"EX": 15.0, "KORAIL": 60.0, "KMA": 10.0, "AIRKOREA": 25.0, "KAKAO": 10.0, "KAKAO_LOCAL": 10.0, "OSM": 240.0, "KASI": 10.0}
+CONCURRENCY = {"EX": 4, "KORAIL": 2, "KMA": 4, "AIRKOREA": 2, "KAKAO": 4, "KAKAO_LOCAL": 4, "OSM": 1, "KASI": 1, "UTIC": 1}
+TIMEOUT = {"EX": 15.0, "KORAIL": 60.0, "KMA": 10.0, "AIRKOREA": 25.0, "KAKAO": 10.0, "KAKAO_LOCAL": 10.0, "OSM": 240.0, "KASI": 10.0,
+           "UTIC": 20.0}
+# XML 응답 상한 — UTIC 전국 돌발 목록은 약 140KB. 비정상적으로 큰 응답은 파싱 전에 거른다
+MAX_XML_CHARS = 5_000_000
 _semaphores: dict[str, asyncio.Semaphore] = {}
 
 
 class ProviderError(Exception):
-    def __init__(self, provider: str, endpoint: str, message: str, status: int | None = None):
+    def __init__(self, provider: str, endpoint: str, message: str, status: int | None = None, code: str | None = None):
         super().__init__(f"{provider}/{endpoint}: {message}")
-        self.provider, self.endpoint, self.status, self.detail = provider, endpoint, status, message
+        self.provider, self.endpoint, self.status, self.detail, self.code = provider, endpoint, status, message, code
 
 
 def _sem(provider: str) -> asyncio.Semaphore:
@@ -81,6 +87,47 @@ class JobContext:
 
     async def get_json(self, provider: str, endpoint: str, url: str, params: dict,
                        headers: dict | None = None, retries: int = 2) -> dict:
+        def parse(text: str, status: int) -> tuple[dict, str | None]:
+            try:
+                body = json.loads(text)
+            except ValueError as e:
+                raise ProviderError(provider, endpoint, "JSON 아님: " + mask_text(text[:200]), status) from e
+            if status != 200:
+                raise ProviderError(provider, endpoint, f"HTTP {status}: " + mask_text(text[:200]), status)
+            code, err = check_payload(provider, body)
+            if err:
+                raise ProviderError(provider, endpoint, str(err), status, code)
+            return body, code
+        return await self._get(provider, endpoint, url, params, headers, retries, parse)
+
+    async def get_xml(self, provider: str, endpoint: str, url: str, params: dict,
+                      headers: dict | None = None, retries: int = 2) -> ET.Element:
+        """XML 응답(경찰청 UTIC). 표준 라이브러리 expat 은 외부 엔티티를 따라가지 않고, 엔티티 폭주는 expat ≥ 2.4 가 막는다."""
+        def parse(text: str, status: int) -> tuple[ET.Element, str | None]:
+            if status != 200:
+                raise ProviderError(provider, endpoint, f"HTTP {status}: " + mask_text(text[:200]), status)
+            if len(text) > MAX_XML_CHARS:
+                raise ProviderError(provider, endpoint, f"응답이 너무 큼 ({len(text):,}자)", status)
+            if text.lstrip()[:1] in ("[", "{"):
+                # 키 오류 등은 HTTP 200 + JSON 으로 온다 (실측: [{"resultCode":"02","resultMsg":"유효한 KEY값이 아닙니다."}])
+                try:
+                    j = json.loads(text)
+                except ValueError:
+                    j = None
+                e = j[0] if isinstance(j, list) and j and isinstance(j[0], dict) else j if isinstance(j, dict) else {}
+                if e.get("resultCode") is not None:
+                    code = str(e["resultCode"])[:20]
+                    raise ProviderError(provider, endpoint,
+                                        mask_text(f"오류 응답 {code}: {str(e.get('resultMsg') or '')[:200]}"), status, code)
+            try:
+                return ET.fromstring(text), None
+            except ET.ParseError as e:
+                raise ProviderError(provider, endpoint, "XML 아님: " + mask_text(text[:200]), status) from e
+        return await self._get(provider, endpoint, url, params, headers, retries, parse)
+
+    async def _get(self, provider: str, endpoint: str, url: str, params: dict, headers: dict | None, retries: int,
+                   parse: Callable[[str, int], tuple[Any, str | None]]) -> Any:
+        """예산 차감 · 동시성 제한 · 5xx/전송 오류 재시도 · 호출 기록(키 마스킹). parse 가 본문을 해석하고 실패면 ProviderError."""
         await self._take(provider)
         attempt, last_err = 0, None
         async with _sem(provider):
@@ -96,23 +143,17 @@ class JobContext:
                     text = resp.text
                     if status >= 500:
                         raise ProviderError(provider, endpoint, f"HTTP {status}", status)
-                    try:
-                        body = json.loads(text)
-                    except ValueError as e:
-                        raise ProviderError(provider, endpoint, "JSON 아님: " + mask_text(text[:200]), status) from e
-                    if status != 200:
-                        raise ProviderError(provider, endpoint, f"HTTP {status}: " + mask_text(text[:200]), status)
-                    code, err = check_payload(provider, body)
-                    if err:
-                        raise ProviderError(provider, endpoint, str(err), status)
+                    body, code = parse(text, status)
                     return body
                 except (httpx.TransportError, ProviderError) as e:
                     last_err = e
+                    if isinstance(e, ProviderError) and e.code is not None:
+                        code = e.code
                     # httpx 시간 초과 등은 str(e) 가 빈 문자열 → 예외 이름을 남긴다 (오류 상세에서 원인이 보이게)
                     err = mask_text(e.detail if isinstance(e, ProviderError) else f"{type(e).__name__}: {e}".rstrip(": "))[:500]
                     retryable = isinstance(e, httpx.TransportError) or (status is not None and status >= 500)
                     if not retryable or attempt == retries:
-                        raise ProviderError(provider, endpoint, err, status) from e
+                        raise ProviderError(provider, endpoint, err, status, code) from e
                     await asyncio.sleep(0.8 * (attempt + 1))
                 finally:
                     self.calls += 1

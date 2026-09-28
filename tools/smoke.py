@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """외부 API 스모크 테스트 + 계약 테스트 fixture 캡처 (W1).
 
-    python3 tools/smoke.py          # 공급자 5종 · 8개 오퍼레이션 호출 결과만 출력
+    python3 tools/smoke.py          # 공급자 6종 · 11개 오퍼레이션 호출 결과만 출력 (UTIC 는 키가 있을 때만)
     python3 tools/smoke.py --save   # 응답을 fixtures/<provider>/ 에 저장 (행 수를 줄이고 키는 마스킹)
 
 표준 라이브러리만 사용. 키는 .env 에서 읽고, 출력·파일 어디에도 평문으로 남기지 않는다.
@@ -16,6 +16,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,7 +35,7 @@ def load_env() -> dict[str, str]:
 
 
 ENV = load_env()
-SECRETS = [ENV.get(k, "") for k in ("EX_API_KEY", "DATA_GO_KR_KEY", "KAKAO_REST_API_KEY") if ENV.get(k)]
+SECRETS = [ENV.get(k, "") for k in ("EX_API_KEY", "DATA_GO_KR_KEY", "KAKAO_REST_API_KEY", "UTIC_API_KEY") if ENV.get(k)]
 
 
 def mask(text: str) -> str:
@@ -103,10 +104,21 @@ def main() -> int:
          dict(origin="127.102077,37.365046", destination="127.448327,36.361324",
               departure_time=(now + dt.timedelta(hours=1)).strftime("%Y%m%d%H%M"), summary="true"), kakao_h, 5),
     ]
+    if ENV.get("UTIC_API_KEY"):   # 선택 키 — XML (fixtures/utic 는 실제 응답에서 고른 건 + 경계 사례라 --save 로 덮지 않는다)
+        checks.append(("utic", "ims", "https://www.utic.go.kr/guide/imsOpenData.do", dict(key=ENV["UTIC_API_KEY"]), None, 0))
     failed = 0
     for provider, name, url, params, headers, limit in checks:
         status, ms, body = call(url, params, headers)
         body = mask(body)
+        if provider == "utic":   # 키 오류는 HTTP 200 + JSON 오류 본문으로 온다 — XML 목록이어야 성공
+            try:
+                ok = status == 200 and ET.fromstring(body).tag is not None
+            except ET.ParseError:
+                ok = False
+            failed += 0 if ok else 1
+            print(f"{'OK ' if ok else 'ERR'} {provider:9s} {name:18s} HTTP {status} {ms:5d}ms  {len(body):7d}B"
+                  + (f"  돌발 {body.count('<record>')}건" if ok else f"  {body[:160]!r}"))
+            continue
         ok = status == 200 and body.lstrip().startswith("{")
         try:
             parsed = json.loads(body)

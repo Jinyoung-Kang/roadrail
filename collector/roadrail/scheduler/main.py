@@ -137,8 +137,8 @@ async def startup_kick() -> None:
     await run_job("toll_unit_sync", "STARTUP")
     if not await db.fetchone("SELECT 1 AS x FROM ref.holiday LIMIT 1"):
         await run_job("holiday_sync", "STARTUP")  # 기준선 계산 전에 공휴일 달력부터 (3회)
-    for job in ("road_travel_time", "road_incident_sms", "road_volume_all", "weather_vilage", "air_quality_sido",
-                "kakao_eta"):
+    for job in ("road_travel_time", "road_incident_sms", "utic_incident", "road_volume_all", "weather_vilage",
+                "air_quality_sido", "kakao_eta"):
         spawn(run_job(job, "STARTUP"))
     has_rail = await db.fetchone("SELECT 1 AS x FROM rail.run_plan LIMIT 1")
     if not has_rail:

@@ -72,6 +72,7 @@ JOBS: dict[str, JobSpec] = {
     "road_gap_backfill": JobSpec(road.backfill_gaps, _const({"EX": 50})),
     "road_volume_all": JobSpec(road.collect_volume, _const({"EX": 1})),
     "road_incident_sms": JobSpec(road.collect_incidents, _const({"EX": 1})),
+    "utic_incident": JobSpec(road.collect_utic_incidents, _const({"UTIC": 1})),
     "rail_daily": JobSpec(rail.rail_daily, _const({"KORAIL": rail.CALLS_PER_DAY})),
     "weather_vilage": JobSpec(env.collect_weather, _grid_estimate),
     "air_quality_sido": JobSpec(env.collect_air, _sido_estimate),
