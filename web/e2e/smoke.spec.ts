@@ -185,3 +185,27 @@ test("보안: 프록시는 /api/v1 아래의 정상 경로만 넘긴다", async 
   expect((await r.json()).code).toBe("VALIDATION_ERROR");
   expect((await request.get("/api/v1/corridors")).ok()).toBe(true);
 });
+
+test("자동차 경로: 구간별 소통이 경로 전체를 빈틈없이 덮고, 지도 범례는 느린 구간과 일치한다", async ({ page, request }) => {
+  const q = "fromLat=37.5547&fromLon=126.9707&fromName=%EC%84%9C%EC%9A%B8%EC%97%AD&toLat=36.3326&toLon=127.4342&toName=%EB%8C%80%EC%A0%84%EC%97%AD&departIn=0";
+  const d = await (await request.get(`/api/v1/road/route?${q}`)).json();
+  const rec = d.recommended;
+  test.skip(!rec?.path?.length, "카카오 키가 없는 환경");
+  const runs: { from: number; to: number; traffic: string; distanceM: number }[] = rec.traffic;
+  expect(rec.path.length).toBeLessThanOrEqual(400);                       // 지도에 보내는 좌표 상한
+  expect(runs[0].from).toBe(0);
+  expect(runs[runs.length - 1].to).toBe(rec.path.length - 1);
+  runs.forEach((r, i) => { if (i > 0) expect(r.from).toBe(runs[i - 1].to); });   // 이웃 구간은 경계 점을 함께 쓴다
+  for (const r of runs) expect(["원활", "서행", "지체", "정체", "사고", "정보 없음"]).toContain(r.traffic);
+  const total = runs.reduce((s, r) => s + r.distanceM, 0);
+  expect(Math.abs(total - rec.distanceM) / rec.distanceM).toBeLessThan(0.02);   // 구간 길이 합 = 경로 거리
+  // 느린 구간 목록은 소통이 같은 도로만 합친다 — 한 도로의 느린 구간이 그 소통의 전체 길이를 넘지 않는다
+  const slowM = (t: string) => runs.filter((r) => r.traffic === t).reduce((s, r) => s + r.distanceM, 0);
+  for (const s of rec.slow) expect(s.distanceM).toBeLessThanOrEqual(slowM(s.traffic) + 1);
+
+  await page.goto(`/road?from=${encodeURIComponent("서울역~37.5547~126.9707~")}&to=${encodeURIComponent("대전역~36.3326~127.4342~")}`);
+  await expect(page.getByRole("heading", { name: "어떤 도로로 가나요" })).toBeVisible({ timeout: 20_000 });
+  const legend = page.getByText("추천 경로 · 카카오 예측");
+  const anySlow = runs.some((r) => ["지체", "정체", "사고"].includes(r.traffic));
+  if (anySlow) await expect(legend).toBeVisible(); else await expect(legend).toHaveCount(0);
+});

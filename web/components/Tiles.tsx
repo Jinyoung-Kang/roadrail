@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { Decision, EnvPoint, Incident, Journey, NextSubway, Trip } from "@/lib/types";
 import { DASH, dur, durMin, hm, mdhm, MODEL_LABEL, num, pct, pm25Label, signedPct } from "@/lib/format";
+import { C } from "@/lib/palette";
 import { encodePlace } from "@/lib/places";
+import { isSlow, slowSummary, TRAFFIC_COLOR, TRAFFIC_LABEL } from "@/lib/traffic";
 import { TrainName } from "@/components/ui";
 
 /** 분 → ISO 시각 */
@@ -70,6 +72,34 @@ function TimeBar({ segments, max }: { segments: Segment[]; max: number }) {
 /** 두 카드 공통 축: 자동차 · 기차 총 소요 중 큰 값 */
 export const barMax = (trip: Trip) => Math.max(trip.decision.carTotalMin ?? 0, trip.decision.trainTotalMin ?? 0);
 
+/** 경로 소통 띠: 경로를 길이 비율로 펼쳐 지체 · 정체 · 사고 구간을 지도와 같은 색으로 (같은 색이 이어지면 한 칸) */
+function TrafficStrip({ trip }: { trip: Trip }) {
+  const s = slowSummary(trip.car.path ?? [], trip.car.traffic);
+  if (!s.runs.length || s.total <= 0) return null;
+  const cells: { color: string; meters: number; slow: boolean }[] = [];
+  for (const r of s.runs) {
+    const slow = isSlow(r.traffic), color = isSlow(r.traffic) ? TRAFFIC_COLOR[r.traffic] : C.road;
+    const last = cells[cells.length - 1];
+    if (last && last.color === color) last.meters += r.distanceM;
+    else cells.push({ color, meters: r.distanceM, slow });
+  }
+  const text = s.present.length
+    ? s.present.map((k) => (k === "사고" ? `${TRAFFIC_LABEL[k]} ${s.by[k].count}곳` : `${k} ${num(s.by[k].meters / 1000, 1)}km`)).join(" · ")
+    : "지체 · 정체 · 사고 구간 없음";
+  return (
+    <div className="mt-5">
+      <p className="flex items-baseline justify-between text-[12px] text-muted">
+        <span>경로 소통 · 카카오 예측</span>
+        {s.present.length > 0 && <a href="#map" className="text-ink underline underline-offset-2">지도에서 보기</a>}
+      </p>
+      <div className="mt-1.5 flex h-2 gap-[2px] overflow-hidden rounded-full" role="img" aria-label={`경로 소통: ${text}`}>
+        {cells.map((c, i) => <span key={i} style={{ flexGrow: c.meters, flexBasis: 0, minWidth: c.slow ? 3 : 0, background: c.color }} />)}
+      </div>
+      <p className="mt-1.5 text-[12px] text-ink2">{text}</p>
+    </div>
+  );
+}
+
 export function CarTile({ trip }: { trip: Trip }) {
   const c = trip.car, o = trip.observed, d = trip.decision;
   const pending = c.pending && c.durationSec == null;
@@ -88,6 +118,7 @@ export function CarTile({ trip }: { trip: Trip }) {
       {drive != null && total != null && (
         <TimeBar max={barMax(trip)} segments={[{ label: "운전", min: drive, className: "bg-road" }]} />
       )}
+      <TrafficStrip trip={trip} />
       {o ? (
         <div className="mt-6 rounded-sm ring-1 ring-line">
           <p className="border-b border-line px-4 py-2.5 text-[12px] font-medium text-ink2">

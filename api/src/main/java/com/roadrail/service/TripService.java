@@ -131,7 +131,8 @@ public class TripService {
         boolean pending = eta.isEmpty() && mobility.pending(from.lat(), from.lon(), to.lat(), to.lon(), depart, true);
         Car car = new Car(eta.map(KakaoMobilityClient.Eta::durationSec).orElse(null),
                 eta.map(KakaoMobilityClient.Eta::distanceM).orElse(null), eta.map(KakaoMobilityClient.Eta::departAt).orElse(null),
-                eta.map(KakaoMobilityClient.Eta::path).orElse(List.of()), pending, "KAKAO_FUTURE_DIRECTIONS");
+                eta.map(KakaoMobilityClient.Eta::path).orElse(List.of()), eta.map(KakaoMobilityClient.Eta::traffic).orElse(List.of()),
+                pending, "KAKAO_FUTURE_DIRECTIONS");
 
         // 시작 시각 기준 마감 — 앞의 대기가 길어도 뒤의 대기가 그만큼 더해지지 않는다(예전: 3초 + 4초)
         Observed obs = join(fObs, left(started + Duration.ofSeconds(3).toNanos()));             // DB 만 — 넉넉히

@@ -116,9 +116,13 @@ export interface NextSubway { line: string; toward: string; times: string[] }
 export interface RailPlan { journeys: Journey[]; referenceDate: string | null; basis: string | null; originCandidates: number;
   destCandidates: number; boardingBufferMin: number; transferMin: number; note: string | null;
   subwayAtDeparture: NextSubway[]; subwayAtArrival: NextSubway[]; pending: boolean }
+/** 자동차 경로 path[from..to](양끝 포함)의 소통 — 원활 · 서행 · 지체 · 정체 · 사고 · 정보 없음. distanceM = 카카오 도로 길이의 합 */
+export interface TrafficRun { from: number; to: number; traffic: string; distanceM: number }
+
 export interface Trip {
   from: Place; to: Place; distanceKm: number; asOf: string; departAt: string; accessMin: number | null;
-  car: { durationSec: number | null; distanceM: number | null; departAt: string | null; path: [number, number][]; pending: boolean; source: string };
+  car: { durationSec: number | null; distanceM: number | null; departAt: string | null; path: [number, number][];
+    traffic?: TrafficRun[]; pending: boolean; source: string };
   observed: { corridorId: string; corridorName: string; direction: Dir; travelSec: number; baselineP50Sec: number | null;
     vsBaselinePct: number | null; slotTs: string; predictedSec: number | null; model: string; leadMin: number } | null;
   rail: RailPlan | null;
@@ -132,9 +136,10 @@ export interface Trip {
 }
 
 // ---- 도로 분석 (전국 임의 두 지점, 카카오 경로)
-export interface RoadRun { name: string; type: string; distanceM: number; durationSec: number; speedKmh: number | null; traffic: string }
+/** traffic = 이 도로에서 가장 나쁜 소통, trafficM = 그 소통인 길이(m) */
+export interface RoadRun { name: string; type: string; distanceM: number; durationSec: number; speedKmh: number | null; traffic: string; trafficM?: number }
 export interface RouteSummary { label: string; durationSec: number | null; distanceM: number | null;
-  path: [number, number][]; byType: { type: string; distanceM: number; durationSec: number; share: number }[];
+  path: [number, number][]; traffic?: TrafficRun[]; byType: { type: string; distanceM: number; durationSec: number; share: number }[];
   roads: RoadRun[]; slow: RoadRun[] }
 export interface ProfilePoint { departAt: string; offsetMin: number; durationSec: number | null }
 export interface RouteAnalysis { from: Place; to: Place; straightKm: number; departAt: string; recommended: RouteSummary;

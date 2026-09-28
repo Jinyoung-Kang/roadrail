@@ -4,12 +4,14 @@ import { useMemo } from "react";
 import Layout from "@/components/Layout";
 import RouteMap, { ROAD, type MapLayers } from "@/components/RouteMap";
 import SearchPicker from "@/components/SearchPicker";
+import TrafficLegend from "@/components/TrafficLegend";
 import { SimpleBars } from "@/components/LazyCharts";
 import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Spec, SpecStrip } from "@/components/ui";
 import { qs, useApi } from "@/lib/api";
 import { DASH, dur, durMin, durParts, hm, num, pct } from "@/lib/format";
 import { decodePlace, encodePlace, KIND_LABEL, suggestedPlaces } from "@/lib/places";
 import type { Place, RouteAnalysis, RouteSummary } from "@/lib/types";
+import { carLines, slowSummary } from "@/lib/traffic";
 import { useCorridors } from "@/lib/useCorridors";
 
 const DEPART = [0, 60, 120, 180].map((v) => ({ value: v, label: v === 0 ? "지금" : `+${v / 60}시간` }));
@@ -65,11 +67,12 @@ export default function RoadIndex() {
   const rec = d?.recommended, avo = d?.avoidMotorway;
   const motorway = rec?.byType.filter((b) => b.type === "고속도로").reduce((s, b) => s + b.share, 0);
   const recP = durParts(rec?.durationSec != null ? rec.durationSec / 60 : null);
+  const recSlow = rec ? slowSummary(rec.path, rec.traffic) : null;
   const avoP = durParts(avo?.durationSec != null ? avo.durationSec / 60 : null);
   const layers: MapLayers | null = d ? {
     lines: [
       ...(avo?.path.length ? [{ path: avo.path, color: "#898781", dashed: true, weight: 4 }] : []),
-      ...(rec?.path.length ? [{ path: rec.path, color: ROAD, weight: 5 }] : []),
+      ...(rec?.path.length ? carLines(rec.path, rec.traffic, { weight: 5 }) : []),
     ],
     markers: [{ lat: d.from.lat, lon: d.from.lon, label: d.from.name, color: "#171a20" }, { lat: d.to.lat, lon: d.to.lon, label: d.to.name, color: "#171a20" }],
   } : null;
@@ -121,6 +124,7 @@ export default function RoadIndex() {
             <RouteMap layers={layers} interactive className="absolute inset-0 h-full w-full" label="경로 비교 지도" />
             <div className="pointer-events-none absolute left-4 top-4 sm:left-8 sm:top-8 rounded-sm bg-white/95 px-4 py-3 shadow-tile">
               <p className="flex items-center gap-2 text-xs text-muted"><span className="inline-block h-[3px] w-5 bg-road" />추천 경로 {dur(rec?.durationSec)}</p>
+              <TrafficLegend states={recSlow?.present ?? []} note="추천 경로 · 카카오 예측" />
               <p className="mt-1 flex items-center gap-2 text-xs text-muted"><span className="inline-block h-0 w-5 border-t-[3px] border-dashed border-faint" />고속도로 회피 {dur(avo?.durationSec)}</p>
             </div>
           </section>
@@ -158,7 +162,7 @@ export default function RoadIndex() {
               <div className="tile mt-6 overflow-x-auto">
                 <table className="w-full">
                   <caption className="sr-only">추천 경로 주요 도로</caption>
-                  <thead><tr><th className="th">도로</th><th className="th">종류</th><th className="th text-right">거리</th><th className="th text-right">시간</th><th className="th text-right">평균 속도</th><th className="th">소통</th></tr></thead>
+                  <thead><tr><th className="th">도로</th><th className="th">종류</th><th className="th text-right">거리</th><th className="th text-right">시간</th><th className="th text-right">평균 속도</th><th className="th">소통 (가장 나쁜 구간)</th></tr></thead>
                   <tbody>{rec.roads.map((r, i) => (
                     <tr key={r.name + i} className="hover:bg-mist">
                       <td className="td font-medium">{r.name}</td>
@@ -166,7 +170,8 @@ export default function RoadIndex() {
                       <td className="td text-right">{num(r.distanceM / 1000)}km</td>
                       <td className="td text-right">{durMin(r.durationSec / 60)}</td>
                       <td className="td text-right">{num(r.speedKmh, 0)}km/h</td>
-                      <td className="td"><Traffic s={r.traffic} /></td>
+                      <td className="td"><Traffic s={r.traffic} />{r.trafficM != null && r.trafficM < r.distanceM && r.traffic !== "원활" && r.traffic !== "정보 없음"
+                        ? <span className="text-muted"> · {num(r.trafficM / 1000)}km</span> : null}</td>
                     </tr>
                   ))}</tbody>
                 </table>

@@ -1,6 +1,7 @@
 package com.roadrail.web.dto;
 
 import com.roadrail.domain.DecisionRule;
+import com.roadrail.domain.RouteGeometry;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -15,8 +16,9 @@ public final class TripDtos {
 
     public record PlaceSearch(String q, List<Place> items) {}
 
-    public record Car(Integer durationSec, Integer distanceM, String departAt, List<double[]> path, boolean pending,
-                      String source) {}
+    /** traffic: path 번호 범위별 소통(원활 · 서행 · 지체 · 정체 · 사고 · 정보 없음) — 지도에서 구간 색을 나눈다 */
+    public record Car(Integer durationSec, Integer distanceM, String departAt, List<double[]> path,
+                      List<RouteGeometry.TrafficRun> traffic, boolean pending, String source) {}
 
     /** 수집 중인 길과 겹칠 때만: 고속도로 실측 */
     public record Observed(String corridorId, String corridorName, String direction, Integer travelSec,
