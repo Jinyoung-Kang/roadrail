@@ -20,10 +20,12 @@ export interface Decision {
 /** rain = 1시간 강수량(초단기) · weatherSource = 날씨 값의 근거 (단기예보 / 초단기예보 HH:MM 발표 / 초단기실황 HH:MM 관측) */
 export interface EnvPoint { name: string; pop: number | null; pty: string | null; tmp: number | null; sky: string | null;
   pm25: number | null; pm25Grade: number | null; khaiGrade: number | null; rain?: string | null; weatherSource?: string | null }
-/** 도로공사 실시간 문자 안내 — lat·lon·pointName 은 응답에 있을 때만, routeKm 은 안내 좌표가 자동차 경로 2km 안일 때만 */
+/** 돌발 안내(도로공사 문자 · 경찰청 UTIC) — lat·lon·pointName 은 응답에 있을 때만, routeKm 은 안내 좌표가 자동차 경로 2km 안일 때만 */
 export interface Incident { sentAt: string; typeCode: string; typeName: string; routeName: string; direction: string;
   process: string; content: string; corridorIds: string[]; lat: number | null; lon: number | null; pointName: string | null;
-  lastSeenAt: string | null; routeKm: number | null }
+  lastSeenAt: string | null; routeKm: number | null;
+  /** EX = 도로공사 문자(고속도로) · UTIC = 경찰청 도시교통정보센터(일반 도로 포함, sentAt 이 시작 시각) */
+  source?: "EX" | "UTIC" | null; endAt?: string | null; lane?: string | null }
 export interface NowCard {
   corridorId: string; corridorName: string; direction: Dir; asOf: string; departAt: string; accessMin: number;
   carAccessMin: number; status: "OK" | "STALE_DATA";
@@ -128,7 +130,8 @@ export interface Trip {
     vsBaselinePct: number | null; slotTs: string; predictedSec: number | null; model: string; leadMin: number } | null;
   rail: RailPlan | null;
   env: Record<"origin" | "dest", EnvPoint>;
-  incidents: Incident[];
+  incidents: Incident[];      // 경로 돌발 최근 순 최대 20건
+  incidentTotal?: number;     // 전체 건수 (판단 경고의 건수)
   decision: Decision;
   freshness: Record<string, string>;
   caveat: string;

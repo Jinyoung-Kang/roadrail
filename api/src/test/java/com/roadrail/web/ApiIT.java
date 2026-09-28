@@ -1,6 +1,8 @@
 package com.roadrail.web;
 
+import com.roadrail.service.EnvService;
 import com.roadrail.support.IntegrationTest;
+import com.roadrail.web.dto.EnvDtos;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,7 +16,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.Comparator;
+import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -26,6 +31,8 @@ class ApiIT extends IntegrationTest {
     static final ZoneId KST = ZoneId.of("Asia/Seoul");
     @Autowired
     MockMvc mvc;
+    @Autowired
+    EnvService env;
 
     @BeforeEach
     void seed() {
@@ -71,6 +78,51 @@ class ApiIT extends IntegrationTest {
                   act_arr_at, dep_delay_min, arr_delay_min, on_time, status, calc_rule, threshold_min)
                 VALUES (?, '00199', 'S1', 'S2', ?, ?, ?, ?, 1, 4, true, 'OK', 'P-v1', 5)""",
                 ref, dep, dep.plusMinutes(57), dep.plusMinutes(1), dep.plusMinutes(61));
+    }
+
+    @Test
+    void corridorIncidentListShowsExpresswayMessagesOnly() throws Exception {
+        // UTIC(일반 도로 포함)는 판단 카드의 경로 주변 돌발에만 — 길 화면의 돌발 목록은 도로공사 문자 그대로
+        jdbc.update("DELETE FROM ts.road_incident");
+        jdbc.update("""
+                INSERT INTO ts.road_incident (msg_hash, sent_at, type_code, type_name, route_name, content, corridor_ids, source)
+                VALUES (repeat('a', 64), now(), '1', '사고', '경부선', '도로공사 문자', '{SEL-DJN}', 'EX'),
+                       (repeat('b', 64), now(), 'U1', '사고', '경부고속도로', 'UTIC 돌발', '{SEL-DJN}', 'UTIC')""");
+        mvc.perform(get("/api/v1/incidents").param("corridorId", "SEL-DJN"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].source").value("EX"));
+    }
+
+    @Test
+    void routeIncidentsAreAllReturnedNewestFirstWithinEachSourcesDistance() {
+        // 서울역에서 남쪽으로 약 11km 경로 위 도로공사 12건 · UTIC 12건 — 예전 상한(8건)에 잘리지 않고 전부, 최근 순
+        jdbc.update("DELETE FROM ts.road_incident");
+        jdbc.update("""
+                INSERT INTO ts.road_incident (msg_hash, sent_at, type_code, type_name, route_name, content, lat, lon, source)
+                SELECT md5('ex' || g) || md5('ex' || g), now() - g * interval '1 minute', '1', '사고', '경부선', '도로공사 ' || g,
+                       37.545 - (g - 1) * 0.005, 126.97, 'EX' FROM generate_series(1, 12) g""");
+        jdbc.update("""
+                INSERT INTO ts.road_incident (msg_hash, sent_at, type_code, type_name, route_name, content, lat, lon, source)
+                SELECT md5('ut' || g) || md5('ut' || g), now() - (12 + g) * interval '1 minute', 'U1', '사고', '한강대로', 'UTIC ' || g,
+                       37.48 - (g - 1) * 0.0025, 126.9705, 'UTIC' FROM generate_series(1, 12) g""");
+        jdbc.update("""
+                INSERT INTO ts.road_incident (msg_hash, sent_at, type_code, type_name, route_name, content, lat, lon, source, last_seen_at)
+                VALUES (repeat('c', 64), now(), 'U1', '사고', '옆길', 'UTIC 옆길 0.7km', 37.47, 126.978, 'UTIC', now()),
+                       (repeat('d', 64), now(), 'U1', '사고', '경부고속도로', 'UTIC 도로공사와 같은 돌발', 37.522, 126.97, 'UTIC', now()),
+                       (repeat('e', 64), now(), '1', '사고', '경부선', '도로공사 1.5km', 37.50, 126.987, 'EX', now()),
+                       (repeat('f', 64), now(), 'U1', '사고', '한강대로', 'UTIC 끝난 돌발', 37.46, 126.97, 'UTIC', now() - interval '1 hour')""");
+        try {
+            var got = env.routeIncidents(List.of(new double[]{37.55, 126.97}, new double[]{37.45, 126.97}), null);
+            assertThat(got).hasSize(25);
+            assertThat(got).filteredOn(i -> "UTIC".equals(i.source())).hasSize(12);
+            assertThat(got).extracting(EnvDtos.Incident::content)
+                    .contains("도로공사 1.5km")                                               // 도로공사 문자는 2km 안
+                    .doesNotContain("UTIC 옆길 0.7km", "UTIC 도로공사와 같은 돌발", "UTIC 끝난 돌발");  // UTIC 0.5km · 겹침 · 끝난 것
+            assertThat(got).isSortedAccordingTo(Comparator.comparing(EnvDtos.Incident::sentAt).reversed());
+        } finally {
+            jdbc.update("DELETE FROM ts.road_incident");
+        }
     }
 
     @Test

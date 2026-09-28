@@ -17,7 +17,7 @@ const MENUS = [
   { href: "/ops", title: "수집 상태", body: "수집 작업 · 호출 예산 · 오류 상세" },
 ];
 
-const SOURCES = ["한국도로공사", "한국철도공사", "카카오모빌리티", "기상청", "에어코리아", "국토교통부 TAGO", "한국천문연구원", "OpenStreetMap"];
+const SOURCES = ["한국도로공사", "한국철도공사", "카카오모빌리티", "기상청", "에어코리아", "국토교통부 TAGO", "한국천문연구원", "경찰청 UTIC", "OpenStreetMap"];
 
 export default function About() {
   return (
