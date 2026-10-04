@@ -21,6 +21,7 @@
 - E2E (스택이 떠 있어야 함): `cd web && E2E_CHANNEL=chrome npx playwright test smoke`
 - 키 확인: `make smoke` · README 스크린샷: `make capture` (실데이터라 찍은 뒤 README 설명과 대조)
 - DB: `docker compose exec -T db psql -U roadrail -d roadrail -c "…"` (읽기 위주)
+- 백업 · 복원: `make backup` · `make restore-check FILE=…`(별도 DB 에 복원해 확인) · `make restore FILE=…`(교체 — 확인 질문, 사용자가 요청할 때만)
 - 수동 실행: `make collect-once JOB=<job>` 또는 `POST /api/v1/admin/jobs/{job}/run` (헤더 `X-Admin-Token` — 값은 `.env`)
 
 CI 필수 검사는 `ci passed` 하나(collector · api · web · gitleaks 전체 이력 · docker images). CodeQL 은 PR · main · 매주.

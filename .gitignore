@@ -17,5 +17,6 @@ web/playwright-report/
 .DS_Store
 *.log
 fixtures/raw/
+backups/
 .claude/
 web/tsconfig.tsbuildinfo
