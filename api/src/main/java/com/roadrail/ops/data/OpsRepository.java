@@ -5,6 +5,7 @@ import com.roadrail.shared.Rows;
 import com.roadrail.shared.Times;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -187,10 +188,18 @@ public class OpsRepository {
                 .query(Boolean.class).single();
     }
 
-    public void insertBackfill(String id, LocalDate from, LocalDate to, int planned) {
-        jdbc.sql("""
+    /**
+     * 겹치는 기간의 백필이 대기 · 실행 중이 아니면 등록하고 true. 동시에 들어온 같은 요청이 둘 다 등록되지 않게
+     * 한 트랜잭션에서 자문 잠금(advisory lock)을 잡고 확인 · 등록한다 (QA-05).
+     */
+    @Transactional
+    public boolean insertBackfillIfFree(String id, LocalDate from, LocalDate to, int planned) {
+        jdbc.sql("SELECT pg_advisory_xact_lock(hashtext('ops.backfill'))").query(Object.class).single();
+        return jdbc.sql("""
                 INSERT INTO ops.backfill (backfill_id, provider, job_name, from_date, to_date, planned_calls)
-                VALUES (:id, 'KORAIL', 'rail_daily', :f, :t, :p)""")
-                .param("id", id).param("f", from).param("t", to).param("p", planned).update();
+                SELECT :id, 'KORAIL', 'rail_daily', :f, :t, :p
+                WHERE NOT EXISTS (SELECT 1 FROM ops.backfill
+                                  WHERE status IN ('QUEUED', 'RUNNING') AND from_date <= :t AND to_date >= :f)""")
+                .param("id", id).param("f", from).param("t", to).param("p", planned).update() == 1;
     }
 }
