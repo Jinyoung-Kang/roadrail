@@ -357,4 +357,14 @@ class ApiIT extends IntegrationTest {
         mvc.perform(get("/api/v1/places/search").param("q", "대전").header("X-Forwarded-For", "198.51.100.7"))
                 .andExpect(status().isOk());
     }
+
+    @Test
+    void rateLimitCountsEncodedAndMatrixParameterPathsToo() throws Exception {
+        // RVW-04: 버킷을 디코딩 전 URI 로 골라 같은 핸들러로 가는 /places/%73earch · /places;x=1/search 는 한도 밖이었다
+        for (String path : List.of("/api/v1/places/%73earch", "/api/v1/places;x=1/search")) {
+            mvc.perform(get(java.net.URI.create(path + "?q=%EB%8C%80%EC%A0%84")).header("X-Forwarded-For", "192.0.2.44"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("X-RateLimit-Limit", "3"));
+        }
+    }
 }
