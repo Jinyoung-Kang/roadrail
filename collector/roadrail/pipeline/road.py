@@ -153,7 +153,8 @@ async def collect_travel_time(ctx: JobContext, full: bool = False, only: set[tup
         tmax = max(r[0] for r in rows)
         touched = {(r[1], r[2]) for r in rows}
         await recompute_corridors(chains, tmin, tmax, touched)
-    await sweep_gaps(now_kst().date())
+    for day in sorted({r[0].astimezone(KST).date() for r in rows} | {now_kst().date()}):
+        await sweep_gaps(day)  # 원천은 자정 뒤에도 한동안 전날을 준다 — 받은 데이터의 날짜마다
     if unexpected is not None:
         raise unexpected
     return len(rows)
@@ -227,25 +228,48 @@ async def sweep_gaps(day: dt.date) -> int:
         ON CONFLICT DO NOTHING""", {"job": JOB, "start": start, "end": start + dt.timedelta(days=1)})
 
 
+async def source_day(ctx: JobContext, chains: dict[tuple[str, str], list[Segment]]) -> str | None:
+    """원천이 지금 주는 데이터 날짜(YYYYMMDD) — 구간 하나의 1쪽으로 확인(호출 1건). 빈 응답이면 None(모름)."""
+    seg = next(iter(unique_segments(chains).values()), None)
+    if seg is None:
+        return None
+    return ex.page_day(await ex.travel_page(ctx, seg.start, seg.end, 1))
+
+
 async def backfill_gaps(ctx: JobContext) -> int:
-    """오늘 열린 결측 → 해당 길 구간을 처음부터 다시 받아 재합산. 지난 날짜는 API 가 주지 않으므로 SOURCE_EXPIRED."""
+    """열린 결측 → 해당 길 구간을 처음부터 다시 받아 재합산.
+    원천은 자정 뒤 약 01:30 까지 전날을 주므로 어제 결측은 원천이 아직 어제를 주는 동안 다시 받고,
+    원천이 넘어간 것을 확인한 뒤에만 SOURCE_EXPIRED 로 닫는다(M2). 그보다 오래된 결측은 바로 닫는다."""
     today = now_kst().date()
     start = day_start(today)
-    await db.execute("""UPDATE ops.slot_gap SET reason = 'SOURCE_EXPIRED'
-                        WHERE job_name = %s AND backfilled_at IS NULL AND slot_ts < %s AND reason <> 'SOURCE_EXPIRED'""",
-                     (JOB, start))
+    y_start = start - dt.timedelta(days=1)
+    expire = """UPDATE ops.slot_gap SET reason = 'SOURCE_EXPIRED'
+                WHERE job_name = %s AND backfilled_at IS NULL AND slot_ts < %s AND reason <> 'SOURCE_EXPIRED'"""
+    await db.execute(expire, (JOB, y_start))
+    chains = await load_chains()
+    since = start
+    yesterday_open = await db.fetchone("""SELECT 1 AS x FROM ops.slot_gap
+                                          WHERE job_name = %s AND backfilled_at IS NULL AND reason <> 'SOURCE_EXPIRED'
+                                            AND slot_ts >= %s AND slot_ts < %s AND attempts < 6 LIMIT 1""",
+                                       (JOB, y_start, start))
+    if yesterday_open:
+        served = await source_day(ctx, chains)
+        if served == y_start.strftime("%Y%m%d"):
+            since = y_start                        # 원천이 아직 어제를 준다 — 어제 결측도 다시 받는다
+        elif served is not None:
+            await db.execute(expire, (JOB, start))  # 원천이 넘어갔다 — 어제 결측은 이제 받을 수 없다
     open_gaps = await db.fetch("""SELECT DISTINCT series_key FROM ops.slot_gap
-                                  WHERE job_name = %s AND backfilled_at IS NULL AND slot_ts >= %s AND attempts < 6""",
-                               (JOB, start))
+                                  WHERE job_name = %s AND backfilled_at IS NULL AND reason <> 'SOURCE_EXPIRED'
+                                    AND slot_ts >= %s AND attempts < 6""", (JOB, since))
     if not open_gaps:
         return 0
-    chains = await load_chains()
     keys = {tuple(g["series_key"].split(":")) for g in open_gaps}
     segs = {seg.key for k in keys if k in chains for seg in chains[k]}
     n = await collect_travel_time(ctx, full=True, only=segs)
-    await recompute_corridors({k: v for k, v in chains.items() if k in keys}, start, now_kst())
+    await recompute_corridors({k: v for k, v in chains.items() if k in keys}, since, now_kst())
     await db.execute("""UPDATE ops.slot_gap SET attempts = attempts + 1
-                        WHERE job_name = %s AND backfilled_at IS NULL AND slot_ts >= %s""", (JOB, start))
+                        WHERE job_name = %s AND backfilled_at IS NULL AND reason <> 'SOURCE_EXPIRED' AND slot_ts >= %s""",
+                     (JOB, since))
     return n
 
 

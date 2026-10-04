@@ -154,9 +154,10 @@ def fake_ex_source(state: dict):
         q = request.url.params
         s, e, page = q["iStartUnitCode"], q["iEndUnitCode"], int(q["pageNo"])
         state["calls"].append((s, e, page))
+        drop = state.get("drop", set())
         items = [{"startUnitCode": s, "endUnitCode": e, "stdDate": state["day"], "stdTime": f"{m // 60:02d}:{m % 60:02d}",
                   "timeAvg": "10.0", "timeMin": "8.0", "timeMax": "12.0", "efcvTrfl": "50", "tcsCarTypeCode": "1"}
-                 for m in range(0, state["slots"] * 5, 5)]
+                 for m in range(0, state["slots"] * 5, 5) if f"{m // 60:02d}:{m % 60:02d}" not in drop]
         items.append({"startUnitCode": s, "endUnitCode": e, "stdDate": state["day"], "stdTime": "00:00",
                       "timeAvg": "20", "tcsCarTypeCode": "2"})
         pages = -(-len(items) // ex.PAGE)
@@ -198,6 +199,46 @@ async def test_missing_slot_is_recorded_then_backfilled(seeded):
     gap = await db.fetch("SELECT backfilled_at FROM ops.slot_gap WHERE series_key = 'TST:DN'")
     assert gap[0]["backfilled_at"] is not None
     assert await count("SELECT count(*) AS n FROM ts.road_corridor_tt WHERE direction='DN'") == 5
+
+
+async def test_yesterdays_gap_is_backfilled_while_the_source_still_serves_yesterday(seeded, monkeypatch):
+    # M2: 원천은 자정 뒤 약 01:30 까지 전날을 준다. 예전에는 00:07 백필이 전날 결측을 무조건 '원천 만료'로 닫아
+    # 그 사이 채울 수 있던 전날 슬롯(예: 21시)을 다시 받지 않았다.
+    d1 = now_kst().replace(hour=0, minute=0, second=0, microsecond=0)
+    d = d1 - dt.timedelta(days=1)
+    clock = {"now": d.replace(hour=23, minute=30)}
+    monkeypatch.setattr(road, "now_kst", lambda: clock["now"])
+    state = {"day": d.strftime("%Y%m%d"), "slots": 264, "calls": [], "drop": {"21:00"}}   # 00:00~21:55, 21:00 없음
+    await road.collect_travel_time(ctx_with(fake_ex_source(state)), full=True)
+    gap = await db.fetchone("SELECT backfilled_at FROM ops.slot_gap WHERE series_key = 'TST:DN' AND slot_ts = %s",
+                            (d + dt.timedelta(hours=21),))
+    assert gap is not None and gap["backfilled_at"] is None
+
+    clock["now"] = d1 + dt.timedelta(minutes=20)          # D+1 00:20 — 원천은 아직 D 를 주고, 21:00 이 공개됨
+    state.update(drop=set(), calls=[])
+    ctx = ctx_with(fake_ex_source(state))
+    ctx.job_name = "road_gap_backfill"
+    await road.backfill_gaps(ctx)
+    gap = await db.fetchone("SELECT backfilled_at, reason FROM ops.slot_gap WHERE series_key = 'TST:DN' AND slot_ts = %s",
+                            (d + dt.timedelta(hours=21),))
+    assert gap["backfilled_at"] is not None, (gap, state["calls"])
+
+
+async def test_yesterdays_gap_expires_once_the_source_has_moved_on(seeded, monkeypatch):
+    d1 = now_kst().replace(hour=0, minute=0, second=0, microsecond=0)
+    d = d1 - dt.timedelta(days=1)
+    clock = {"now": d.replace(hour=23, minute=30)}
+    monkeypatch.setattr(road, "now_kst", lambda: clock["now"])
+    state = {"day": d.strftime("%Y%m%d"), "slots": 264, "calls": [], "drop": {"21:00"}}
+    await road.collect_travel_time(ctx_with(fake_ex_source(state)), full=True)
+    clock["now"] = d1 + dt.timedelta(hours=2, minutes=7)  # D+1 02:07 — 원천이 D+1 로 넘어감
+    state.update(day=d1.strftime("%Y%m%d"), slots=12, drop=set(), calls=[])
+    ctx = ctx_with(fake_ex_source(state))
+    ctx.job_name = "road_gap_backfill"
+    await road.backfill_gaps(ctx)
+    gap = await db.fetchone("SELECT backfilled_at, reason FROM ops.slot_gap WHERE series_key = 'TST:DN' AND slot_ts = %s",
+                            (d + dt.timedelta(hours=21),))
+    assert gap["reason"] == "SOURCE_EXPIRED" and gap["backfilled_at"] is None
 
 
 async def test_low_coverage_slot_is_gap(seeded):
