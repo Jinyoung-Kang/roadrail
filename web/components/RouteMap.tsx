@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { layersSignature, type MapLayers, type MapMarker } from "@/lib/map";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { frameSignature, layersSignature, type MapLayers, type MapMarker } from "@/lib/map";
 
 /* 카카오 지도 JS SDK — 브라우저에 노출되는 유일한 키(NEXT_PUBLIC_KAKAO_JS_KEY). 실패하면 SVG 노선도로 대체. */
 declare global { interface Window { kakao: any } }
@@ -52,7 +52,10 @@ function loadKakao(): Promise<any> {
   return loader;
 }
 
-/** 선(경로)과 점(출발·도착·역)을 그리는 지도. 히어로 배경(interactive=false)과 탐색용 지도 공용. */
+/**
+ * 선(경로)과 점(출발·도착·역)을 그리는 지도. 히어로 배경(interactive=false)과 탐색용 지도 공용.
+ * 지도는 한 번만 만들고, 내용이 바뀌면 선 · 표식만 갈아끼운다. 범위 맞춤은 끝점 · 경로가 바뀔 때만 (WEB-03).
+ */
 export default function RouteMap({ layers, interactive = false, className = "", padBottom = 0, label = "노선 지도", focus = null }: {
   layers: MapLayers | null; interactive?: boolean; className?: string; padBottom?: number; label?: string;
   /** 바뀔 때마다(n 증가) 그 지점으로 확대·이동 — 예: 돌발 안내 '지도에서 보기' */
@@ -60,6 +63,10 @@ export default function RouteMap({ layers, interactive = false, className = "", 
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
+  const overlays = useRef<any[]>([]);
+  const bounds = useRef<any>(null);
+  const fitted = useRef("");
+  const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   // 탐색용 지도는 기본으로 잠가 둔다 — 페이지를 스크롤할 때 휠이 지도 배율을 바꾸지 않게 (+/− 버튼은 항상 동작)
   const [unlocked, setUnlocked] = useState(false);
@@ -68,46 +75,72 @@ export default function RouteMap({ layers, interactive = false, className = "", 
     const m = mapRef.current;
     if (m) { m.setDraggable(!on); m.setZoomable(!on); }
   };
-  const sig = layersSignature(layers);
+  // 경로 좌표가 수천 개라 서명은 layers 가 바뀔 때만 계산 (페이지는 layers 를 useMemo 로 넘긴다)
+  const sig = useMemo(() => layersSignature(layers), [layers]);
+  const frame = useMemo(() => frameSignature(layers), [layers]);
+  const hasLayers = layers !== null;
+  // 컨테이너 크기가 확정된 다음에 맞춘다 (생성 직후 0 크기일 수 있음 · rAF 는 백그라운드 탭에서 멈추므로 타이머)
+  const fit = () => {
+    const m = mapRef.current, b = bounds.current;
+    if (!m || !b || b.isEmpty()) return;
+    m.relayout();
+    m.setBounds(b, 60, 60, 60 + padBottom, 60);
+  };
 
+  // 지도는 한 번만 만든다 — 그릴 내용이 처음 생길 때
   useEffect(() => {
-    if (!layers || !ref.current) return;
+    if (!hasLayers || !ref.current || mapRef.current) return;
     let cancelled = false;
-    let cleanup = () => {};
     loadKakao().then((kakao) => {
       if (cancelled || !ref.current) return;
       ref.current.innerHTML = "";
-      const first = layers.markers[0] ?? { lat: 36.5, lon: 127.8 };
       const map = new kakao.maps.Map(ref.current, {
-        center: new kakao.maps.LatLng(first.lat, first.lon), level: 10,
+        center: new kakao.maps.LatLng(36.5, 127.8), level: 10,
         draggable: false, scrollwheel: false, disableDoubleClickZoom: true,
       });
       map.setZoomable(false);
+      if (interactive) map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
       mapRef.current = map;
       setUnlocked(false);
-      if (interactive) map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
-      const bounds = new kakao.maps.LatLngBounds();
-      for (const l of layers.lines) {
-        if (l.path.length < 2) continue;
-        const path = l.path.map(([la, lo]) => { const p = new kakao.maps.LatLng(la, lo); bounds.extend(p); return p; });
-        new kakao.maps.Polyline({ map, path, strokeWeight: l.weight ?? 5, strokeColor: l.color, strokeOpacity: 0.92,
-          strokeStyle: l.dashed ? "shortdash" : "solid" });
-      }
-      for (const m of layers.markers) {
-        const p = new kakao.maps.LatLng(m.lat, m.lon);
-        bounds.extend(p);
-        new kakao.maps.CustomOverlay({ map, position: p, yAnchor: m.label ? 1.25 : 0.5, content: markerNode(m) });
-      }
-      // 컨테이너 크기가 확정된 다음에 맞춘다 (생성 직후 0 크기일 수 있음 · rAF 는 백그라운드 탭에서 멈추므로 타이머)
-      const fit = () => { map.relayout(); map.setBounds(bounds, 60, 60, 60 + padBottom, 60); };
-      setTimeout(fit, 30);
-      window.addEventListener("resize", fit);
-      cleanup = () => window.removeEventListener("resize", fit);
       setFailed(null);
+      setReady(true);
     }).catch((e) => !cancelled && setFailed(e.message));
-    return () => { cancelled = true; cleanup(); };
+    return () => { cancelled = true; };
+  }, [hasLayers, interactive]);
+
+  // 내용이 바뀌면 선 · 표식만 갈아끼운다
+  useEffect(() => {
+    const map = mapRef.current, kakao = typeof window !== "undefined" ? window.kakao : null;
+    if (!ready || !map || !kakao?.maps || !layers) return;
+    overlays.current.forEach((o) => o.setMap(null));
+    overlays.current = [];
+    const b = new kakao.maps.LatLngBounds();
+    for (const l of layers.lines) {
+      if (l.path.length < 2) continue;
+      const path = l.path.map(([la, lo]) => { const p = new kakao.maps.LatLng(la, lo); b.extend(p); return p; });
+      overlays.current.push(new kakao.maps.Polyline({ map, path, strokeWeight: l.weight ?? 5, strokeColor: l.color, strokeOpacity: 0.92,
+        strokeStyle: l.dashed ? "shortdash" : "solid" }));
+    }
+    for (const m of layers.markers) {
+      const p = new kakao.maps.LatLng(m.lat, m.lon);
+      b.extend(p);
+      overlays.current.push(new kakao.maps.CustomOverlay({ map, position: p, yAnchor: m.label ? 1.25 : 0.5, content: markerNode(m) }));
+    }
+    bounds.current = b;
+    if (frame !== fitted.current) {
+      fitted.current = frame;
+      const id = setTimeout(fit, 30);
+      return () => clearTimeout(id);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sig, interactive, padBottom]);
+  }, [ready, sig]);
+
+  useEffect(() => {
+    if (!ready) return;
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, padBottom]);
 
   useEffect(() => {
     const m = mapRef.current, k = typeof window !== "undefined" ? window.kakao : null;
