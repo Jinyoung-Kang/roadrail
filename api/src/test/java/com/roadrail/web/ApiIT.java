@@ -359,6 +359,16 @@ class ApiIT extends IntegrationTest {
     }
 
     @Test
+    void everyResponseCarriesAntiFramingHeaders() throws Exception {
+        // WEB-10: API 문서(Swagger UI)를 웹이 외부 rewrite 로 넘겨 보안 헤더가 하나도 없었다 — API 가 직접 붙인다
+        for (String path : List.of("/api/v1/corridors", "/v3/api-docs")) {
+            mvc.perform(get(path)).andExpect(header().string("X-Frame-Options", "DENY"))
+                    .andExpect(header().string("Content-Security-Policy", "frame-ancestors 'none'"))
+                    .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+        }
+    }
+
+    @Test
     void rateLimitCountsEncodedAndMatrixParameterPathsToo() throws Exception {
         // RVW-04: 버킷을 디코딩 전 URI 로 골라 같은 핸들러로 가는 /places/%73earch · /places;x=1/search 는 한도 밖이었다
         for (String path : List.of("/api/v1/places/%73earch", "/api/v1/places;x=1/search")) {
