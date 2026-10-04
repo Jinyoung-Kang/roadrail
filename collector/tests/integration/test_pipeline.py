@@ -600,3 +600,28 @@ async def test_api_call_log_keeps_each_call_time(seeded, monkeypatch):
     rows = await db.fetch("SELECT endpoint, called_at FROM ops.api_call WHERE job_name = 'maintenance' ORDER BY endpoint")
     assert [r["endpoint"] for r in rows] == ["a", "b"]
     assert (rows[1]["called_at"] - rows[0]["called_at"]).total_seconds() >= 0.25
+
+
+async def test_unchanged_rows_are_not_rewritten(seeded, fixtures_dir):
+    # L8: 꼬리를 다시 받을 때마다 같은 값도 다시 써(갱신이 삽입의 2배 이상) 죽은 튜플 · WAL 만 늘었다.
+    # 값이 같으면 행을 건드리지 않는다(xmin 그대로), 값이 바뀌면 갱신한다
+    today = now_kst().strftime("%Y%m%d")
+    tt = "SELECT string_agg(xmin::text, ',' ORDER BY slot_ts, start_unit_code) AS x FROM ts.road_travel_time"
+    corr = "SELECT string_agg(xmin::text, ',' ORDER BY slot_ts, direction) AS x FROM ts.road_corridor_tt"
+    await road.collect_travel_time(ctx_with(fake_ex(today)), full=True)
+    t1, c1 = (await db.fetchone(tt))["x"], (await db.fetchone(corr))["x"]
+    await road.collect_travel_time(ctx_with(fake_ex(today)), full=True)
+    assert (await db.fetchone(tt))["x"] == t1
+    assert (await db.fetchone(corr))["x"] == c1
+
+    body = json.loads((fixtures_dir / "ex" / "traffic_all.json").read_text())
+    vol = "SELECT string_agg(xmin::text, ',' ORDER BY slot_ts, ex_div_code, tcs_type, car_type) AS x FROM ts.road_volume"
+    await db.execute("TRUNCATE ts.road_volume")
+    await road.collect_volume(ctx_with(lambda request: httpx.Response(200, json=body)))
+    v1 = (await db.fetchone(vol))["x"]
+    await road.collect_volume(ctx_with(lambda request: httpx.Response(200, json=body)))
+    assert (await db.fetchone(vol))["x"] == v1
+    first = body["trafficAll"][0]
+    first["trafficAmout"] = str(int(first["trafficAmout"]) + 1)
+    await road.collect_volume(ctx_with(lambda request: httpx.Response(200, json=body)))
+    assert (await db.fetchone(vol))["x"] != v1                     # 바뀐 값은 갱신

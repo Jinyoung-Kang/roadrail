@@ -30,20 +30,26 @@ PUBLISH_MARGIN = dt.timedelta(hours=4)
 CLOSED_REASONS = ("SOURCE_EXPIRED", "NO_SAMPLES")
 
 SQL_UPSERT_TT = """
-INSERT INTO ts.road_travel_time (slot_ts, start_unit_code, end_unit_code, car_type, travel_sec, min_sec, max_sec,
+INSERT INTO ts.road_travel_time AS t (slot_ts, start_unit_code, end_unit_code, car_type, travel_sec, min_sec, max_sec,
                                  vehicles, quality, collected_at)
 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
 ON CONFLICT (slot_ts, start_unit_code, end_unit_code, car_type) DO UPDATE SET
   travel_sec = EXCLUDED.travel_sec, min_sec = EXCLUDED.min_sec, max_sec = EXCLUDED.max_sec,
   vehicles = EXCLUDED.vehicles, quality = EXCLUDED.quality
+WHERE (t.travel_sec, t.min_sec, t.max_sec, t.vehicles, t.quality)
+      IS DISTINCT FROM (EXCLUDED.travel_sec, EXCLUDED.min_sec, EXCLUDED.max_sec, EXCLUDED.vehicles, EXCLUDED.quality)
 """  # collected_at = 처음 저장한 시각 (갱신하지 않음) → 공개 지연 = collected_at − slot_ts
+# 값이 같으면 행을 건드리지 않는다 — 꼬리를 다시 받을 때마다 같은 값을 다시 써 죽은 튜플 · WAL 만 늘었다(L8)
 SQL_UPSERT_CORR = """
-INSERT INTO ts.road_corridor_tt (slot_ts, corridor_id, direction, travel_sec, observed_segs, total_segs, quality, computed_at)
+INSERT INTO ts.road_corridor_tt AS c (slot_ts, corridor_id, direction, travel_sec, observed_segs, total_segs, quality,
+                                     computed_at)
 VALUES (%s, %s, %s, %s, %s, %s, %s, now())
 ON CONFLICT (slot_ts, corridor_id, direction) DO UPDATE SET travel_sec = EXCLUDED.travel_sec,
   observed_segs = EXCLUDED.observed_segs, total_segs = EXCLUDED.total_segs, quality = EXCLUDED.quality,
   computed_at = now()
-"""
+WHERE (c.travel_sec, c.observed_segs, c.total_segs, c.quality)
+      IS DISTINCT FROM (EXCLUDED.travel_sec, EXCLUDED.observed_segs, EXCLUDED.total_segs, EXCLUDED.quality)
+"""  # computed_at = 값이 마지막으로 바뀐 시각
 
 
 async def load_chains() -> dict[tuple[str, str], list[Segment]]:
@@ -290,8 +296,9 @@ async def backfill_gaps(ctx: JobContext) -> int:
 async def collect_volume(ctx: JobContext) -> int:
     rows = ex.parse_traffic_all(await ex.traffic_all(ctx))
     await db.executemany("""
-        INSERT INTO ts.road_volume (slot_ts, ex_div_code, tcs_type, car_type, volume) VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO ts.road_volume AS v (slot_ts, ex_div_code, tcs_type, car_type, volume) VALUES (%s, %s, %s, %s, %s)
         ON CONFLICT (slot_ts, ex_div_code, tcs_type, car_type) DO UPDATE SET volume = EXCLUDED.volume
+        WHERE v.volume IS DISTINCT FROM EXCLUDED.volume
         """, [(r["slot_ts"], r["ex_div_code"], r["tcs_type"], r["car_type"], r["volume"]) for r in rows])
     # collected_at = 처음 저장한 시각(갱신하지 않음) — 원천은 같은 15분 슬롯을 네 번씩 다시 주므로, 갱신하면
     # '공개 지연'(처음 본 시각 − 슬롯)이 부풀려졌다(152분, 실제 약 80분 · L1)
