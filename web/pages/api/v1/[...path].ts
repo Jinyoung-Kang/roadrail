@@ -33,6 +33,7 @@ const RES_HEADERS = ["content-type", "cache-control", "etag", "x-cache", "x-trac
 /** API 가 쓰는 메서드만 넘긴다 — 그 밖(TRACE · PUT · DELETE …)은 프록시에서 405 */
 const METHODS = ["GET", "HEAD", "POST"];
 const MAX_BODY = 64 * 1024;  // 관리 API 의 작은 JSON 만 받는다
+const MAX_URL = 4096;        // 가장 긴 정상 주소(판단 카드 · 경로 분석)도 수백 자 — API 서버 머리글 상한(8KB)에 닿기 전에 막는다
 
 async function readBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -49,6 +50,10 @@ export default async function proxy(req: NextApiRequest, res: NextApiResponse) {
   if (!METHODS.includes(req.method ?? "")) {
     res.setHeader("Allow", METHODS.join(", "));
     res.status(405).json({ code: "METHOD_NOT_ALLOWED", message: "허용하지 않는 메서드입니다.", traceId: null });
+    return;
+  }
+  if ((req.url ?? "").length > MAX_URL) {
+    res.status(414).json({ code: "VALIDATION_ERROR", message: "요청 주소가 너무 깁니다.", traceId: null });
     return;
   }
   const path = upstreamPath(req.url);
@@ -69,6 +74,12 @@ export default async function proxy(req: NextApiRequest, res: NextApiResponse) {
       signal: AbortSignal.timeout(30_000),
     });
     res.status(r.status);
+    // API 서버 앞단(Tomcat)이 거른 요청은 HTML 오류 페이지로 온다 — 오류 규약(JSON)으로 바꿔 넘긴다 (QA-06)
+    if (r.status >= 400 && !(r.headers.get("content-type") ?? "").includes("json")) {
+      res.json({ code: r.status < 500 ? "VALIDATION_ERROR" : "UPSTREAM_ERROR",
+        message: r.status < 500 ? "요청을 처리할 수 없습니다." : "API 서버 오류입니다.", traceId: r.headers.get("x-trace-id") });
+      return;
+    }
     for (const h of RES_HEADERS) {
       const v = r.headers.get(h);
       if (v) res.setHeader(h, v);
