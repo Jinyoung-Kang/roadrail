@@ -78,6 +78,23 @@ test("검색: 고른 장소는 입력값으로 보이고, 화살표로 고르는
   await expect(from).toHaveValue("서울역");
 });
 
+test("검색: 고른 뒤 바로 이어서 입력해도 글자가 남고, 목록을 눌러도 입력이 지워지지 않는다 (리뷰)", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("대전역");
+  const to = page.getByRole("combobox", { name: "도착지" });
+  await to.fill("수원");
+  await expect(page.getByRole("option").first()).toContainText("수원", { timeout: 10_000 });
+  await to.press("Enter");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("수원");
+  await page.keyboard.type("전주");                              // 초점은 그대로 — 고른 값으로 되돌아가면 안 된다
+  await expect(to).toHaveValue("전주");
+  await page.route("**/api/v1/places/search**", async (r) => { await new Promise((ok) => setTimeout(ok, 1500)); await r.continue(); });
+  await to.fill("부산");
+  await page.getByRole("listbox").click({ position: { x: 20, y: 10 } });   // '검색 중…' 줄(항목 아님)
+  await expect(to).toHaveValue("부산");
+  await expect(to).toBeFocused();
+});
+
 test("메인: 서비스 소개 — 한 문장 정의 · 3단계 · 다른 메뉴", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("link", { name: /소개/ }).click();

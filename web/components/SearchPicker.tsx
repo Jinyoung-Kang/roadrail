@@ -47,7 +47,8 @@ export default function SearchPicker<T>({ label, placeholder, value, onPick, sea
   }, []);
 
   const { items, status } = pickerItems(q, result, suggestions);
-  const pick = (it: T) => { onPick(it); setQ(""); setOpen(false); setEditing(false); };
+  // 고른 뒤에도 초점은 입력칸에 남는다(Enter · 항목 mousedown 은 초점을 옮기지 않음) → 입력 상태를 유지해 이어서 칠 수 있게
+  const pick = (it: T) => { onPick(it); setQ(""); setOpen(false); };
   const optionId = (i: number) => `${listId}-o${i}`;
 
   return (
@@ -60,7 +61,7 @@ export default function SearchPicker<T>({ label, placeholder, value, onPick, sea
                placeholder={value || placeholder} value={editing ? q : value}
                onFocus={() => { setEditing(true); setOpen(true); }}
                onBlur={() => { setEditing(false); setQ(""); }}
-               onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+               onChange={(e) => { setEditing(true); setQ(e.target.value); setOpen(true); }}
                onKeyDown={(e) => {
                  if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(a + 1, items.length - 1)); }
                  else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
@@ -71,6 +72,7 @@ export default function SearchPicker<T>({ label, placeholder, value, onPick, sea
       </label>
       {open && (items.length > 0 || q.trim()) && (
         <ul id={listId} role="listbox" aria-label={`${label} 후보`} aria-busy={status === "loading"}
+            onMouseDown={(e) => e.preventDefault()}  // 목록(스크롤 막대 · 안내 줄)을 눌러도 입력칸 초점 · 검색어를 지킨다
             className="absolute left-0 right-0 z-50 mt-1 max-h-[min(22rem,60vh)] overflow-auto overscroll-contain rounded-sm bg-white py-1 text-left shadow-xl ring-1 ring-black/10">
           {status === "loading" && <li className="px-4 py-3 text-sm text-muted">검색 중…</li>}
           {status === "empty" && <li className="px-4 py-3 text-sm text-muted">검색 결과가 없습니다</li>}
