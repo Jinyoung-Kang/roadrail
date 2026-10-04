@@ -61,16 +61,16 @@ public class KmaClient {
         return t.withHour(best).withMinute(0).withSecond(0).withNano(0);
     }
 
-    /** 초단기예보 — 매시 30분 발표 · 45분부터 제공 → now−45분 이전의 가장 최근 HH:30 */
+    /** 초단기예보 — 매시 30분 발표 · 45분부터 제공(활용가이드) → now−15분 이전의 가장 최근 HH:30 */
     public static OffsetDateTime ultraBase(OffsetDateTime now) {
-        OffsetDateTime t = Times.kst(now).minusMinutes(45);
+        OffsetDateTime t = Times.kst(now).minusMinutes(15);
         OffsetDateTime b = t.withMinute(30).withSecond(0).withNano(0);
         return b.isAfter(t) ? b.minusHours(1) : b;
     }
 
-    /** 초단기실황 — 매시 정각 관측 · 40분부터 제공 → now−40분 이전의 가장 최근 정각 */
+    /** 초단기실황 — 매시 정각 관측 · 10분부터 제공(활용가이드) → now−10분 이전의 가장 최근 정각 */
     public static OffsetDateTime nowcastBase(OffsetDateTime now) {
-        return Times.kst(now).minusMinutes(40).truncatedTo(ChronoUnit.HOURS);
+        return Times.kst(now).minusMinutes(10).truncatedTo(ChronoUnit.HOURS);
     }
 
     private boolean enabled() {
