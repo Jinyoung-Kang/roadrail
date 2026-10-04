@@ -15,8 +15,6 @@ import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.util.UrlPathHelper;
 
 import java.net.InetAddress;
-import java.net.UnknownHostException;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -50,17 +48,15 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             Map.entry("/api/v1/places/search", "search"),
             Map.entry("/api/v1/rail/od/", "rail"));
 
-    private static final long RESOLVE_EVERY_MS = 60_000;
-
     private final StringRedisTemplate redis;
     private final AppProperties props;
+    private final TrustedProxies proxies;
     private volatile long lastWarn = 0;
-    private volatile Set<InetAddress> trusted = Set.of();
-    private volatile long resolvedAt = 0;
 
     public RateLimitInterceptor(StringRedisTemplate redis, AppProperties props) {
         this.redis = redis;
         this.props = props;
+        this.proxies = TrustedProxies.dns(props::trustedProxies);
     }
 
     @Override
@@ -107,7 +103,12 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     }
 
     String clientIp(HttpServletRequest req) {
-        return clientIp(req, trustedProxies());
+        String xff = req.getHeader("X-Forwarded-For");
+        if (xff != null && !xff.isBlank() && proxies.trusts(req.getRemoteAddr())) {
+            String[] hops = xff.split(",");
+            return hops[hops.length - 1].trim();
+        }
+        return req.getRemoteAddr();
     }
 
     static String clientIp(HttpServletRequest req, Set<InetAddress> trusted) {
@@ -120,31 +121,9 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         return remote;
     }
 
-    /** 루프백과 설정한 프록시 주소만 믿는다. IP 문자열만 받는다 — getByName 은 IP 리터럴이면 DNS 를 조회하지 않는다 */
+    /** 루프백과 설정한 프록시 주소만 믿는다 (IP 문자열만 — DNS 조회 없음) */
     static boolean trustedProxy(String addr, Set<InetAddress> trusted) {
-        if (addr == null || !addr.matches("[0-9a-fA-F:.]+")) return false;
-        try {
-            InetAddress a = InetAddress.getByName(addr);
-            return a.isLoopbackAddress() || trusted.contains(a);
-        } catch (UnknownHostException | RuntimeException e) {
-            return false;
-        }
-    }
-
-    /** roadrail.trusted-proxies(이름 또는 IP)를 주소로 — 컨테이너를 다시 띄우면 주소가 바뀌므로 1분마다 다시 푼다 */
-    private Set<InetAddress> trustedProxies() {
-        long now = System.currentTimeMillis();
-        if (now - resolvedAt < RESOLVE_EVERY_MS) return trusted;
-        Set<InetAddress> out = new HashSet<>();
-        for (String host : props.trustedProxies() == null ? List.<String>of() : props.trustedProxies()) {
-            try {
-                out.addAll(List.of(InetAddress.getAllByName(host.trim())));
-            } catch (UnknownHostException | RuntimeException e) {
-                // 이름을 못 풀면 그 프록시는 믿지 않는다(머리글을 무시하고 접속 주소로 센다)
-            }
-        }
-        trusted = Set.copyOf(out);
-        resolvedAt = now;
-        return trusted;
+        InetAddress a = TrustedProxies.literal(addr);
+        return a != null && (a.isLoopbackAddress() || trusted.contains(a));
     }
 }
