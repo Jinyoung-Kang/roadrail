@@ -94,7 +94,8 @@ _budget: QuotaBudget | None = None
 def http() -> httpx.AsyncClient:
     global _http
     if _http is None:
-        _http = httpx.AsyncClient(headers={"User-Agent": "roadrail-collector/0.1"}, follow_redirects=True)
+        # 리다이렉트는 따라가지 않는다 — 공공데이터 키가 쿼리에 있어 다른 곳 · http 로 넘어갈 수 있다(L6)
+        _http = httpx.AsyncClient(headers={"User-Agent": "roadrail-collector/0.1"}, follow_redirects=False)
     return _http
 
 
@@ -155,6 +156,7 @@ async def _run_locked(name: str, trigger: str, spec: JobSpec, estimates: dict[st
         logger.exception("작업 실패", extra={"fields": {"job": name}})
     finally:
         await ctx.close_budgets()
+        message = mask_text(message) if message else message  # 수집 상태 화면에 그대로 보인다 — 상세와 같은 마스킹(L4)
         if status != "OK":
             detail = run_detail(name, trigger, status, message, detail, ctx)
         ms = int((time.perf_counter() - t0) * 1000)

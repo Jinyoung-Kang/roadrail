@@ -502,3 +502,44 @@ async def test_utic_without_key_makes_no_call(monkeypatch):
         raise AssertionError("키 없이 호출하면 안 된다")
 
     assert await road.collect_utic_incidents(ctx_with(handler)) == 0
+
+
+async def test_job_message_is_masked_like_the_detail(seeded, monkeypatch):
+    # L4: 오류 상세(detail)는 마스킹했지만 작업 메시지(job_run.message · collect_job.last_message)는 원문 그대로였다
+    from roadrail.core.config import settings
+    from roadrail.scheduler import jobs
+    monkeypatch.setattr(settings(), "ex_api_key", "SECRET777")
+
+    async def body(ctx):
+        raise RuntimeError("upstream said ?key=SECRET777 is wrong")
+    monkeypatch.setitem(jobs.JOBS, "maintenance", jobs.JobSpec(body, jobs._const({})))
+    assert await jobs.run_job("maintenance", "ADMIN") == "FAILED"
+    run = await db.fetchone("SELECT message, detail FROM ops.job_run WHERE job_name = 'maintenance' ORDER BY run_id DESC LIMIT 1")
+    job = await db.fetchone("SELECT last_message FROM ops.collect_job WHERE job_name = 'maintenance'")
+    assert "SECRET777" not in run["message"] and "SECRET777" not in job["last_message"]
+    assert "SECRET777" not in run["detail"]
+
+
+async def test_redirects_are_not_followed_while_keys_ride_in_the_query(monkeypatch):
+    # L6: 키가 쿼리에 있는데 리다이렉트를 따라가면 다른 곳(또는 http)으로 키가 넘어갈 수 있다
+    from roadrail.scheduler import jobs
+    assert jobs.http().follow_redirects is False
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(302, headers={"Location": "http://elsewhere.example/?key=SECRET1"})
+    with pytest.raises(ProviderError, match="리다이렉트"):
+        await ctx_with(handler).get_json("KMA", "x", "https://apis.data.go.kr/x", {"serviceKey": "SECRET1"})
+    assert len(seen) == 1
+
+
+async def test_oversized_response_is_cut_off(monkeypatch):
+    # L5: 응답 크기 상한이 없었다(XML 은 다 받은 뒤 길이를 봤고 JSON 은 상한 없음)
+    from roadrail.providers import base
+    monkeypatch.setitem(base.MAX_BYTES, "KMA", 1000)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"pad": "x" * 5000})
+    with pytest.raises(ProviderError, match="너무 큼"):
+        await ctx_with(handler).get_json("KMA", "x", "https://apis.data.go.kr/x", {})

@@ -22,6 +22,11 @@ TIMEOUT = {"EX": 15.0, "KORAIL": 60.0, "KMA": 10.0, "AIRKOREA": 25.0, "KAKAO": 1
            "UTIC": 20.0}
 # XML 응답 상한 — UTIC 전국 돌발 목록은 약 140KB. 비정상적으로 큰 응답은 파싱 전에 거른다
 MAX_XML_CHARS = 5_000_000
+# 응답 바이트 상한 — 받는 도중에 끊는다(L5). 선로 형상(Overpass)만 크다(구역 하나 수십 MB)
+MAX_BYTES = {"OSM": 256_000_000}
+DEFAULT_MAX_BYTES = 16_000_000
+# 요청 하나의 전체 제한 시간 = 단계별 제한(TIMEOUT)의 배수 — 조금씩 흘러오는 응답이 작업 잠금 시간을 넘기지 않게
+TOTAL_TIMEOUT_FACTOR = 3
 _semaphores: dict[str, asyncio.Semaphore] = {}
 
 
@@ -137,21 +142,20 @@ class JobContext:
                 t0 = time.perf_counter()
                 status, code, err, rows = None, None, None, None
                 try:
-                    resp = await self.http.get(url, params=params, headers=headers or {},
-                                               timeout=TIMEOUT.get(provider, 15.0))
-                    status = resp.status_code
-                    text = resp.text
+                    status, text = await self._fetch_text(provider, endpoint, url, params, headers)
                     if status >= 500:
                         raise ProviderError(provider, endpoint, f"HTTP {status}", status)
+                    if 300 <= status < 400:  # 키가 쿼리에 있어 따라가지 않는다(L6)
+                        raise ProviderError(provider, endpoint, f"리다이렉트 응답 HTTP {status} — 따라가지 않음", status)
                     body, code = parse(text, status)
                     return body
-                except (httpx.TransportError, ProviderError) as e:
+                except (httpx.TransportError, ProviderError, TimeoutError) as e:
                     last_err = e
                     if isinstance(e, ProviderError) and e.code is not None:
                         code = e.code
                     # httpx 시간 초과 등은 str(e) 가 빈 문자열 → 예외 이름을 남긴다 (오류 상세에서 원인이 보이게)
                     err = mask_text(e.detail if isinstance(e, ProviderError) else f"{type(e).__name__}: {e}".rstrip(": "))[:500]
-                    retryable = isinstance(e, httpx.TransportError) or (status is not None and status >= 500)
+                    retryable = isinstance(e, httpx.TransportError | TimeoutError) or (status is not None and status >= 500)
                     if not retryable or attempt == retries:
                         raise ProviderError(provider, endpoint, err, status, code) from e
                     await asyncio.sleep(0.8 * (attempt + 1))
@@ -163,6 +167,21 @@ class JobContext:
                     ))
                     attempt += 1
         raise ProviderError(provider, endpoint, str(last_err))
+
+    async def _fetch_text(self, provider: str, endpoint: str, url: str, params: dict,
+                          headers: dict | None) -> tuple[int, str]:
+        """본문을 바이트 상한까지만 받는다 — 넘으면 받는 도중에 끊고, 전체 시간도 제한한다(L5)."""
+        step = TIMEOUT.get(provider, 15.0)
+        limit = MAX_BYTES.get(provider, DEFAULT_MAX_BYTES)
+        async with asyncio.timeout(step * TOTAL_TIMEOUT_FACTOR):
+            async with self.http.stream("GET", url, params=params, headers=headers or {}, timeout=step) as resp:
+                chunks, size = [], 0
+                async for chunk in resp.aiter_bytes():
+                    size += len(chunk)
+                    if size > limit:
+                        raise ProviderError(provider, endpoint, f"응답이 너무 큼 (>{limit:,}바이트)", resp.status_code)
+                    chunks.append(chunk)
+                return resp.status_code, b"".join(chunks).decode(resp.encoding or "utf-8", errors="replace")
 
     def note(self, msg: str, **fields) -> None:
         self.notes.append(msg)
