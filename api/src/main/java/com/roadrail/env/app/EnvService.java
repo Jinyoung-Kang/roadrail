@@ -4,7 +4,7 @@ import com.roadrail.domain.WeatherCodes;
 import com.roadrail.shared.Times;
 import com.roadrail.domain.KmaGrid;
 import com.roadrail.env.model.EnvDtos.*;
-import org.springframework.jdbc.core.simple.JdbcClient;
+import com.roadrail.env.data.EnvRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
@@ -12,23 +12,18 @@ import java.util.*;
 
 @Service
 public class EnvService {
-    private final JdbcClient jdbc;
+    private final EnvRepository repo;
 
-    public EnvService(JdbcClient jdbc) { this.jdbc = jdbc; }
+    public EnvService(EnvRepository repo) { this.repo = repo; }
 
     public Env env(String cid, int hours) {
         List<PointEnv> pts = new ArrayList<>();
-        var points = jdbc.sql("""
-                SELECT role, name, sido_name, nx, ny FROM ref.corridor_env_point WHERE corridor_id = :c ORDER BY role DESC""")
-                .param("c", cid).query((rs, i) -> new Object[]{rs.getString(1), rs.getString(2), rs.getString(3),
-                        rs.getInt(4), rs.getInt(5)}).list();
         OffsetDateTime from = Times.now().withMinute(0).withSecond(0);
-        for (Object[] p : points) {
-            int nx = (int) p[3], ny = (int) p[4];
-            OffsetDateTime base = jdbc.sql("SELECT max(base_at) FROM env.weather_fcst WHERE nx = :x AND ny = :y")
-                    .param("x", nx).param("y", ny).query(OffsetDateTime.class).optional().orElse(null);
+        for (var p : repo.envPoints(cid)) {
+            int nx = p.nx(), ny = p.ny();
+            OffsetDateTime base = repo.latestForecastBase(nx, ny).orElse(null);
             List<WeatherHour> hourly = base == null ? List.of() : hourly(nx, ny, from, from.plusHours(hours));
-            pts.add(new PointEnv((String) p[0], (String) p[1], (String) p[2], nx, ny, Times.kst(base), hourly, air((String) p[2])));
+            pts.add(new PointEnv(p.role(), p.name(), p.sido(), nx, ny, Times.kst(base), hourly, air(p.sido())));
         }
         return new Env(cid, pts, "단기예보(발표 시각 baseAt 기준)와 시도 내 측정소의 최근 측정값 중앙값. 값이 없으면 null.");
     }
@@ -38,16 +33,7 @@ public class EnvService {
      * 가장 최근 발표 하나에서만 찾으면 발표 직후 한 시간(하루 약 6시간)이 비었다(RVW-02 · 검증 기록 74 와 같은 원인).
      */
     public List<WeatherHour> hourly(int nx, int ny, OffsetDateTime from, OffsetDateTime to) {
-        Map<OffsetDateTime, Map<String, String>> byHour = new TreeMap<>();
-        jdbc.sql("""
-                SELECT DISTINCT ON (fcst_at, category) fcst_at, category, value FROM env.weather_fcst
-                WHERE nx = :x AND ny = :y AND fcst_at >= :f AND fcst_at < :t
-                ORDER BY fcst_at, category, base_at DESC""")
-                .param("x", nx).param("y", ny).param("f", from).param("t", to)
-                .query(rs -> {
-                    byHour.computeIfAbsent(Times.kst(rs.getObject(1, OffsetDateTime.class)), k -> new HashMap<>())
-                            .put(rs.getString(2), rs.getString(3));
-                });
+        Map<OffsetDateTime, Map<String, String>> byHour = repo.forecastByHour(nx, ny, from, to);
         List<WeatherHour> out = new ArrayList<>();
         byHour.forEach((t, m) -> out.add(new WeatherHour(t, WeatherCodes.parseInt(m.get("TMP")), WeatherCodes.parseInt(m.get("POP")),
                 WeatherCodes.ptyName(m.get("PTY")), WeatherCodes.skyName(m.get("SKY")))));
@@ -62,44 +48,16 @@ public class EnvService {
     }
 
     public Air air(String sido) {
-        return jdbc.sql("""
-                WITH last AS (SELECT max(data_time) AS t FROM env.air_quality WHERE sido_name = :s)
-                SELECT last.t, percentile_disc(0.5) WITHIN GROUP (ORDER BY pm10) AS pm10,
-                       percentile_disc(0.5) WITHIN GROUP (ORDER BY pm25) AS pm25,
-                       percentile_disc(0.5) WITHIN GROUP (ORDER BY pm25_grade) AS g25,
-                       percentile_disc(0.5) WITHIN GROUP (ORDER BY khai_grade) AS khai, count(*) AS n
-                FROM env.air_quality a, last WHERE a.sido_name = :s AND a.data_time = last.t GROUP BY last.t""")
-                .param("s", sido).query((rs, i) -> new Air(Times.kst(rs.getObject(1, OffsetDateTime.class)),
-                        (Integer) rs.getObject(2), (Integer) rs.getObject(3), toInt(rs.getObject(4)), toInt(rs.getObject(5)),
-                        rs.getInt(6))).optional().orElse(null);
+        return repo.air(sido);
     }
 
     public Incidents incidents(String cid, OffsetDateTime since, int limit) {
-        String where = cid == null ? "sent_at >= :s" : "sent_at >= :s AND :c = ANY(corridor_ids)";
-        var q = jdbc.sql("SELECT " + INCIDENT_COLS + """
-                 FROM ts.road_incident WHERE %s AND source = 'EX' AND coalesce(type_code, '') <> '15'
-                ORDER BY sent_at DESC LIMIT :l""".formatted(where)).param("s", since).param("l", limit);
-        if (cid != null) q = q.param("c", cid);
-        List<Incident> items = q.query((rs, i) -> incident(rs)).list();
+        List<Incident> items = repo.exIncidents(cid, since, limit);
         return new Incidents(cid, since, items,
                 "도로공사 실시간 문자 안내. 길 매칭 규칙 M-v1: 노선명 일치 + (길 영업소명 언급 또는 길 주 노선). "
                         + "corridorIds 가 비어 있으면 '전체'. 이벤트/홍보(유형 15)는 제외. 좌표(lat·lon)는 응답에 있을 때만.");
     }
 
-    static final String INCIDENT_COLS = "sent_at, type_code, type_name, route_name, direction_txt, process_name, content, corridor_ids, "
-            + "lat, lon, point_name, last_seen_at, source, end_at, lane";
-
-    static Incident incident(java.sql.ResultSet rs) throws java.sql.SQLException {
-        return new Incident(Times.kst(rs.getObject("sent_at", OffsetDateTime.class)), rs.getString("type_code"),
-                rs.getString("type_name"), rs.getString("route_name"), rs.getString("direction_txt"), rs.getString("process_name"),
-                rs.getString("content"), Arrays.asList((String[]) rs.getArray("corridor_ids").getArray()),
-                (Double) rs.getObject("lat"), (Double) rs.getObject("lon"), rs.getString("point_name"),
-                Times.kst(rs.getObject("last_seen_at", OffsetDateTime.class)), null, rs.getString("source"),
-                rs.getObject("end_at") == null ? null : Times.kst(rs.getObject("end_at", OffsetDateTime.class)), rs.getString("lane"));
-    }
-
-    /** 문자 안내 · UTIC 목록을 5분마다 받으므로, 20분 안에 목록에서 본 안내를 '지금 안내 중'으로 본다 */
-    static final String ACTIVE = "last_seen_at > now() - interval '20 minutes' AND coalesce(type_code, '') <> '15'";
     static final double ROUTE_KM = 2.0;
     /**
      * UTIC(일반 도로 포함)는 경로 0.5km 안만 — 도시 도로는 촘촘해 2km 로 보면 옆 도로의 돌발까지 '경로 위'로 잡힌다
@@ -120,10 +78,7 @@ public class EnvService {
             double s = 90, w = 180, n = -90, e = -180;
             for (double[] p : path) { s = Math.min(s, p[0]); n = Math.max(n, p[0]); w = Math.min(w, p[1]); e = Math.max(e, p[1]); }
             double pad = 0.03;  // 약 3km
-            jdbc.sql("SELECT " + INCIDENT_COLS + " FROM ts.road_incident WHERE " + ACTIVE
-                            + " AND lat BETWEEN :s AND :n AND lon BETWEEN :w AND :e")
-                    .param("s", s - pad).param("n", n + pad).param("w", w - pad).param("e", e + pad)
-                    .query((rs, i) -> incident(rs)).list()
+            repo.activeIncidentsIn(s - pad, n + pad, w - pad, e + pad)
                     .forEach(inc -> {
                         double km = distanceToPathKm(inc.lat(), inc.lon(), path);
                         if (km <= routeLimitKm(inc.source())) out.add(inc.withRouteKm(Math.round(km * 10) / 10.0));
@@ -133,9 +88,7 @@ public class EnvService {
             out.addAll(kept);
         }
         if (corridorId != null) {
-            jdbc.sql("SELECT " + INCIDENT_COLS + " FROM ts.road_incident WHERE " + ACTIVE
-                            + " AND lat IS NULL AND :c = ANY(corridor_ids) ORDER BY sent_at DESC LIMIT 10")
-                    .param("c", corridorId).query((rs, i) -> incident(rs)).list().forEach(out::add);
+            out.addAll(repo.activeUnlocatedIncidents(corridorId));
         }
         // 합친 뒤 최근 순 — 좌표 없는 길 매칭 안내도 함께 정렬해야 '최근 20건' 자르기에서 먼저 빠지지 않는다(RVW-08)
         out.sort(Comparator.comparing(Incident::sentAt).reversed());
@@ -167,6 +120,4 @@ public class EnvService {
         }
         return best;
     }
-
-    static Integer toInt(Object o) { return o == null ? null : ((Number) o).intValue(); }
 }
