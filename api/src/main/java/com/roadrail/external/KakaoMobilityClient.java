@@ -193,6 +193,16 @@ public class KakaoMobilityClient {
                 .join().orElse(null);
     }
 
+    /**
+     * 경로 응답의 결과 — true: 경로 있음(result_code 0), false: 카카오가 '갈 수 없음'이라고 답함(0 이 아닌 result_code),
+     * null: 형식을 모름(routes · result_code 없음). 모르는 형식은 '경로 없음'으로 10분 캐시하지 않는다.
+     */
+    static Boolean routeFound(JsonNode body) {
+        JsonNode code = body == null ? null : body.path("routes").path(0).path("result_code");
+        if (code == null || !code.isNumber()) return null;
+        return code.asInt() == 0;
+    }
+
     private Route fetchRoute(double oLat, double oLon, double dLat, double dLon, String dep, String avoid, boolean detail, String key) {
         if (!quota.take("KAKAO")) return null;
         try {
@@ -203,12 +213,16 @@ public class KakaoMobilityClient {
                         if (avoid != null) b = b.queryParam("avoid", avoid);
                         return b.build();
                     }).header("Authorization", "KakaoAK " + props.kakaoRestApiKey()).retrieve().body(JsonNode.class);
-            JsonNode r = body == null ? null : body.path("routes").path(0);
-            if (r == null) return null;
-            if (r.path("result_code").asInt(-1) != 0) {
+            Boolean found = routeFound(body);
+            if (found == null) {
+                log.warn("카카오 경로 응답 형식이 예상과 다름 — 캐시하지 않음");
+                return null;
+            }
+            if (!found) {
                 cache.put(key + ":none", Boolean.TRUE, Duration.ofMinutes(10));   // 경로 없음(갈 수 없는 조합) — 매번 다시 부르지 않게
                 return null;
             }
+            JsonNode r = body.path("routes").path(0);
             JsonNode s = r.path("summary");
             List<Road> roads = new ArrayList<>();
             if (detail) for (JsonNode sec : r.path("sections")) for (JsonNode road : sec.path("roads")) {
