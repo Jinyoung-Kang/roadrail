@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import httpx
+import psycopg
 import pytest
 
 from roadrail.core import db, rds
@@ -625,3 +626,23 @@ async def test_unchanged_rows_are_not_rewritten(seeded, fixtures_dir):
     first["trafficAmout"] = str(int(first["trafficAmout"]) + 1)
     await road.collect_volume(ctx_with(lambda request: httpx.Response(200, json=body)))
     assert (await db.fetchone(vol))["x"] != v1                     # 바뀐 값은 갱신
+
+
+async def test_backtest_keeps_todays_results_when_the_insert_fails(seeded, monkeypatch):
+    # L9: 오늘 결과 삭제와 새 결과 삽입이 다른 트랜잭션이라, 삽입이 실패하면 오늘 평가가 통째로 사라졌다
+    from roadrail.analytics.backtest import EvalRow
+    from roadrail.pipeline import analysis
+    today = now_kst().date()
+    await db.execute("TRUNCATE ana.forecast_eval")
+    await db.execute("""INSERT INTO ana.forecast_eval (eval_date, model, corridor_id, direction, horizon_min, mae_sec, mape, n,
+                                                       window_from, window_to, model_version)
+                        VALUES (%s, 'BASELINE', 'TST', 'DN', 30, 60, 0.1, 5, %s, %s, 'v-old')""", (today, today, today))
+    start = dt.datetime.combine(today, dt.time(), KST)
+    bad = [EvalRow("BASELINE", "TST", "DN", 30, 50.0, 0.1, 5), EvalRow("BASELINE", "TST", "UP", "30분", 50.0, 0.1, 5)]
+    monkeypatch.setattr(analysis, "run_backtest", lambda *a, **k: (bad, start, start))
+    ctx = ctx_with(lambda request: httpx.Response(500))
+    ctx.job_name = "backtest_daily"
+    with pytest.raises(psycopg.DataError):          # 정수 열에 문자열
+        await analysis.backtest_daily(ctx)
+    rows = await db.fetch("SELECT direction, model_version FROM ana.forecast_eval WHERE eval_date = %s", (today,))
+    assert [(r["direction"], r["model_version"]) for r in rows] == [("DN", "v-old")]

@@ -51,15 +51,18 @@ async def backtest_daily(ctx: JobContext) -> int:
     since = dt.datetime.combine(today, dt.time(), now_kst().tzinfo) - dt.timedelta(days=DAYS, weeks=WEEKS)
     df = await load_series(since)
     # 오늘 슬롯도 평가 대상에 포함 (eval_day 끝 = 내일 0시)
-    rows, start, end = run_backtest(df, today + dt.timedelta(days=1), tau,
-                                    holidays=await holidays.holiday_days(since.date()))  # 운영과 같은 기준선(공휴일 제외)
-    await db.execute("DELETE FROM ana.forecast_eval WHERE eval_date = %s", (today,))
-    await db.executemany("""
-        INSERT INTO ana.forecast_eval (eval_date, model, corridor_id, direction, horizon_min, mae_sec, mape, n,
-                                       window_from, window_to, model_version)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-        [(today, r.model, r.corridor_id, r.direction, r.horizon_min, r.mae_sec, r.mape, r.n, start, end,
-          model_version(tau)) for r in rows])
+    hol = await holidays.holiday_days(since.date())  # 운영과 같은 기준선(공휴일 제외)
+    rows, start, end = run_backtest(df, today + dt.timedelta(days=1), tau, holidays=hol)
+    p = await db.pool()
+    # 오늘 결과 교체는 한 트랜잭션 — 삽입이 실패하면 이전 결과가 남는다(L9)
+    async with p.connection() as conn, conn.transaction(), conn.cursor() as cur:
+        await cur.execute("DELETE FROM ana.forecast_eval WHERE eval_date = %s", (today,))
+        await cur.executemany("""
+            INSERT INTO ana.forecast_eval (eval_date, model, corridor_id, direction, horizon_min, mae_sec, mape, n,
+                                           window_from, window_to, model_version)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            [(today, r.model, r.corridor_id, r.direction, r.horizon_min, r.mae_sec, r.mape, r.n, start, end,
+              model_version(tau)) for r in rows])
     ctx.rows += len(rows)
     ctx.note(f"백테스트 {len(rows)}행 (입력 {len(df)}슬롯, 창 {start:%m-%d}~{end:%m-%d})")
     return len(rows)
