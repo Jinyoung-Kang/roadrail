@@ -48,7 +48,7 @@ function TypeBar({ r }: { r: RouteSummary }) {
           </li>
         ))}
       </ul>
-      <p className="mt-1 text-[11px] text-faint">{TYPE_NOTE}</p>
+      <p className="mt-1 text-[11px] text-muted">{TYPE_NOTE}</p>
     </div>
   );
 }

@@ -12,7 +12,7 @@ export default function TrafficLegend({ states, note = "카카오 예측" }: { s
           {TRAFFIC_LABEL[s]}
         </span>
       ))}
-      <span className="text-faint">{note}</span>
+      <span className="text-muted">{note}</span>
     </p>
   );
 }

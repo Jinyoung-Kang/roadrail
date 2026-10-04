@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { DASH } from "@/lib/format";
 
 /** 테슬라 모델 페이지의 스펙 숫자 — 큰 숫자 + 작은 설명 */
@@ -57,10 +58,25 @@ export function PageHero({ eyebrow, title, sub, children }: { eyebrow?: string; 
 export function Segmented<T extends string | number>({ value, options, onChange, label }: {
   value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label: string;
 }) {
+  // ARIA 라디오 그룹: 탭 정지는 고른 항목 하나, 화살표 · Home · End 로 옮기며 고른다 (QA-08)
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const current = Math.max(0, options.findIndex((o) => o.value === value));
+  const move = (to: number) => {
+    const i = (to + options.length) % options.length;
+    onChange(options[i].value);
+    refs.current[i]?.focus();
+  };
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const next = { ArrowRight: current + 1, ArrowDown: current + 1, ArrowLeft: current - 1, ArrowUp: current - 1, Home: 0, End: options.length - 1 }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    move(next);
+  };
   return (
-    <div className="inline-flex items-center gap-1" role="radiogroup" aria-label={label}>
-      {options.map((o) => (
-        <button key={String(o.value)} role="radio" aria-checked={o.value === value}
+    <div className="inline-flex items-center gap-1" role="radiogroup" aria-label={label} onKeyDown={onKeyDown}>
+      {options.map((o, i) => (
+        <button key={String(o.value)} ref={(el) => { refs.current[i] = el; }} role="radio" aria-checked={o.value === value}
+                tabIndex={i === current ? 0 : -1}
                 className={`chip ${o.value === value ? "chip-on" : ""}`} onClick={() => onChange(o.value)}>
           {o.label}
         </button>
@@ -97,7 +113,7 @@ const STATUS: Record<string, { cls: string; icon: string; label: string }> = {
 
 /** 상태는 색 + 아이콘 + 글자 (색만으로 전달하지 않음) */
 export function StatusBadge({ status }: { status: string | null | undefined }) {
-  if (!status) return <span className="text-faint">{DASH}</span>;
+  if (!status) return <span className="text-muted">{DASH}</span>;
   const s = STATUS[status] ?? { cls: "text-muted", icon: "·", label: status };
   return (
     <span className="inline-flex items-center gap-1.5 text-[13px] font-medium">

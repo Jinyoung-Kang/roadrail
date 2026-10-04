@@ -6,6 +6,8 @@ import { DASH, DOW, dur, hm, mdhm } from "@/lib/format";
 import type { Baseline, Series } from "@/lib/types";
 
 import { C } from "@/lib/palette";
+/** 범례 글자는 계열 색이 아니라 글자 색 — 계열 색(파랑 · 초록 · 회색)은 흰 바탕 대비가 2.8~4.4:1 이라 표식(선)에만 쓴다 (QA-03, WCAG 1.4.3) */
+const legendText = (v: string) => <span style={{ color: "var(--color-ink2)" }}>{v}</span>;
 const SEQ = ["#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7", "#3987e5", "#2a78d6", "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"];
 
 function Box({ children }: { children: React.ReactNode }) {
@@ -47,7 +49,7 @@ export function TravelChart({ series }: { series: Series }) {
               </Box>
             );
           }} />
-          <Legend verticalAlign="top" align="right" height={28} iconType="plainline" wrapperStyle={{ fontSize: 12 }} />
+          <Legend verticalAlign="top" align="right" height={28} iconType="plainline" wrapperStyle={{ fontSize: 12 }} formatter={legendText} />
           <Line name="관측 통행시간" dataKey="obs" stroke={C.road} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
           <Line name="같은 요일·시간 p50" dataKey="base" stroke={C.base} strokeWidth={2} strokeDasharray="4 4" dot={false} isAnimationActive={false} />
           <Scatter name="카카오 미래 운행 정보" dataKey="kakao" fill={C.aqua} shape="circle" isAnimationActive={false} />
@@ -82,7 +84,7 @@ export function Heatmap({ baseline }: { baseline: Baseline }) {
         <div className="min-w-[640px]">
           <div className="grid grid-cols-[48px_repeat(24,minmax(0,1fr))] gap-[2px]">
             <div />
-            {Array.from({ length: 24 }, (_, h) => <div key={h} className="text-center text-[10px] text-faint">{h % 3 === 0 ? h : ""}</div>)}
+            {Array.from({ length: 24 }, (_, h) => <div key={h} className="text-center text-[10px] text-muted">{h % 3 === 0 ? h : ""}</div>)}
             {rows.map((dow) => (
               <Row key={dow} dow={dow} grid={grid.acc} color={color} onHover={setHover} />
             ))}
@@ -167,9 +169,9 @@ export function MaeChart({ cells }: { cells: { horizonMin: number; model: string
           <Tooltip cursor={{ fill: "rgba(0,0,0,0.04)" }} content={({ active, payload }) => active && payload?.length ? (
             <Box>
               <div className="font-medium">{payload[0].payload.h} 뒤</div>
-              {payload.map((p) => <div key={String(p.dataKey)} className="flex items-center gap-2"><i className="h-2 w-2 rounded-full" style={{ background: p.color }} />{names[String(p.dataKey)]}: {p.value == null ? DASH : `${(p.value as number).toFixed(1)}분`} <span className="text-faint">n={p.payload[`${String(p.dataKey)}_n`]}</span></div>)}
+              {payload.map((p) => <div key={String(p.dataKey)} className="flex items-center gap-2"><i className="h-2 w-2 rounded-full" style={{ background: p.color }} />{names[String(p.dataKey)]}: {p.value == null ? DASH : `${(p.value as number).toFixed(1)}분`} <span className="text-muted">n={p.payload[`${String(p.dataKey)}_n`]}</span></div>)}
             </Box>) : null} />
-          <Legend verticalAlign="top" align="right" height={28} wrapperStyle={{ fontSize: 12 }} formatter={(v) => names[v] ?? v} />
+          <Legend verticalAlign="top" align="right" height={28} wrapperStyle={{ fontSize: 12 }} formatter={(v) => legendText(names[v] ?? v)} />
           <Bar dataKey="M0" fill={C.road} radius={[4, 4, 0, 0]} isAnimationActive={false} />
           <Bar dataKey="M1" fill={C.rail} radius={[4, 4, 0, 0]} isAnimationActive={false} />
           <Bar dataKey="persistence" fill={C.aqua} radius={[4, 4, 0, 0]} isAnimationActive={false} />
