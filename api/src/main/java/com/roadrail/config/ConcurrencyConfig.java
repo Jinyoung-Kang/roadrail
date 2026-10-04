@@ -20,10 +20,11 @@ public class ConcurrencyConfig {
      * 병렬 조회 · 외부 호출용 가상 스레드 실행기 — 서비스마다 만들고 닫지 않던 것을 빈 하나로 (ARC-04).
      * DataSource · Redis 를 매개변수로 받아 의존 관계를 남기므로 이 실행기가 연결보다 먼저 정리된다.
      * 종료는 아래 virtualThreadsShutdown 이 제한 시간 안에서 한다(close() 는 기다림에 상한이 없어 추론을 끈다).
+     * 요청 traceId(MDC)를 작업 스레드로 옮긴다(RVW-10).
      */
     @Bean(destroyMethod = "")
     ExecutorService virtualThreads(DataSource dataSource, RedisConnectionFactory redis) {
-        return Executors.newVirtualThreadPerTaskExecutor();
+        return new MdcExecutorService(Executors.newVirtualThreadPerTaskExecutor());
     }
 
     /** 실행기에 의존하므로 실행기(와 DataSource · Redis)보다 먼저 종료된다 */

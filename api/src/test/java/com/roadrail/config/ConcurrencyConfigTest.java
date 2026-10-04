@@ -45,4 +45,18 @@ class ConcurrencyConfigTest {
         assertThat(done.getCount()).isZero();
         assertThat(exec.isTerminated()).isTrue();
     }
+
+    @Test
+    void tasksCarryTheRequestTraceId() throws Exception {
+        // RVW-10: 병렬 조회(supplyAsync)로 넘긴 작업에서 요청 traceId(MDC)가 끊겨 외부 호출 경고를 요청과 이어 볼 수 없었다
+        var exec = new ConcurrencyConfig().virtualThreads(null, null);
+        try {
+            org.slf4j.MDC.put("traceId", "01TESTTRACE");
+            var seen = java.util.concurrent.CompletableFuture.supplyAsync(() -> org.slf4j.MDC.get("traceId"), exec).get();
+            org.assertj.core.api.Assertions.assertThat(seen).isEqualTo("01TESTTRACE");
+        } finally {
+            org.slf4j.MDC.clear();
+            ConcurrencyConfig.shutdown(exec, Duration.ofSeconds(1));
+        }
+    }
 }
