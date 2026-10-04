@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   collector:
-    name: collector (Python 3.11 · ruff · pytest)
+    name: collector (Python 3.13 · ruff · pytest)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -43,7 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
-        with: { python-version: "3.11", cache: pip, cache-dependency-path: collector/pyproject.toml }
+        with: { python-version: "3.13", cache: pip, cache-dependency-path: collector/pyproject.toml }
       - run: pip install -e '.[dev]'
       - run: ruff check roadrail tests
       - name: pip-audit (선언한 의존성 · 개발 도구)
