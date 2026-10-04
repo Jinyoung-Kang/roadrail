@@ -15,6 +15,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql://roadrail:roadrail@localhost:5462/roadrail"
     redis_url: str = "redis://localhost:6409/0"
+    redis_password: str = ""  # requirepass (.env REDIS_PASSWORD) — 주소에 비밀번호가 있으면 주소가 우선
     db_statement_timeout_s: float = 300.0  # 조회 · 트랜잭션 하나의 상한 (가장 긴 작업 전체가 수십 초 — 멈춘 DB 만 끊는다)
 
     ex_api_key: str = ""
@@ -56,7 +57,8 @@ class Settings(BaseSettings):
         }[provider]
 
     def secrets(self) -> list[str]:
-        return [s for s in (self.ex_api_key, self.data_go_kr_key, self.kakao_rest_api_key, self.utic_api_key) if s]
+        return [s for s in (self.ex_api_key, self.data_go_kr_key, self.kakao_rest_api_key, self.utic_api_key,
+                            self.redis_password) if s]
 
 
 @lru_cache

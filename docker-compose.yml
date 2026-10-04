@@ -25,8 +25,14 @@ services:
 
   redis:
     image: redis:7-alpine
-    # 영속화 끔 — 예산 확정값은 ops.quota_budget 에도 저장
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # 영속화 끔 — 예산 확정값은 ops.quota_budget 에도 저장.
+    # 비밀번호(requirepass)는 .env 의 REDIS_PASSWORD (make env 가 만든다) — 비어 있으면 기동하지 않는다(ADR-028).
+    # 값은 명령줄이 아니라 환경 변수로 넘긴다(docker inspect 의 Cmd 에 남지 않게). redis-cli 는 REDISCLI_AUTH 를 쓴다.
+    # 공식 진입 스크립트(docker-entrypoint.sh)를 거쳐야 redis 사용자로 권한을 낮춰 실행한다
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-}
+    command: ["sh", "-c", "[ -n \"$$REDIS_PASSWORD\" ] || { echo 'REDIS_PASSWORD 가 비어 있습니다 — make env' >&2; exit 1; }; exec docker-entrypoint.sh redis-server --save '' --appendonly no --requirepass \"$$REDIS_PASSWORD\""]
     ports: ["127.0.0.1:6409:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -46,6 +52,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-roadrail}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: "6379"
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SPRING_FLYWAY_LOCATIONS: filesystem:/app/db/migrations
       TZ: Asia/Seoul
     ports: ["127.0.0.1:8300:8300"]
@@ -69,7 +76,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://roadrail:${POSTGRES_PASSWORD:-roadrail}@db:5432/roadrail
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/0   # 비밀번호는 .env 의 REDIS_PASSWORD (설정 redis_password)
       SEED_PATH: /app/seed/corridors.yaml
       TZ: Asia/Seoul
     depends_on:
@@ -87,7 +94,7 @@ services:
       target: test
     environment:
       TEST_DATABASE_URL: postgresql://roadrail:${POSTGRES_PASSWORD:-roadrail}@db:5432/roadrail_test
-      TEST_REDIS_URL: redis://redis:6379/15
+      TEST_REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/15
       TZ: Asia/Seoul
     depends_on:
       db: { condition: service_healthy }
