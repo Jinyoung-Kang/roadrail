@@ -39,4 +39,34 @@ class RailJourneyTimetableTest {
             });
         }
     }
+
+    @Test
+    void legTimetableStillLoadingMakesThePlanPendingSoTheCardIsNotCached() {
+        // 리뷰: 공유 마감(3.5초) 안에 구간 시간표 · 30일 통계가 오지 않으면 CSA 보간 시각 · 지연 0 으로 기차 소요를 적게 잡고,
+        // Plan.pending 은 역까지 이동만 반영해 판단 카드가 그 값으로 60초 캐시됐다 — RVW-01 의 '늦으면 없음'과 같은 꼴
+        RailService rail = mock(RailService.class);
+        LocalDate ref = LocalDate.of(2026, 9, 27);
+        when(rail.referenceDate(any())).thenReturn(Optional.of(Map.entry(ref, "같은 요일 최근 운행일")));
+        TimetableService tt = mock(TimetableService.class);
+        doAnswer(inv -> {   // 구간 시간표 받기(대기 있음)만 느리다 — 통계용 미리 받기(대기 0)는 바로
+            if (((java.time.Duration) inv.getArgument(3)).isPositive()) Thread.sleep(5_000);
+            return true;
+        }).when(tt).ensure(any(), any(), any(), any());
+        try (var exec = Executors.newVirtualThreadPerTaskExecutor()) {
+            var svc = spy(new RailJourneyService(mock(JdbcClient.class), rail, mock(KakaoMobilityClient.class),
+                    mock(TagoSubwayClient.class), tt, mock(HolidayService.class), exec));
+            long base = ref.atStartOfDay(com.roadrail.common.Times.KST).toEpochSecond();
+            doReturn(List.of(new RailRouter.Connection("101", "A", "B", base + 10 * 3600, base + 11 * 3600))).when(svc).connectionsFor(ref);
+            doReturn(new RailJourneyService.TrackPath(List.of(), false)).when(svc).legPath(any(), any(), any(), any());
+            doReturn(null).when(svc).coords(any());
+            var from = new com.roadrail.web.dto.TripDtos.Place("A역", null, 37.5, 127.0, "STATION", "A");
+            var to = new com.roadrail.web.dto.TripDtos.Place("B역", null, 36.3, 127.4, "STATION", "B");
+            long t0 = System.nanoTime();
+            var plan = svc.plan(from, to, java.time.OffsetDateTime.of(2026, 10, 4, 9, 0, 0, 0, java.time.ZoneOffset.ofHours(9)), null);
+            assertThat(java.time.Duration.ofNanos(System.nanoTime() - t0)).isLessThan(java.time.Duration.ofMillis(4_500));
+            assertThat(plan.journeys()).isNotEmpty();                                       // 오늘 · 내일 열차
+            assertThat(plan.journeys().getFirst().legs().getFirst().timetable()).isFalse();   // 보간 시각 그대로
+            assertThat(plan.pending()).isTrue();                                            // → 캐시하지 않고 화면이 다시 부름
+        }
+    }
 }

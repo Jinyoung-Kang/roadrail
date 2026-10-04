@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 기차 여정 — 어디서 가까운 역 → (환승) → 어디로 가까운 역. 전국 코레일 여객열차 하루 시간표(rail.day_stops)에
@@ -259,10 +260,13 @@ public class RailJourneyService {
         dests.forEach(s -> names.put(s.code(), s.name()));
         LocalDate refDate = LocalDate.parse(ref.getFirst());
         List<Journey> journeys = new ArrayList<>();
+        // 마감 안에 구간 시간표 · 30일 통계가 오지 않은 여정은 보간 시각 · 지연 0 으로 계산된다 → pending(캐시 안 함, 화면이 다시 부름)
+        AtomicBoolean late = new AtomicBoolean();
         for (int i = 0; i < found.size(); i++) {
-            Journey jn = toJourney(found.get(i), acc, eg, names, depart, refDate, journeys.isEmpty(), budget);
+            Journey jn = toJourney(found.get(i), acc, eg, names, depart, refDate, journeys.isEmpty(), budget, late);
             if (jn != null) journeys.add(jn);  // 실제 시간표로 확인하니 환승·승차가 안 되는 여정은 뺀다
         }
+        pending |= late.get();
         if (journeys.isEmpty()) {
             return new Plan(List.of(), ref.getFirst(), basis.getFirst(), origins.size(), dests.size(), BOARDING_BUFFER_MIN, TRANSFER_MIN,
                     "실제 시간표로 확인하니 이어지는 열차가 없습니다", List.of(), List.of(), pending);
@@ -324,7 +328,7 @@ public class RailJourneyService {
      * 성립하지 않으면 null (여정 제외). 시간표를 못 받은 구간은 CSA 시각을 그대로 두고 timetable=false 로 표시.
      */
     private Journey toJourney(RailRouter.Journey j, Map<String, Transfer> acc, Map<String, Transfer> eg, Map<String, String> names,
-                              OffsetDateTime depart, LocalDate refDate, boolean withStats, long deadline) {
+                              OffsetDateTime depart, LocalDate refDate, boolean withStats, long deadline, AtomicBoolean late) {
         List<Leg> legs = new ArrayList<>();
         // 구간별 기준일 시간표 (역 쌍 · 날짜당 TAGO 1건, 받은 뒤에는 DB) — 병렬로
         List<CompletableFuture<Planned>> plans = new ArrayList<>();
@@ -356,6 +360,7 @@ public class RailJourneyService {
             OffsetDateTime dep = OffsetDateTime.ofInstant(Instant.ofEpochSecond(l.dep()), Times.KST);
             OffsetDateTime arr = OffsetDateTime.ofInstant(Instant.ofEpochSecond(l.arr()), Times.KST);
             Planned pl = TripService.join(plans.get(i), TripService.left(deadline));
+            if (!plans.get(i).isDone() || !stats.get(i).isDone()) late.set(true);  // 늦음 ≠ 없음
             boolean real = pl != null && pl.dep() != null;
             if (real) {  // 기준일 → 목표일: CSA 가 옮긴 날짜 수만큼
                 long shiftDays = Math.round((l.dep() - pl.dep().toEpochSecond()) / 86400.0);
@@ -387,7 +392,7 @@ public class RailJourneyService {
 
     private final Memo<String, double[]> coordCache = new Memo<>(4096);
 
-    private double[] coords(String code) {
+    double[] coords(String code) {
         double[] c = coordCache.get(code, k -> jdbc.sql("SELECT lat, lon FROM ref.station WHERE stn_cd = :c AND lat IS NOT NULL")
                 .param("c", k).query((rs, i) -> new double[]{rs.getDouble(1), rs.getDouble(2)}).optional().orElse(new double[0]));
         return c.length == 2 ? c : null;
