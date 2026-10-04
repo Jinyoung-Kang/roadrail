@@ -30,8 +30,9 @@ def quota_key(provider: str, yyyymmdd: str) -> str:
     return f"quota:{provider}:{yyyymmdd}"
 
 
-def tail_key(start: str, end: str, yyyymmdd: str) -> str:
-    return f"ex:tail:{start}-{end}:{yyyymmdd}"
+def tail_key(start: str, end: str) -> str:
+    """구간의 꼬리 커서 — 값은 '원천 데이터 날짜:그날 본 1종 행 수' (날짜를 키가 아니라 값에 둔다, H1)"""
+    return f"ex:tail:{start}-{end}"
 
 
 def client() -> aioredis.Redis:

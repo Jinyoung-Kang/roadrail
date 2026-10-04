@@ -1,12 +1,12 @@
 import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Layout from "@/components/Layout";
 import SearchPicker from "@/components/SearchPicker";
 import { SimpleBars } from "@/components/LazyCharts";
 import { C } from "@/lib/palette";
 import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Select, Spec, SpecStrip, TrainName } from "@/components/ui";
 import { qs, useApi } from "@/lib/api";
-import { DASH, dowLabel, durMin, hm, num, pct, ymd } from "@/lib/format";
+import { DASH, daysUntilYesterday, dowLabel, durMin, hm, num, pct } from "@/lib/format";
 import type { Punctuality, Station, Trains } from "@/lib/types";
 
 const PERIODS = [{ value: 30, label: "최근 30일" }, { value: 90, label: "최근 90일" }];
@@ -27,21 +27,23 @@ export default function RailPage() {
 
   // 비어 있을 때는 운행 중인 모든 역을 가나다순으로 (목록 안에서 스크롤)
   const allStations = useApi<Station[]>("/api/v1/stations?limit=400&sort=name");
-  const to = ymd(new Date(Date.now() - 86400_000));
-  const from = ymd(new Date(Date.now() - days * 86400_000));
-  const base = router.isReady && dep !== arr ? { dep, arr, from, to, thresholdMin: thr } : null;
-  const byTrain = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "train" })}` : null);
-  const byDow = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "dow" })}` : null);
-  const byHour = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "hour" })}` : null);
+  // 기간은 여는 날 기준 — 정적으로 미리 그린 HTML(빌드한 날)과 달라 하이드레이션이 깨지지 않게 라우터 준비 뒤에만 (WEB-01)
+  const period = router.isReady ? daysUntilYesterday(new Date(), days) : null;
+  const base = period && dep !== arr ? { dep, arr, ...period, thresholdMin: thr } : null;
+  // 처음 보는 역 쌍은 TAGO 시간표를 받는 동안 일부를 확인 불가로 둔다 → 4초 뒤 다시(최대 30번 = 2분, 서버도 시간당 상한)
+  const pending = { retryWhile: (d: Punctuality) => d.timetablePending, retryMs: 4000, maxRetries: 30 };
+  const byTrain = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "train" })}` : null, pending);
+  const byDow = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "dow" })}` : null, pending);
+  const byHour = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "hour" })}` : null, pending);
   const trains = useApi<Trains>(base ? `/api/v1/rail/od/trains?${qs({ dep, arr, date })}` : null);
-
-  // 처음 보는 역 쌍은 TAGO 시간표를 받는 동안 일부를 보간(⚠)으로 계산한다 → 받는 대로 다시 계산
   const ttPending = !!(byTrain.data?.timetablePending || byDow.data?.timetablePending || byHour.data?.timetablePending);
+  // 운행표도 같은 시간표를 쓴다 — 이 역 쌍의 시간표 받기가 끝나면 한 번 다시
+  const pair = `${dep}-${arr}`;
+  const pendingFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!ttPending) return;
-    const id = setTimeout(() => { byTrain.reload(); byDow.reload(); byHour.reload(); trains.reload(); }, 4000);
-    return () => clearTimeout(id);
-  }, [ttPending, byTrain.data, byDow.data, byHour.data]);  // eslint-disable-line react-hooks/exhaustive-deps
+    if (ttPending) pendingFor.current = pair;
+    else if (pendingFor.current === pair && byTrain.data) { pendingFor.current = null; trains.reload(); }
+  }, [ttPending, pair, byTrain.data, trains.reload]);
 
   const s = byTrain.data?.summary;
   const nat = byTrain.data?.nationwideExact;
@@ -58,7 +60,7 @@ export default function RailPage() {
   return (
     <Layout title={`${depName ?? ""}→${arrName ?? ""} 철도 분석`}>
       <PageHero eyebrow="철도 분석 · 전국 모든 역 쌍 (직통)" title={depName && arrName ? `${depName}역 → ${arrName}역` : " "}
-                sub={<>코레일 운행계획 × 운행정보로 계산한 정시성 · {from} ~ {to}</>}>
+                sub={<>코레일 운행계획 × 운행정보로 계산한 정시성{period && ` · ${period.from} ~ ${period.to}`}</>}>
         <div className="flex flex-col items-center justify-center gap-2 sm:flex-row">
           {stationPicker("출발역", depName, "dep")}
           <button className="chip h-11 w-11 shrink-0 text-base" aria-label="출발역과 도착역 바꾸기" onClick={() => go({ dep: arr, arr: dep })}>⇄</button>

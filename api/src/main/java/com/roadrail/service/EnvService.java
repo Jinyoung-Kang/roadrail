@@ -26,18 +26,23 @@ public class EnvService {
             int nx = (int) p[3], ny = (int) p[4];
             OffsetDateTime base = jdbc.sql("SELECT max(base_at) FROM env.weather_fcst WHERE nx = :x AND ny = :y")
                     .param("x", nx).param("y", ny).query(OffsetDateTime.class).optional().orElse(null);
-            List<WeatherHour> hourly = base == null ? List.of() : hourly(base, nx, ny, from, from.plusHours(hours));
+            List<WeatherHour> hourly = base == null ? List.of() : hourly(nx, ny, from, from.plusHours(hours));
             pts.add(new PointEnv((String) p[0], (String) p[1], (String) p[2], nx, ny, Times.kst(base), hourly, air((String) p[2])));
         }
         return new Env(cid, pts, "단기예보(발표 시각 baseAt 기준)와 시도 내 측정소의 최근 측정값 중앙값. 값이 없으면 null.");
     }
 
-    public List<WeatherHour> hourly(OffsetDateTime base, int nx, int ny, OffsetDateTime from, OffsetDateTime to) {
+    /**
+     * 시각별 예보 — 시각마다 그 시각을 가진 **가장 최근 발표**의 값. 새 발표는 발표 +1시간부터 값이 있어(14시 발표 → 15시부터)
+     * 가장 최근 발표 하나에서만 찾으면 발표 직후 한 시간(하루 약 6시간)이 비었다(RVW-02 · 검증 기록 74 와 같은 원인).
+     */
+    public List<WeatherHour> hourly(int nx, int ny, OffsetDateTime from, OffsetDateTime to) {
         Map<OffsetDateTime, Map<String, String>> byHour = new TreeMap<>();
         jdbc.sql("""
-                SELECT fcst_at, category, value FROM env.weather_fcst
-                WHERE base_at = :b AND nx = :x AND ny = :y AND fcst_at >= :f AND fcst_at < :t ORDER BY fcst_at""")
-                .param("b", base).param("x", nx).param("y", ny).param("f", from).param("t", to)
+                SELECT DISTINCT ON (fcst_at, category) fcst_at, category, value FROM env.weather_fcst
+                WHERE nx = :x AND ny = :y AND fcst_at >= :f AND fcst_at < :t
+                ORDER BY fcst_at, category, base_at DESC""")
+                .param("x", nx).param("y", ny).param("f", from).param("t", to)
                 .query(rs -> {
                     byHour.computeIfAbsent(Times.kst(rs.getObject(1, OffsetDateTime.class)), k -> new HashMap<>())
                             .put(rs.getString(2), rs.getString(3));
@@ -48,13 +53,10 @@ public class EnvService {
         return out;
     }
 
-    /** 목표 시각의 예보 (가장 최근 발표, 해당 시각 이하의 가장 가까운 예보 시각) */
+    /** 목표 시각이 든 정시의 예보 — 그 시각을 가진 가장 최근 발표 */
     public Optional<WeatherHour> at(int nx, int ny, OffsetDateTime target) {
-        OffsetDateTime base = jdbc.sql("SELECT max(base_at) FROM env.weather_fcst WHERE nx = :x AND ny = :y")
-                .param("x", nx).param("y", ny).query(OffsetDateTime.class).optional().orElse(null);
-        if (base == null) return Optional.empty();
         OffsetDateTime h = target.withMinute(0).withSecond(0).withNano(0);
-        List<WeatherHour> l = hourly(base, nx, ny, h, h.plusHours(1));
+        List<WeatherHour> l = hourly(nx, ny, h, h.plusHours(1));
         return l.isEmpty() ? Optional.empty() : Optional.of(l.getFirst());
     }
 
@@ -128,13 +130,14 @@ public class EnvService {
             List<Incident> kept = withoutDuplicates(out);
             out.clear();
             out.addAll(kept);
-            out.sort(Comparator.comparing(Incident::sentAt).reversed());
         }
         if (corridorId != null) {
             jdbc.sql("SELECT " + INCIDENT_COLS + " FROM ts.road_incident WHERE " + ACTIVE
                             + " AND lat IS NULL AND :c = ANY(corridor_ids) ORDER BY sent_at DESC LIMIT 10")
                     .param("c", corridorId).query((rs, i) -> incident(rs)).list().forEach(out::add);
         }
+        // 합친 뒤 최근 순 — 좌표 없는 길 매칭 안내도 함께 정렬해야 '최근 20건' 자르기에서 먼저 빠지지 않는다(RVW-08)
+        out.sort(Comparator.comparing(Incident::sentAt).reversed());
         return out;
     }
 

@@ -9,7 +9,9 @@ public final class OpsDtos {
 
     public record Job(String job, String provider, String cron, String description, boolean enabled, String lastStatus,
                       OffsetDateTime lastRunAt, Integer lastDurationMs, Integer lastCalls, Integer lastRows,
-                      String lastMessage, Double completeness24h, Integer gaps24h, boolean running, boolean warn) {}
+                      String lastMessage, Double completeness24h, Integer gaps24h,
+                      /** 원천에 표본이 없는 슬롯 — 결측 · 완전성 분모에서 뺀다(전체를 다시 받아도 빔) */
+                      Integer noSamples24h, boolean running, boolean warn) {}
 
     public record Quota(String provider, String day, int limit, int used, int reserved, int remaining) {}
 

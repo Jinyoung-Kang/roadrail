@@ -357,4 +357,94 @@ class ApiIT extends IntegrationTest {
         mvc.perform(get("/api/v1/places/search").param("q", "대전").header("X-Forwarded-For", "198.51.100.7"))
                 .andExpect(status().isOk());
     }
+
+    @Test
+    void roadCompletenessLeavesOutSlotsTheSourceNeverHad() throws Exception {
+        // M3: 원천에 표본이 없는 슬롯(새벽 등, 전체를 다시 받아도 빔)까지 결측으로 세어 수집이 완벽한 날도 63~71% — 경고가 늘 켜졌다
+        OffsetDateTime day = OffsetDateTime.now(KST).withHour(0).withMinute(0).withSecond(0).withNano(0);
+        jdbc.execute("TRUNCATE ts.road_corridor_tt");
+        jdbc.update("DELETE FROM ops.slot_gap");
+        for (int m = 0; m < 60; m += 5) {
+            for (String dir : List.of("DN", "UP")) {
+                if (dir.equals("DN") && (m == 10 || m == 20)) {
+                    jdbc.update("INSERT INTO ops.slot_gap (job_name, series_key, slot_ts, reason) VALUES ('road_travel_time', ?, ?, 'NO_SAMPLES')",
+                            "SEL-DJN:DN", day.plusMinutes(m));
+                    continue;
+                }
+                jdbc.update("INSERT INTO ts.road_corridor_tt VALUES (?, 'SEL-DJN', ?, 7260, 10, 10, 'OK', now())", day.plusMinutes(m), dir);
+            }
+        }
+        try {
+            mvc.perform(get("/api/v1/ops/collect-status")).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.jobs[?(@.job == 'road_travel_time')].completeness24h").value(hasItem(1.0)))
+                    .andExpect(jsonPath("$.jobs[?(@.job == 'road_travel_time')].gaps24h").value(hasItem(0)))
+                    .andExpect(jsonPath("$.jobs[?(@.job == 'road_travel_time')].noSamples24h").value(hasItem(2)));
+        } finally {
+            jdbc.update("DELETE FROM ops.slot_gap");
+        }
+    }
+
+    @Test
+    void routeIncidentsSortNewestFirstIncludingCorridorMatchedOnes() {
+        // RVW-08: 좌표 없는 길 매칭 안내를 정렬 뒤에 붙여, 더 최근 것이어도 '최근 20건' 자르기에서 먼저 빠졌다
+        jdbc.update("DELETE FROM ts.road_incident");
+        jdbc.update("""
+                INSERT INTO ts.road_incident (msg_hash, sent_at, type_code, type_name, route_name, content, lat, lon, corridor_ids, source)
+                VALUES (repeat('a', 64), now() - interval '30 minutes', '1', '사고', '경부선', '좌표 있음 · 오래됨', 37.50, 126.97, '{}', 'EX'),
+                       (repeat('b', 64), now(), '1', '사고', '경부선', '좌표 없음 · 최신', NULL, NULL, '{SEL-DJN}', 'EX')""");
+        try {
+            var got = env.routeIncidents(List.of(new double[]{37.55, 126.97}, new double[]{37.45, 126.97}), "SEL-DJN");
+            assertThat(got).extracting(EnvDtos.Incident::content).containsExactly("좌표 없음 · 최신", "좌표 있음 · 오래됨");
+        } finally {
+            jdbc.update("DELETE FROM ts.road_incident");
+        }
+    }
+
+    @Test
+    void storedForecastForNowComesFromTheLatestIssueThatHasThatHour() {
+        // RVW-02: 단기예보 새 발표는 발표 +1시간부터 값이 있다(14시 발표 → 15시부터). 가장 최근 발표에서만 찾아
+        // 발표 직후 한 시간(하루 약 6시간)은 '지금 출발' 날씨가 비었다 → 그 시각을 가진 가장 최근 발표에서 읽는다
+        OffsetDateTime day = OffsetDateTime.now(KST).withHour(0).withMinute(0).withSecond(0).withNano(0);
+        jdbc.update("DELETE FROM env.weather_fcst WHERE nx = 7 AND ny = 7");
+        for (int h = 12; h <= 17; h++) insertFcst(day.withHour(11), day.withHour(h), "TMP", "1" + h);   // 11시 발표: 12~17시
+        for (int h = 15; h <= 20; h++) insertFcst(day.withHour(14), day.withHour(h), "TMP", "2" + h);   // 14시 발표: 15시~
+        assertThat(env.at(7, 7, day.withHour(14).withMinute(30))).get().extracting(EnvDtos.WeatherHour::tmp).isEqualTo(114);
+        assertThat(env.at(7, 7, day.withHour(16).withMinute(10))).get().extracting(EnvDtos.WeatherHour::tmp).isEqualTo(216);  // 새 발표가 있으면 새 발표
+        jdbc.update("DELETE FROM env.weather_fcst WHERE nx = 7 AND ny = 7");
+    }
+
+    private void insertFcst(OffsetDateTime base, OffsetDateTime at, String category, String value) {
+        jdbc.update("INSERT INTO env.weather_fcst (base_at, fcst_at, nx, ny, category, value) VALUES (?, ?, 7, 7, ?, ?)",
+                base, at, category, value);
+    }
+
+    @Test
+    void everyResponseCarriesAntiFramingHeaders() throws Exception {
+        // WEB-10: API 문서(Swagger UI)를 웹이 외부 rewrite 로 넘겨 보안 헤더가 하나도 없었다 — API 가 직접 붙인다
+        for (String path : List.of("/api/v1/corridors", "/v3/api-docs")) {
+            mvc.perform(get(path)).andExpect(header().string("X-Frame-Options", "DENY"))
+                    .andExpect(header().string("Content-Security-Policy", "frame-ancestors 'none'"))
+                    .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+        }
+    }
+
+    @Test
+    void unknownAdminPathsAreRateLimitedToo() throws Exception {
+        // 리뷰: 컨트롤러가 없는 관리 경로는 한도 밖이라 토큰을 무제한 대입할 수 있었다(틀리면 401 · 맞으면 404)
+        for (String path : List.of("/api/v1/admin/x", "/api/v1/admin/%78")) {
+            mvc.perform(post(java.net.URI.create(path)).header("X-Admin-Token", "wrong").header("X-Forwarded-For", "192.0.2.45"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(header().exists("X-RateLimit-Limit"));
+        }
+    }
+
+    @Test
+    void rateLimitCountsEncodedAndMatrixParameterPathsToo() throws Exception {
+        // RVW-04: 버킷을 디코딩 전 URI 로 골라 같은 핸들러로 가는 /places/%73earch · /places;x=1/search 는 한도 밖이었다
+        for (String path : List.of("/api/v1/places/%73earch", "/api/v1/places;x=1/search")) {
+            mvc.perform(get(java.net.URI.create(path + "?q=%EB%8C%80%EC%A0%84")).header("X-Forwarded-For", "192.0.2.44"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("X-RateLimit-Limit", "3"));
+        }
+    }
 }

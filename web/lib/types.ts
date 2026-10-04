@@ -86,7 +86,7 @@ export interface OpsStatus {
   asOf: string; collectorAlive: boolean; collectorHeartbeat: string | null;
   jobs: { job: string; provider: string; cron: string; description: string; enabled: boolean; lastStatus: string | null;
     lastRunAt: string | null; lastDurationMs: number | null; lastCalls: number | null; lastRows: number | null;
-    lastMessage: string | null; completeness24h: number | null; gaps24h: number | null; running: boolean; warn: boolean }[];
+    lastMessage: string | null; completeness24h: number | null; gaps24h: number | null; noSamples24h?: number | null; running: boolean; warn: boolean }[];
   quota: { provider: string; day: string; limit: number; used: number; reserved: number; remaining: number }[];
   recentRuns: { runId: number; job: string; trigger: string; startedAt: string; finishedAt: string | null; status: string;
     calls: number; rows: number; message: string | null }[];

@@ -98,6 +98,7 @@ services:
       context: ./web
       args:
         NEXT_PUBLIC_KAKAO_JS_KEY: ${NEXT_PUBLIC_KAKAO_JS_KEY:-}
+        PUBLIC_HTTPS: ${PUBLIC_HTTPS:-}
     environment:
       API_INTERNAL_URL: http://api:8300
       TZ: Asia/Seoul

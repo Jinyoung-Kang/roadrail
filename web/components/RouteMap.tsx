@@ -1,16 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { frameSignature, layersSignature, type MapLayers, type MapMarker } from "@/lib/map";
+import { sdkLoader } from "@/lib/sdkLoader";
 
 /* 카카오 지도 JS SDK — 브라우저에 노출되는 유일한 키(NEXT_PUBLIC_KAKAO_JS_KEY). 실패하면 SVG 노선도로 대체. */
 declare global { interface Window { kakao: any } }
 const KEY = process.env.NEXT_PUBLIC_KAKAO_JS_KEY;
-let loader: Promise<any> | null = null;
 
 export const ROAD = "#2a78d6", RAIL = "#eb6834";
 
-export interface MapLine { path: [number, number][]; color: string; dashed?: boolean; weight?: number }
-/** warn = 돌발 안내 (삼각형) */
-export interface MapMarker { lat: number; lon: number; label?: string; color: string; ring?: boolean; size?: number; warn?: boolean }
-export interface MapLayers { lines: MapLine[]; markers: MapMarker[] }
+export type { MapLayers, MapLine, MapMarker } from "@/lib/map";
 
 /**
  * 지도 표식 — HTML 문자열이 아니라 DOM 노드로 만든다.
@@ -36,25 +34,28 @@ function markerNode(m: MapMarker): HTMLElement {
   return box;
 }
 
+const loadSdk = sdkLoader({
+  sdk: () => window.kakao,
+  appendScript: (src) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    document.head.appendChild(s);
+    return s;
+  },
+  setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+}, `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KEY}&autoload=false`);
+
 function loadKakao(): Promise<any> {
   if (typeof window === "undefined") return Promise.reject(new Error("ssr"));
   if (!KEY) return Promise.reject(new Error("NEXT_PUBLIC_KAKAO_JS_KEY 없음"));
-  if (window.kakao?.maps?.LatLng) return Promise.resolve(window.kakao);
-  if (!loader) {
-    loader = new Promise((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KEY}&autoload=false`;
-      s.async = true;
-      s.onload = () => (window.kakao?.maps ? window.kakao.maps.load(() => resolve(window.kakao)) : reject(new Error("kakao 로드 실패")));
-      s.onerror = () => reject(new Error("kakao 스크립트 로드 실패 (도메인 등록 확인)"));
-      document.head.appendChild(s);
-      setTimeout(() => reject(new Error("kakao 로드 시간 초과")), 8000);
-    }).catch((e) => { loader = null; throw e; });
-  }
-  return loader;
+  return loadSdk();
 }
 
-/** 선(경로)과 점(출발·도착·역)을 그리는 지도. 히어로 배경(interactive=false)과 탐색용 지도 공용. */
+/**
+ * 선(경로)과 점(출발·도착·역)을 그리는 지도. 히어로 배경(interactive=false)과 탐색용 지도 공용.
+ * 지도는 한 번만 만들고, 내용이 바뀌면 선 · 표식만 갈아끼운다. 범위 맞춤은 끝점 · 경로가 바뀔 때만 (WEB-03).
+ */
 export default function RouteMap({ layers, interactive = false, className = "", padBottom = 0, label = "노선 지도", focus = null }: {
   layers: MapLayers | null; interactive?: boolean; className?: string; padBottom?: number; label?: string;
   /** 바뀔 때마다(n 증가) 그 지점으로 확대·이동 — 예: 돌발 안내 '지도에서 보기' */
@@ -62,54 +63,86 @@ export default function RouteMap({ layers, interactive = false, className = "", 
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
+  const overlays = useRef<any[]>([]);
+  const bounds = useRef<any>(null);
+  const fitted = useRef("");
+  const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   // 탐색용 지도는 기본으로 잠가 둔다 — 페이지를 스크롤할 때 휠이 지도 배율을 바꾸지 않게 (+/− 버튼은 항상 동작)
   const [unlocked, setUnlocked] = useState(false);
+  const unlockedRef = useRef(false);   // 지도를 만들 때 지금 상태를 그대로 적용 (SDK 를 받는 사이 누른 버튼을 되돌리지 않게)
   const lock = (on: boolean) => {
     setUnlocked(!on);
+    unlockedRef.current = !on;
     const m = mapRef.current;
     if (m) { m.setDraggable(!on); m.setZoomable(!on); }
   };
-  const sig = layers ? JSON.stringify(layers).length + ":" + layers.lines.length + ":" + layers.markers.map((m) => m.lat.toFixed(3)).join() : "";
+  // 경로 좌표가 수천 개라 서명은 layers 가 바뀔 때만 계산 (페이지는 layers 를 useMemo 로 넘긴다)
+  const sig = useMemo(() => layersSignature(layers), [layers]);
+  const frame = useMemo(() => frameSignature(layers), [layers]);
+  const hasLayers = layers !== null;
+  // 컨테이너 크기가 확정된 다음에 맞춘다 (생성 직후 0 크기일 수 있음 · rAF 는 백그라운드 탭에서 멈추므로 타이머)
+  const fit = () => {
+    const m = mapRef.current, b = bounds.current;
+    if (!m || !b || b.isEmpty()) return;
+    m.relayout();
+    m.setBounds(b, 60, 60, 60 + padBottom, 60);
+  };
 
+  // 지도는 한 번만 만든다 — 그릴 내용이 처음 생길 때
   useEffect(() => {
-    if (!layers || !ref.current) return;
+    if (!hasLayers || !ref.current || mapRef.current) return;
     let cancelled = false;
-    let cleanup = () => {};
     loadKakao().then((kakao) => {
       if (cancelled || !ref.current) return;
       ref.current.innerHTML = "";
-      const first = layers.markers[0] ?? { lat: 36.5, lon: 127.8 };
       const map = new kakao.maps.Map(ref.current, {
-        center: new kakao.maps.LatLng(first.lat, first.lon), level: 10,
+        center: new kakao.maps.LatLng(36.5, 127.8), level: 10,
         draggable: false, scrollwheel: false, disableDoubleClickZoom: true,
       });
-      map.setZoomable(false);
-      mapRef.current = map;
-      setUnlocked(false);
+      map.setZoomable(unlockedRef.current);
+      map.setDraggable(unlockedRef.current);
       if (interactive) map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
-      const bounds = new kakao.maps.LatLngBounds();
-      for (const l of layers.lines) {
-        if (l.path.length < 2) continue;
-        const path = l.path.map(([la, lo]) => { const p = new kakao.maps.LatLng(la, lo); bounds.extend(p); return p; });
-        new kakao.maps.Polyline({ map, path, strokeWeight: l.weight ?? 5, strokeColor: l.color, strokeOpacity: 0.92,
-          strokeStyle: l.dashed ? "shortdash" : "solid" });
-      }
-      for (const m of layers.markers) {
-        const p = new kakao.maps.LatLng(m.lat, m.lon);
-        bounds.extend(p);
-        new kakao.maps.CustomOverlay({ map, position: p, yAnchor: m.label ? 1.25 : 0.5, content: markerNode(m) });
-      }
-      // 컨테이너 크기가 확정된 다음에 맞춘다 (생성 직후 0 크기일 수 있음 · rAF 는 백그라운드 탭에서 멈추므로 타이머)
-      const fit = () => { map.relayout(); map.setBounds(bounds, 60, 60, 60 + padBottom, 60); };
-      setTimeout(fit, 30);
-      window.addEventListener("resize", fit);
-      cleanup = () => window.removeEventListener("resize", fit);
+      mapRef.current = map;
       setFailed(null);
+      setReady(true);
     }).catch((e) => !cancelled && setFailed(e.message));
-    return () => { cancelled = true; cleanup(); };
+    return () => { cancelled = true; };
+  }, [hasLayers, interactive]);
+
+  // 내용이 바뀌면 선 · 표식만 갈아끼운다
+  useEffect(() => {
+    const map = mapRef.current, kakao = typeof window !== "undefined" ? window.kakao : null;
+    if (!ready || !map || !kakao?.maps || !layers) return;
+    overlays.current.forEach((o) => o.setMap(null));
+    overlays.current = [];
+    const b = new kakao.maps.LatLngBounds();
+    for (const l of layers.lines) {
+      if (l.path.length < 2) continue;
+      const path = l.path.map(([la, lo]) => { const p = new kakao.maps.LatLng(la, lo); b.extend(p); return p; });
+      overlays.current.push(new kakao.maps.Polyline({ map, path, strokeWeight: l.weight ?? 5, strokeColor: l.color, strokeOpacity: 0.92,
+        strokeStyle: l.dashed ? "shortdash" : "solid" }));
+    }
+    for (const m of layers.markers) {
+      const p = new kakao.maps.LatLng(m.lat, m.lon);
+      b.extend(p);
+      overlays.current.push(new kakao.maps.CustomOverlay({ map, position: p, yAnchor: m.label ? 1.25 : 0.5, content: markerNode(m) }));
+    }
+    bounds.current = b;
+    if (frame !== fitted.current) {
+      // 맞춘 범위는 실제로 맞춘 뒤에 기록 — 30ms 안에 내용이 또 바뀌어 타이머가 취소돼도 다음 실행이 다시 맞춘다
+      const id = setTimeout(() => { fitted.current = frame; fit(); }, 30);
+      return () => clearTimeout(id);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sig, interactive, padBottom]);
+  }, [ready, sig]);
+
+  useEffect(() => {
+    if (!ready) return;
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, padBottom]);
 
   useEffect(() => {
     const m = mapRef.current, k = typeof window !== "undefined" ? window.kakao : null;
@@ -121,7 +154,7 @@ export default function RouteMap({ layers, interactive = false, className = "", 
   if (failed || !KEY) return <SvgRoute layers={layers} className={className} note={failed ?? "카카오 JS 키 없음"} />;
   // 카카오 SDK 가 컨테이너를 position: relative 로 바꾸므로 배치는 바깥 래퍼가, 쌓임 맥락은 isolate 가 맡는다
   return (
-    <div className={`${className} isolate ${interactive ? "" : "rr-map-muted"}`} aria-label={label}
+    <div className={`${className} isolate ${interactive ? "" : "rr-map-muted"}`} role="region" aria-label={label}
          onMouseLeave={() => interactive && unlocked && lock(true)}>
       <div ref={ref} className="h-full w-full" />
       {interactive && (
@@ -147,7 +180,7 @@ export function SvgRoute({ layers, className, note }: { layers: MapLayers | null
   const py = (lat: number) => H - pad - (lat - y0) * s - ((H - 2 * pad) - (y1 - y0) * s) / 2;
   return (
     <div className={`${className} bg-linear-to-b from-[#e9eef3] to-[#f7f8f9]`} title={note}>
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full" preserveAspectRatio="xMidYMid meet" aria-label="노선도">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full" preserveAspectRatio="xMidYMid meet" role="img" aria-label="노선도">
         {layers.lines.map((l, i) => (
           <polyline key={i} points={l.path.map(([la, lo]) => `${px(lo)},${py(la)}`).join(" ")} fill="none" stroke={l.color}
                     strokeWidth={l.weight ?? 4} strokeDasharray={l.dashed ? "10 8" : undefined} strokeLinejoin="round" strokeLinecap="round" />

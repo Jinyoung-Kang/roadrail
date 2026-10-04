@@ -44,8 +44,16 @@ public class NowCardService {
     public NowCard now(String cid, String dir, int departIn, int accessMin, int carAccessMin) {
         String key = "now:%s:%s:%d:%d:%d".formatted(cid, dir, departIn, accessMin, carAccessMin);
         var hit = cache.get(key, Duration.ofSeconds(props.nowCacheSeconds()), NowCard.class,
-                () -> build(cid, dir, departIn, accessMin, carAccessMin));
+                () -> build(cid, dir, departIn, accessMin, carAccessMin), c -> cacheable(c, kakao.enabled()));
         return hit.value().withCache(hit.cached() ? "HIT" : "MISS");
+    }
+
+    /**
+     * 카카오를 쓰는데 경로 예측이 아직 없으면(조회 대기 600ms 를 넘김) 캐시하지 않는다 — 예전에는 '—'인 카드를 60초 동안 돌려줬다(RVW-06).
+     * 카카오 결과는 자체 캐시(20분)가 있어 다음 요청에서 바로 채워진다.
+     */
+    static boolean cacheable(NowCard card, boolean kakaoEnabled) {
+        return !kakaoEnabled || card.road() == null || card.road().kakao() != null;
     }
 
     NowCard build(String cid, String dir, int departIn, int accessMin, int carAccessMin) {

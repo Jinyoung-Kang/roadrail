@@ -3,3 +3,6 @@
 #          이력 검사(CI 는 전체 이력을 본다)에서만 남는다. 실제 키는 .env 에만 있고 커밋된 적 없다.
 c04afced5e4793c64fb1a45dee04e935863d862b:collector/tests/integration/test_pipeline.py:generic-api-key:388
 c04afced5e4793c64fb1a45dee04e935863d862b:collector/tests/integration/test_pipeline.py:generic-api-key:412
+# 139acd8: 관리 경로 요청 한도 테스트의 틀린 토큰 문자열("wrong-SECRET…") 한 줄 — 머리글 이름(X-Admin-Token) 때문에 generic-api-key 로 잡혔다.
+#          진짜 비밀이 아니다(일부러 틀린 값). 다음 커밋에서 "wrong" 으로 바꿨고, 이력 검사에서만 남는다.
+139acd8b2a98d60cd4ba5bc3135ec26131724dd6:api/src/test/java/com/roadrail/web/ApiIT.java:generic-api-key:435

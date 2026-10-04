@@ -6,12 +6,14 @@ import json
 from pathlib import Path
 
 import httpx
+import psycopg
 import pytest
 
 from roadrail.core import db, rds
 from roadrail.core.timeutil import KST, now_kst
 from roadrail.pipeline import rail, road
 from roadrail.pipeline.seed import apply_seed
+from roadrail.providers import ex
 from roadrail.providers.base import JobContext, ProviderError
 from roadrail.providers.kma import latlon_to_grid
 from roadrail.scheduler.quota import QuotaBudget, QuotaExhausted
@@ -115,8 +117,7 @@ async def test_tail_cursor_fetches_only_from_last_seen_page(seeded):
     calls.clear()
     await road.collect_travel_time(ctx_with(fake_ex(today, calls=calls)))
     assert first == len(calls) == 3  # 구간당 1페이지
-    tail = await rds.client().get(rds.tail_key("101", "103", today))
-    assert int(tail) == 5
+    assert await rds.client().get(rds.tail_key("101", "103")) == f"{today}:5"
 
 
 async def test_tail_cursor_advances_only_for_saved_rows(seeded):
@@ -131,28 +132,57 @@ async def test_tail_cursor_advances_only_for_saved_rows(seeded):
              await db.fetch("SELECT DISTINCT start_unit_code, end_unit_code FROM ts.road_travel_time")}
     assert len(saved) == 2  # 호출 예산 2건 = 받은 두 구간
     for seg in (("101", "103"), ("103", "528"), ("528", "101")):
-        tail = await rds.client().get(rds.tail_key(*seg, today))
+        tail = await rds.client().get(rds.tail_key(*seg))
         assert (tail is not None) == (seg in saved), seg  # 저장 안 된 구간은 다음 수집이 처음부터
 
 
-async def test_tail_cursor_is_saved_under_the_day_it_was_read(seeded, monkeypatch):
-    # 수집이 자정을 넘기면 D일에 읽은 꼬리 위치를 D+1 키에 쓰면 안 된다 — 다음 날 수집이 3페이지부터 시작해
-    # 00시~15시 슬롯을 건너뛴다(셀프 리뷰로 찾은 회귀: 읽기 · 쓰기가 now_kst 를 따로 불렀다)
+async def test_tail_cursor_carries_the_day_of_the_data_not_the_wall_clock(seeded, monkeypatch):
+    # 자정을 넘긴 수집이 D일 데이터를 읽으면 커서도 D일 것이어야 한다 — 벽시계(D+1)로 기억하면 원천이 D+1 로 넘어간 뒤
+    # D 의 행 수만큼 건너뛴 쪽을 요청해 새 날 슬롯을 놓친다(H1 · 예전 회귀: 읽기 · 쓰기가 now_kst 를 따로 불렀다)
     real_today = now_kst()
     day = real_today.strftime("%Y%m%d")
-    before = real_today.replace(hour=23, minute=59, second=50, microsecond=0)
-    after = before + dt.timedelta(seconds=20)          # 다음 날 00:00:10
-    calls = {"n": 0}
-
-    def clock():
-        calls["n"] += 1
-        return before if calls["n"] <= 3 else after     # 구간 3개를 읽는 동안은 D일, 그 뒤는 D+1
-
-    monkeypatch.setattr(road, "now_kst", clock)
+    after_midnight = real_today.replace(hour=0, minute=0, second=10, microsecond=0) + dt.timedelta(days=1)
+    monkeypatch.setattr(road, "now_kst", lambda: after_midnight)
     await road.collect_travel_time(ctx_with(fake_ex(day)))
     for seg in (("101", "103"), ("103", "528"), ("528", "101")):
-        assert await rds.client().get(rds.tail_key(*seg, day)) == "5", seg
-        assert await rds.client().get(rds.tail_key(*seg, after.strftime("%Y%m%d"))) is None, seg
+        assert await rds.client().get(rds.tail_key(*seg)) == f"{day}:5", seg
+
+
+def fake_ex_source(state: dict):
+    """원천이 '지금 주는 날'(state["day"])과 그날 1종 5분 행 수(state["slots"])를 바꿀 수 있는 가짜 realUnitTrtm.
+    실제 API 처럼 1종 → 다음 차종 순으로 99행씩 쪽을 나누고, 마지막 쪽 뒤를 요청하면 빈 목록을 준다."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        q = request.url.params
+        s, e, page = q["iStartUnitCode"], q["iEndUnitCode"], int(q["pageNo"])
+        state["calls"].append((s, e, page))
+        drop = state.get("drop", set())
+        items = [{"startUnitCode": s, "endUnitCode": e, "stdDate": state["day"], "stdTime": f"{m // 60:02d}:{m % 60:02d}",
+                  "timeAvg": "10.0", "timeMin": "8.0", "timeMax": "12.0", "efcvTrfl": "50", "tcsCarTypeCode": "1"}
+                 for m in range(0, state["slots"] * 5, 5) if f"{m // 60:02d}:{m % 60:02d}" not in drop]
+        items.append({"startUnitCode": s, "endUnitCode": e, "stdDate": state["day"], "stdTime": "00:00",
+                      "timeAvg": "20", "tcsCarTypeCode": "2"})
+        pages = -(-len(items) // ex.PAGE)
+        chunk = items[(page - 1) * ex.PAGE: page * ex.PAGE]
+        return httpx.Response(200, json={"count": len(chunk), "pageNo": page, "pageSize": pages,
+                                         "realUnitTrtmVO": chunk, "code": "SUCCESS"})
+    return handler
+
+
+async def test_tail_cursor_restarts_when_the_source_switches_to_the_new_day(seeded, monkeypatch):
+    # H1: 도로공사 API 는 자정 뒤 약 01:30 까지 전날(D)을 계속 준다. 그 사이 받은 D 의 행 수를 D+1 의 커서로 기억하면,
+    # 원천이 D+1 로 넘어간 뒤 3쪽부터 요청해 D+1 아침 슬롯을 하나도 받지 못했다
+    # (실측 9/25: 101→103 구간이 00:12 부터 3쪽 · 01:31~10:01 4쪽을 요청 — 00~07시 슬롯은 10시 백필로야 저장).
+    d1 = now_kst().replace(hour=0, minute=0, second=0, microsecond=0)
+    d = d1 - dt.timedelta(days=1)
+    state = {"day": d.strftime("%Y%m%d"), "slots": 280, "calls": []}
+    clock = {"now": d1 + dt.timedelta(minutes=10)}
+    monkeypatch.setattr(road, "now_kst", lambda: clock["now"])
+    await road.collect_travel_time(ctx_with(fake_ex_source(state)))     # D+1 00:10 — 원천은 아직 D (3쪽)
+    state.update(day=d1.strftime("%Y%m%d"), slots=20, calls=[])
+    clock["now"] = d1 + dt.timedelta(hours=2)
+    await road.collect_travel_time(ctx_with(fake_ex_source(state)))     # D+1 02:00 — 원천이 D+1 로 넘어감 (1쪽)
+    n = (await db.fetchone("SELECT count(*) AS n FROM ts.road_travel_time WHERE slot_ts >= %s", (d1,)))["n"]
+    assert n == 3 * 20, state["calls"]
 
 
 async def test_missing_slot_is_recorded_then_backfilled(seeded):
@@ -170,6 +200,46 @@ async def test_missing_slot_is_recorded_then_backfilled(seeded):
     gap = await db.fetch("SELECT backfilled_at FROM ops.slot_gap WHERE series_key = 'TST:DN'")
     assert gap[0]["backfilled_at"] is not None
     assert await count("SELECT count(*) AS n FROM ts.road_corridor_tt WHERE direction='DN'") == 5
+
+
+async def test_yesterdays_gap_is_backfilled_while_the_source_still_serves_yesterday(seeded, monkeypatch):
+    # M2: 원천은 자정 뒤 약 01:30 까지 전날을 준다. 예전에는 00:07 백필이 전날 결측을 무조건 '원천 만료'로 닫아
+    # 그 사이 채울 수 있던 전날 슬롯(예: 21시)을 다시 받지 않았다.
+    d1 = now_kst().replace(hour=0, minute=0, second=0, microsecond=0)
+    d = d1 - dt.timedelta(days=1)
+    clock = {"now": d.replace(hour=23, minute=30)}
+    monkeypatch.setattr(road, "now_kst", lambda: clock["now"])
+    state = {"day": d.strftime("%Y%m%d"), "slots": 264, "calls": [], "drop": {"21:00"}}   # 00:00~21:55, 21:00 없음
+    await road.collect_travel_time(ctx_with(fake_ex_source(state)), full=True)
+    gap = await db.fetchone("SELECT backfilled_at FROM ops.slot_gap WHERE series_key = 'TST:DN' AND slot_ts = %s",
+                            (d + dt.timedelta(hours=21),))
+    assert gap is not None and gap["backfilled_at"] is None
+
+    clock["now"] = d1 + dt.timedelta(minutes=20)          # D+1 00:20 — 원천은 아직 D 를 주고, 21:00 이 공개됨
+    state.update(drop=set(), calls=[])
+    ctx = ctx_with(fake_ex_source(state))
+    ctx.job_name = "road_gap_backfill"
+    await road.backfill_gaps(ctx)
+    gap = await db.fetchone("SELECT backfilled_at, reason FROM ops.slot_gap WHERE series_key = 'TST:DN' AND slot_ts = %s",
+                            (d + dt.timedelta(hours=21),))
+    assert gap["backfilled_at"] is not None, (gap, state["calls"])
+
+
+async def test_yesterdays_gap_expires_once_the_source_has_moved_on(seeded, monkeypatch):
+    d1 = now_kst().replace(hour=0, minute=0, second=0, microsecond=0)
+    d = d1 - dt.timedelta(days=1)
+    clock = {"now": d.replace(hour=23, minute=30)}
+    monkeypatch.setattr(road, "now_kst", lambda: clock["now"])
+    state = {"day": d.strftime("%Y%m%d"), "slots": 264, "calls": [], "drop": {"21:00"}}
+    await road.collect_travel_time(ctx_with(fake_ex_source(state)), full=True)
+    clock["now"] = d1 + dt.timedelta(hours=2, minutes=7)  # D+1 02:07 — 원천이 D+1 로 넘어감
+    state.update(day=d1.strftime("%Y%m%d"), slots=12, drop=set(), calls=[])
+    ctx = ctx_with(fake_ex_source(state))
+    ctx.job_name = "road_gap_backfill"
+    await road.backfill_gaps(ctx)
+    gap = await db.fetchone("SELECT backfilled_at, reason FROM ops.slot_gap WHERE series_key = 'TST:DN' AND slot_ts = %s",
+                            (d + dt.timedelta(hours=21),))
+    assert gap["reason"] == "SOURCE_EXPIRED" and gap["backfilled_at"] is None
 
 
 async def test_low_coverage_slot_is_gap(seeded):
@@ -242,7 +312,7 @@ async def test_api_call_log_masks_key(seeded, monkeypatch):
     today = now_kst().strftime("%Y%m%d")
     ctx = ctx_with(fake_ex(today))
     await road.collect_travel_time(ctx, full=True)
-    assert ctx.api_calls and all("SECRET123" not in json.dumps(c, ensure_ascii=False) for c in ctx.api_calls)
+    assert ctx.api_calls and all("SECRET123" not in json.dumps(c, ensure_ascii=False, default=str) for c in ctx.api_calls)
     assert all('"key": "***"' in c[3] for c in ctx.api_calls)
 
 
@@ -433,3 +503,213 @@ async def test_utic_without_key_makes_no_call(monkeypatch):
         raise AssertionError("키 없이 호출하면 안 된다")
 
     assert await road.collect_utic_incidents(ctx_with(handler)) == 0
+
+
+async def test_utic_page_that_is_not_the_incident_list_is_an_error_not_zero_incidents(monkeypatch):
+    # L10: 점검 안내 같은 다른 XML/HTML 문서도 파싱만 되면 '돌발 0건' 성공으로 기록됐다 — 진행 중 돌발이 모두 '끝남'으로 보인다
+    from roadrail.core.config import settings
+    monkeypatch.setattr(settings(), "utic_api_key", "SECRET456")
+    pages = iter(['<?xml version="1.0"?><html><body><p>서비스 점검 중</p></body></html>', '<?xml version="1.0"?><result></result>'])
+
+    def handler(request):
+        return httpx.Response(200, text=next(pages), headers={"content-type": "text/xml;charset=utf-8"})
+
+    ctx = ctx_with(handler)
+    with pytest.raises(ProviderError) as e:
+        await road.collect_utic_incidents(ctx)
+    assert "<html>" in e.value.detail
+    assert ctx.api_calls[-1][8] is not None                                 # 호출 기록에도 실패로 남는다
+    assert await road.collect_utic_incidents(ctx) == 0                      # 진짜 빈 목록은 0건 성공
+
+
+async def test_job_message_is_masked_like_the_detail(seeded, monkeypatch):
+    # L4: 오류 상세(detail)는 마스킹했지만 작업 메시지(job_run.message · collect_job.last_message)는 원문 그대로였다
+    from roadrail.core.config import settings
+    from roadrail.scheduler import jobs
+    monkeypatch.setattr(settings(), "ex_api_key", "SECRET777")
+
+    async def body(ctx):
+        raise RuntimeError("upstream said ?key=SECRET777 is wrong")
+    monkeypatch.setitem(jobs.JOBS, "maintenance", jobs.JobSpec(body, jobs._const({})))
+    assert await jobs.run_job("maintenance", "ADMIN") == "FAILED"
+    run = await db.fetchone("SELECT message, detail FROM ops.job_run WHERE job_name = 'maintenance' ORDER BY run_id DESC LIMIT 1")
+    job = await db.fetchone("SELECT last_message FROM ops.collect_job WHERE job_name = 'maintenance'")
+    assert "SECRET777" not in run["message"] and "SECRET777" not in job["last_message"]
+    assert "SECRET777" not in run["detail"]
+
+
+async def test_redirects_are_not_followed_while_keys_ride_in_the_query(monkeypatch):
+    # L6: 키가 쿼리에 있는데 리다이렉트를 따라가면 다른 곳(또는 http)으로 키가 넘어갈 수 있다
+    from roadrail.scheduler import jobs
+    assert jobs.http().follow_redirects is False
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(302, headers={"Location": "http://elsewhere.example/?key=SECRET1"})
+    with pytest.raises(ProviderError, match="리다이렉트"):
+        await ctx_with(handler).get_json("KMA", "x", "https://apis.data.go.kr/x", {"serviceKey": "SECRET1"})
+    assert len(seen) == 1
+
+
+async def test_oversized_response_is_cut_off(monkeypatch):
+    # L5: 응답 크기 상한이 없었다(XML 은 다 받은 뒤 길이를 봤고 JSON 은 상한 없음)
+    from roadrail.providers import base
+    monkeypatch.setitem(base.MAX_BYTES, "KMA", 1000)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"pad": "x" * 5000})
+    with pytest.raises(ProviderError, match="너무 큼"):
+        await ctx_with(handler).get_json("KMA", "x", "https://apis.data.go.kr/x", {})
+
+
+async def test_gap_that_survives_a_full_refetch_is_marked_no_samples_and_not_retried(seeded, monkeypatch):
+    # M3: 새벽엔 원천 표본이 원래 적어 길 슬롯이 '결측'으로 남는다. 다시 받아도 채울 수 없는데 2시간마다 6번씩 전체를
+    # 다시 받았다(실측 하루 약 900건). 공개 지연(약 3시간)이 지난 뒤 전체를 두 번 다시 받아도 비어 있으면 NO_SAMPLES 로 두고 그만 받는다.
+    d1 = now_kst().replace(hour=0, minute=0, second=0, microsecond=0)
+    clock = {"now": d1 + dt.timedelta(hours=1)}
+    monkeypatch.setattr(road, "now_kst", lambda: clock["now"])
+    state = {"day": d1.strftime("%Y%m%d"), "slots": 12, "calls": [], "drop": {"00:10"}}   # 00:00~00:55, 00:10 은 원천에 없음
+    await road.collect_travel_time(ctx_with(fake_ex_source(state)), full=True)
+    slot = d1 + dt.timedelta(minutes=10)
+    reason = "SELECT reason, backfilled_at FROM ops.slot_gap WHERE series_key = 'TST:DN' AND slot_ts = %s"
+    for hour, expected in ((6, "LOW_COVERAGE"), (8, "NO_SAMPLES")):   # 06:07 · 08:07 백필 — 공개 지연이 한참 지났다
+        clock["now"] = d1 + dt.timedelta(hours=hour, minutes=7)
+        ctx = ctx_with(fake_ex_source(state))
+        ctx.job_name = "road_gap_backfill"
+        await road.backfill_gaps(ctx)
+        gap = await db.fetchone(reason, (slot,))
+        assert gap["reason"] == expected and gap["backfilled_at"] is None, hour
+    state["calls"] = []
+    clock["now"] = d1 + dt.timedelta(hours=10, minutes=7)
+    ctx = ctx_with(fake_ex_source(state))
+    ctx.job_name = "road_gap_backfill"
+    await road.backfill_gaps(ctx)
+    assert state["calls"] == []                            # 다시 받지 않는다
+
+
+async def test_one_empty_refetch_does_not_close_gaps_for_good(seeded, monkeypatch):
+    # 리뷰: 전체 재조회 한 번이 '성공 · 빈 목록'(원천 일시 장애)이어도 결측을 NO_SAMPLES 로 영영 닫았다
+    d1 = now_kst().replace(hour=0, minute=0, second=0, microsecond=0)
+    clock = {"now": d1 + dt.timedelta(hours=1)}
+    monkeypatch.setattr(road, "now_kst", lambda: clock["now"])
+    state = {"day": d1.strftime("%Y%m%d"), "slots": 12, "calls": [], "drop": {"00:10"}}
+    await road.collect_travel_time(ctx_with(fake_ex_source(state)), full=True)
+    clock["now"] = d1 + dt.timedelta(hours=6, minutes=7)
+    ctx = ctx_with(lambda request: httpx.Response(200, json={"count": 0, "pageNo": 1, "pageSize": 0,
+                                                             "realUnitTrtmVO": [], "code": "SUCCESS"}))
+    ctx.job_name = "road_gap_backfill"
+    await road.backfill_gaps(ctx)                          # 원천이 잠깐 빈 목록
+    clock["now"] = d1 + dt.timedelta(hours=8, minutes=7)
+    state.update(drop=set(), calls=[])                     # 원천이 돌아와 00:10 도 준다
+    ctx = ctx_with(fake_ex_source(state))
+    ctx.job_name = "road_gap_backfill"
+    await road.backfill_gaps(ctx)
+    gap = await db.fetchone("SELECT reason, backfilled_at FROM ops.slot_gap WHERE series_key = 'TST:DN' AND slot_ts = %s",
+                            (d1 + dt.timedelta(minutes=10),))
+    assert gap["backfilled_at"] is not None, gap
+
+
+async def test_yesterdays_gaps_expire_rather_than_no_samples_when_the_source_switches_mid_refetch(seeded, monkeypatch):
+    # 리뷰: 원천 날짜를 확인(어제)한 뒤 전체를 다시 받는 사이 원천이 오늘로 넘어가면, 어제 슬롯은 다시 받지 못했는데
+    # '원천 표본 없음'으로 닫아 완전성을 부풀렸다 → 원천 만료(SOURCE_EXPIRED)
+    d1 = now_kst().replace(hour=0, minute=0, second=0, microsecond=0)
+    d = d1 - dt.timedelta(days=1)
+    clock = {"now": d.replace(hour=23, minute=30)}
+    monkeypatch.setattr(road, "now_kst", lambda: clock["now"])
+    state = {"day": d.strftime("%Y%m%d"), "slots": 228, "calls": [], "drop": {"18:00"}}   # 00:00~18:55, 18:00 없음
+    await road.collect_travel_time(ctx_with(fake_ex_source(state)), full=True)
+    await db.execute("UPDATE ops.slot_gap SET attempts = 1 WHERE series_key = 'TST:DN'")  # 앞선 재조회에서도 비었음
+    clock["now"] = d1 + dt.timedelta(hours=1, minutes=30)
+    inner = fake_ex_source(state)
+
+    def switching(request: httpx.Request) -> httpx.Response:
+        if state["calls"]:                                  # 날짜 확인(첫 호출) 뒤 원천이 오늘로 넘어간다
+            state.update(day=d1.strftime("%Y%m%d"), slots=12, drop=set())
+        return inner(request)
+    state["calls"] = []
+    ctx = ctx_with(switching)
+    ctx.job_name = "road_gap_backfill"
+    await road.backfill_gaps(ctx)
+    gap = await db.fetchone("SELECT reason FROM ops.slot_gap WHERE series_key = 'TST:DN' AND slot_ts = %s",
+                            (d + dt.timedelta(hours=18),))
+    assert gap["reason"] == "SOURCE_EXPIRED", (gap, state["calls"][:3])
+
+
+async def test_volume_keeps_the_first_collected_at_when_seen_again(seeded, fixtures_dir):
+    # L1: 전국 교통량은 15분 슬롯을 네 번씩 다시 준다. 다시 받을 때마다 collected_at 을 갱신해
+    # '공개 지연'(처음 본 시각 − 슬롯)이 152분으로 부풀려졌다(실제 약 80분)
+    body = json.loads((fixtures_dir / "ex" / "traffic_all.json").read_text())
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body)
+    await db.execute("TRUNCATE ts.road_volume")
+    await road.collect_volume(ctx_with(handler))
+    first = await db.fetchone("SELECT min(collected_at) AS a, max(collected_at) AS b FROM ts.road_volume")
+    await road.collect_volume(ctx_with(handler))
+    again = await db.fetchone("SELECT min(collected_at) AS a, max(collected_at) AS b FROM ts.road_volume")
+    assert again == first
+
+
+async def test_api_call_log_keeps_each_call_time(seeded, monkeypatch):
+    # L2: 호출 기록을 작업 끝에 한꺼번에 넣어 called_at 이 모두 같은 시각(끝난 시각)이었다
+    import asyncio
+
+    from roadrail.scheduler import jobs
+    monkeypatch.setattr(jobs, "http", lambda: httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json={"response": {"header": {"resultCode": "00"}, "body": {}}}))))
+
+    async def body(ctx):
+        await ctx.get_json("KMA", "a", "https://apis.data.go.kr/a", {})
+        await asyncio.sleep(0.3)
+        await ctx.get_json("KMA", "b", "https://apis.data.go.kr/b", {})
+    monkeypatch.setitem(jobs.JOBS, "maintenance", jobs.JobSpec(body, jobs._const({"KMA": 2})))
+    assert await jobs.run_job("maintenance", "ADMIN") == "OK"
+    rows = await db.fetch("SELECT endpoint, called_at FROM ops.api_call WHERE job_name = 'maintenance' ORDER BY endpoint")
+    assert [r["endpoint"] for r in rows] == ["a", "b"]
+    assert (rows[1]["called_at"] - rows[0]["called_at"]).total_seconds() >= 0.25
+
+
+async def test_unchanged_rows_are_not_rewritten(seeded, fixtures_dir):
+    # L8: 꼬리를 다시 받을 때마다 같은 값도 다시 써(갱신이 삽입의 2배 이상) 죽은 튜플 · WAL 만 늘었다.
+    # 값이 같으면 행을 건드리지 않는다(xmin 그대로), 값이 바뀌면 갱신한다
+    today = now_kst().strftime("%Y%m%d")
+    tt = "SELECT string_agg(xmin::text, ',' ORDER BY slot_ts, start_unit_code) AS x FROM ts.road_travel_time"
+    corr = "SELECT string_agg(xmin::text, ',' ORDER BY slot_ts, direction) AS x FROM ts.road_corridor_tt"
+    await road.collect_travel_time(ctx_with(fake_ex(today)), full=True)
+    t1, c1 = (await db.fetchone(tt))["x"], (await db.fetchone(corr))["x"]
+    await road.collect_travel_time(ctx_with(fake_ex(today)), full=True)
+    assert (await db.fetchone(tt))["x"] == t1
+    assert (await db.fetchone(corr))["x"] == c1
+
+    body = json.loads((fixtures_dir / "ex" / "traffic_all.json").read_text())
+    vol = "SELECT string_agg(xmin::text, ',' ORDER BY slot_ts, ex_div_code, tcs_type, car_type) AS x FROM ts.road_volume"
+    await db.execute("TRUNCATE ts.road_volume")
+    await road.collect_volume(ctx_with(lambda request: httpx.Response(200, json=body)))
+    v1 = (await db.fetchone(vol))["x"]
+    await road.collect_volume(ctx_with(lambda request: httpx.Response(200, json=body)))
+    assert (await db.fetchone(vol))["x"] == v1
+    first = body["trafficAll"][0]
+    first["trafficAmout"] = str(int(first["trafficAmout"]) + 1)
+    await road.collect_volume(ctx_with(lambda request: httpx.Response(200, json=body)))
+    assert (await db.fetchone(vol))["x"] != v1                     # 바뀐 값은 갱신
+
+
+async def test_backtest_keeps_todays_results_when_the_insert_fails(seeded, monkeypatch):
+    # L9: 오늘 결과 삭제와 새 결과 삽입이 다른 트랜잭션이라, 삽입이 실패하면 오늘 평가가 통째로 사라졌다
+    from roadrail.analytics.backtest import EvalRow
+    from roadrail.pipeline import analysis
+    today = now_kst().date()
+    await db.execute("TRUNCATE ana.forecast_eval")
+    await db.execute("""INSERT INTO ana.forecast_eval (eval_date, model, corridor_id, direction, horizon_min, mae_sec, mape, n,
+                                                       window_from, window_to, model_version)
+                        VALUES (%s, 'BASELINE', 'TST', 'DN', 30, 60, 0.1, 5, %s, %s, 'v-old')""", (today, today, today))
+    start = dt.datetime.combine(today, dt.time(), KST)
+    bad = [EvalRow("BASELINE", "TST", "DN", 30, 50.0, 0.1, 5), EvalRow("BASELINE", "TST", "UP", "30분", 50.0, 0.1, 5)]
+    monkeypatch.setattr(analysis, "run_backtest", lambda *a, **k: (bad, start, start))
+    ctx = ctx_with(lambda request: httpx.Response(500))
+    ctx.job_name = "backtest_daily"
+    with pytest.raises(psycopg.DataError):          # 정수 열에 문자열
+        await analysis.backtest_daily(ctx)
+    rows = await db.fetch("SELECT direction, model_version FROM ana.forecast_eval WHERE eval_date = %s", (today,))
+    assert [(r["direction"], r["model_version"]) for r in rows] == [("DN", "v-old")]

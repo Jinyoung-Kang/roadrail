@@ -18,18 +18,20 @@ class KmaClientTest {
 
     @Test
     void ultraShortBaseIsTheLatestHalfPastAvailable() {
-        // 매시 30분 발표 · 45분부터 제공
-        assertThat(KmaClient.ultraBase(kst("2026-09-28T17:14:00"))).isEqualTo(kst("2026-09-28T15:30:00"));
-        assertThat(KmaClient.ultraBase(kst("2026-09-28T17:15:00"))).isEqualTo(kst("2026-09-28T16:30:00"));
-        assertThat(KmaClient.ultraBase(kst("2026-09-29T00:10:00"))).isEqualTo(kst("2026-09-28T22:30:00"));
+        // 매시 30분 발표 · 45분부터 제공(기상청 활용가이드) — 17:14 에는 16:45 부터 받을 수 있는 16:30 발표.
+        // 예전 계산(now−45분)은 매시 45분~다음 15분 사이에 한 시간 묵은 발표를 썼다(RVW-05)
+        assertThat(KmaClient.ultraBase(kst("2026-09-28T17:14:00"))).isEqualTo(kst("2026-09-28T16:30:00"));
+        assertThat(KmaClient.ultraBase(kst("2026-09-28T16:44:00"))).isEqualTo(kst("2026-09-28T15:30:00"));
+        assertThat(KmaClient.ultraBase(kst("2026-09-28T16:45:00"))).isEqualTo(kst("2026-09-28T16:30:00"));
+        assertThat(KmaClient.ultraBase(kst("2026-09-29T00:10:00"))).isEqualTo(kst("2026-09-28T23:30:00"));
     }
 
     @Test
     void nowcastBaseIsTheLatestHourAvailable() {
-        // 매시 정각 관측 · 40분부터 제공
-        assertThat(KmaClient.nowcastBase(kst("2026-09-28T17:39:00"))).isEqualTo(kst("2026-09-28T16:00:00"));
-        assertThat(KmaClient.nowcastBase(kst("2026-09-28T17:40:00"))).isEqualTo(kst("2026-09-28T17:00:00"));
-        assertThat(KmaClient.nowcastBase(kst("2026-09-29T00:20:00"))).isEqualTo(kst("2026-09-28T23:00:00"));
+        // 매시 정각 관측 · 10분부터 제공(활용가이드 · 2026-10-04 16:20 실호출로 16:00 관측 응답 확인). 예전에는 40분까지 기다렸다
+        assertThat(KmaClient.nowcastBase(kst("2026-09-28T17:09:00"))).isEqualTo(kst("2026-09-28T16:00:00"));
+        assertThat(KmaClient.nowcastBase(kst("2026-09-28T17:10:00"))).isEqualTo(kst("2026-09-28T17:00:00"));
+        assertThat(KmaClient.nowcastBase(kst("2026-09-29T00:05:00"))).isEqualTo(kst("2026-09-28T23:00:00"));
     }
 
     @Test

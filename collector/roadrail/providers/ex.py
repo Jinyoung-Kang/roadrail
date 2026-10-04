@@ -74,6 +74,15 @@ def parse_travel_page(body: dict, car_type: str = CAR_TYPE) -> tuple[list[Travel
     return out, n_type, page_size, more
 
 
+def page_day(body: dict) -> str | None:
+    """응답 쪽의 데이터 날짜(stdDate, YYYYMMDD) — 원천은 자정을 넘겨도 한동안 전날을 준다. 빈 쪽이면 None."""
+    for it in body.get("realUnitTrtmVO") or []:
+        d = (it.get("stdDate") or "").strip()
+        if d:
+            return d
+    return None
+
+
 async def travel_page(ctx: JobContext, start: str, end: str, page: int) -> dict:
     return await ctx.get_json("EX", "trtm/realUnitTrtm", f"{BASE}/trtm/realUnitTrtm", dict(
         key=_key(), type="json", iStartUnitCode=start, iEndUnitCode=end, numOfRows=PAGE, pageNo=page))
@@ -86,6 +95,8 @@ def parse_units(body: dict) -> list[dict]:
             lat, lon = float(u["yValue"]), float(u["xValue"])
         except (TypeError, ValueError, KeyError):
             lat = lon = None
+        if lat is None or lon is None or not (33 <= lat <= 39 and 124 <= lon <= 132):
+            lat = lon = None  # 대한민국 밖 · 뒤바뀐 좌표는 좌표 없음 — 짐작하지 않고, 한 건이 동기화 전체를 실패시키지 않게(V17)
         out.append(dict(unit_code=u["unitCode"].strip(), unit_name=u["unitName"].strip(),
                         route_no=(u.get("routeNo") or "").strip() or None,
                         route_name=(u.get("routeName") or "").strip() or None, lat=lat, lon=lon))

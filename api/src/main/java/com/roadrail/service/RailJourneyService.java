@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 기차 여정 — 어디서 가까운 역 → (환승) → 어디로 가까운 역. 전국 코레일 여객열차 하루 시간표(rail.day_stops)에
@@ -132,6 +133,25 @@ public class RailJourneyService {
 
     private static Long epoch(OffsetDateTime t) { return t == null ? null : t.toEpochSecond(); }
 
+    /**
+     * CSA 연결의 열차 id = 열차 번호 @ 기준일 + 목표일 차이(0 오늘 · 1 내일). 오늘 · 내일이 같은 기준일로 풀리면(같은 요일 자료가 없어
+     * 가장 최근 운행일로 대체) 두 날의 열차가 같은 id 가 되어 CSA 가 24시간 '계속 탑승'을 허용할 수 있었다(RVW-09).
+     */
+    static String tripId(String trainNo, LocalDate ref, int dayOffset) {
+        return trainNo + "@" + ref + "+" + dayOffset;
+    }
+
+    /** CSA 연결의 열차 id 에서 열차 번호 */
+    static String trainNo(String tripId) {
+        return tripId.substring(0, tripId.indexOf('@'));
+    }
+
+    /** CSA 연결의 열차 id 에서 기준일 */
+    static LocalDate refDate(String tripId) {
+        int at = tripId.indexOf('@'), plus = tripId.indexOf('+', at);
+        return LocalDate.parse(tripId.substring(at + 1, plus < 0 ? tripId.length() : plus));
+    }
+
     /** 목표일 시간표 = 같은 요일 최근 운행일을 목표일로 옮긴 것. 오늘 + 내일을 이어 붙인다 (심야 출발). */
     List<RailRouter.Connection> timetable(LocalDate target, List<String> basisOut, List<String> refOut) {
         List<RailRouter.Connection> all = new ArrayList<>();
@@ -145,7 +165,7 @@ public class RailJourneyService {
                 refOut.add(ref.get().getKey().toString());
             }
             for (var c : connectionsFor(ref.get().getKey())) {
-                all.add(new RailRouter.Connection(c.trip() + "@" + ref.get().getKey(), c.from(), c.to(), c.dep() + shift, c.arr() + shift));
+                all.add(new RailRouter.Connection(tripId(c.trip(), ref.get().getKey(), k), c.from(), c.to(), c.dep() + shift, c.arr() + shift));
             }
         }
         all.sort(Comparator.comparingLong(RailRouter.Connection::dep));
@@ -198,7 +218,11 @@ public class RailJourneyService {
         return new Access(out, pending);
     }
 
+    /** plan() 안의 모든 대기가 함께 쓰는 마감 — 판단 카드는 철도를 4초까지 기다린다(그 안에 끝나야 이번 응답에 실린다) */
+    static final Duration PLAN_BUDGET = Duration.ofMillis(3500);
+
     public Plan plan(Place from, Place to, OffsetDateTime depart, Integer accessOverride) {
+        long budget = System.nanoTime() + PLAN_BUDGET.toNanos();
         List<RailDtos.StationNear> origins = new ArrayList<>(rail.near(from.lat(), from.lon(), RADIUS_KM, CANDIDATES));
         List<RailDtos.StationNear> dests = new ArrayList<>(rail.near(to.lat(), to.lon(), RADIUS_KM, CANDIDATES));
         pin(origins, from);
@@ -236,10 +260,13 @@ public class RailJourneyService {
         dests.forEach(s -> names.put(s.code(), s.name()));
         LocalDate refDate = LocalDate.parse(ref.getFirst());
         List<Journey> journeys = new ArrayList<>();
+        // 마감 안에 구간 시간표 · 30일 통계가 오지 않은 여정은 보간 시각 · 지연 0 으로 계산된다 → pending(캐시 안 함, 화면이 다시 부름)
+        AtomicBoolean late = new AtomicBoolean();
         for (int i = 0; i < found.size(); i++) {
-            Journey jn = toJourney(found.get(i), acc, eg, names, depart, refDate, journeys.isEmpty());
+            Journey jn = toJourney(found.get(i), acc, eg, names, depart, refDate, journeys.isEmpty(), budget, late);
             if (jn != null) journeys.add(jn);  // 실제 시간표로 확인하니 환승·승차가 안 되는 여정은 뺀다
         }
+        pending |= late.get();
         if (journeys.isEmpty()) {
             return new Plan(List.of(), ref.getFirst(), basis.getFirst(), origins.size(), dests.size(), BOARDING_BUFFER_MIN, TRANSFER_MIN,
                     "실제 시간표로 확인하니 이어지는 열차가 없습니다", List.of(), List.of(), pending);
@@ -253,10 +280,11 @@ public class RailJourneyService {
                 : CompletableFuture.supplyAsync(() -> subway(first.access().stationName(), first.departAt().minusMinutes(40)), exec);
         var fSubArr = arrHoliday ? CompletableFuture.completedFuture(List.<NextSubway>of())
                 : CompletableFuture.supplyAsync(() -> subway(first.egress().stationName(), first.arriveAt().plusMinutes(3)), exec);
+        long subDeadline = Math.min(System.nanoTime() + Duration.ofMillis(1500).toNanos(), budget);  // 두 노선이 마감을 공유
         return new Plan(journeys, ref.getFirst(), basis.getFirst(), origins.size(), dests.size(), BOARDING_BUFFER_MIN, TRANSFER_MIN,
                 "코레일 여객열차(KTX·ITX·무궁화 등) 기준. 지하철·버스 환승 경로는 공개 데이터가 없어 다루지 않습니다."
                         + (depHoliday || arrHoliday ? " 공휴일에는 지하철 시간표 구분(평일·토·일)을 알 수 없어 지하철 시각을 표시하지 않습니다." : ""),
-                TripService.join(fSubDep, Duration.ofMillis(1500)), TripService.join(fSubArr, Duration.ofMillis(1500)), pending);
+                TripService.join(fSubDep, TripService.left(subDeadline)), TripService.join(fSubArr, TripService.left(subDeadline)), pending);
     }
 
     /** 갈아탈 지하철 — 부가 정보라 실패해도 여정 응답은 낸다(예전에는 예외가 /trip 전체를 500 으로 만들었다) */
@@ -300,13 +328,13 @@ public class RailJourneyService {
      * 성립하지 않으면 null (여정 제외). 시간표를 못 받은 구간은 CSA 시각을 그대로 두고 timetable=false 로 표시.
      */
     private Journey toJourney(RailRouter.Journey j, Map<String, Transfer> acc, Map<String, Transfer> eg, Map<String, String> names,
-                              OffsetDateTime depart, LocalDate refDate, boolean withStats) {
+                              OffsetDateTime depart, LocalDate refDate, boolean withStats, long deadline, AtomicBoolean late) {
         List<Leg> legs = new ArrayList<>();
         // 구간별 기준일 시간표 (역 쌍 · 날짜당 TAGO 1건, 받은 뒤에는 DB) — 병렬로
         List<CompletableFuture<Planned>> plans = new ArrayList<>();
         for (var l : j.legs()) {
-            String trn = l.trip().substring(0, l.trip().indexOf('@'));
-            LocalDate legRef = LocalDate.parse(l.trip().substring(l.trip().indexOf('@') + 1));
+            String trn = trainNo(l.trip());
+            LocalDate legRef = refDate(l.trip());
             plans.add(CompletableFuture.supplyAsync(() -> {
                 timetable.ensure(l.from(), l.to(), List.of(legRef), Duration.ofMillis(1500));
                 return planned(l.from(), l.to(), trn, legRef);
@@ -314,24 +342,25 @@ public class RailJourneyService {
             // 30일 통계용 시간표는 뒤에서 받아 둔다 (다음 조회부터 보간 대신 실제 비교)
             if (withStats) timetable.ensure(l.from(), l.to(), timetable.runDates(l.from(), l.to(), refDate.minusDays(29), refDate), Duration.ZERO);
         }
-        Map<String, RailDtos.TrainMeta> meta = rail.trainMeta(j.legs().stream().map(l -> l.trip().substring(0, l.trip().indexOf('@'))).toList(),
+        Map<String, RailDtos.TrainMeta> meta = rail.trainMeta(j.legs().stream().map(l -> trainNo(l.trip())).toList(),
                 refDate.minusDays(7), refDate.plusDays(1));
         List<CompletableFuture<Map<String, RailDtos.TrainStats>>> stats = new ArrayList<>();
         for (var l : j.legs()) {
-            String trn = l.trip().substring(0, l.trip().indexOf('@'));
+            String trn = trainNo(l.trip());
             stats.add(withStats ? CompletableFuture.supplyAsync(() -> rail.stats30d(l.from(), l.to(), refDate, List.of(trn)), exec)
                     : CompletableFuture.completedFuture(Map.of()));
         }
         Double lastDelay = null;
-        long deadline = System.nanoTime() + Duration.ofSeconds(3).toNanos();  // 구간마다 3초씩 더해지지 않게 마감을 공유
+        // 마감(deadline)은 plan() 이 준다 — 여정 3개 · 구간마다 새 3초를 주면 대기가 더해져 카드의 4초 마감을 넘겼다(RVW-01)
         for (int i = 0; i < j.legs().size(); i++) {
             var l = j.legs().get(i);
-            String trn = l.trip().substring(0, l.trip().indexOf('@'));
+            String trn = trainNo(l.trip());
             var st = TripService.join(stats.get(i), TripService.left(deadline));
             var s = st == null ? null : st.get(trn);
             OffsetDateTime dep = OffsetDateTime.ofInstant(Instant.ofEpochSecond(l.dep()), Times.KST);
             OffsetDateTime arr = OffsetDateTime.ofInstant(Instant.ofEpochSecond(l.arr()), Times.KST);
             Planned pl = TripService.join(plans.get(i), TripService.left(deadline));
+            if (!plans.get(i).isDone() || !stats.get(i).isDone()) late.set(true);  // 늦음 ≠ 없음
             boolean real = pl != null && pl.dep() != null;
             if (real) {  // 기준일 → 목표일: CSA 가 옮긴 날짜 수만큼
                 long shiftDays = Math.round((l.dep() - pl.dep().toEpochSecond()) / 86400.0);
@@ -339,7 +368,7 @@ public class RailJourneyService {
                 arr = Times.kst(pl.arr()).plusDays(shiftDays);
             }
             double[] fc = coords(l.from()), tc = coords(l.to());
-            LocalDate legRef = LocalDate.parse(l.trip().substring(l.trip().indexOf('@') + 1));
+            LocalDate legRef = refDate(l.trip());
             TrackPath tp = legPath(legRef, trn, l.from(), l.to());
             legs.add(new Leg(trn, l.from(), name(l.from(), names), l.to(), name(l.to(), names), dep, arr,
                     (int) Duration.between(dep, arr).toMinutes(), s == null ? null : s.onTimeRate(),
@@ -363,7 +392,7 @@ public class RailJourneyService {
 
     private final Memo<String, double[]> coordCache = new Memo<>(4096);
 
-    private double[] coords(String code) {
+    double[] coords(String code) {
         double[] c = coordCache.get(code, k -> jdbc.sql("SELECT lat, lon FROM ref.station WHERE stn_cd = :c AND lat IS NOT NULL")
                 .param("c", k).query((rs, i) -> new double[]{rs.getDouble(1), rs.getDouble(2)}).optional().orElse(new double[0]));
         return c.length == 2 ? c : null;

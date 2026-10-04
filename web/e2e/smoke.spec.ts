@@ -39,6 +39,62 @@ test("판단 화면: 검색 칸은 처음엔 비어 있고 입력한 단어로�
   for (const name of await page.getByRole("listbox").getByRole("option").allInnerTexts()) expect(name).toContain("수원");
 });
 
+test("검색: 검색어를 바꾸고 바로 Enter 해도 이전 검색어의 결과를 고르지 않는다 (WEB-04)", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("대전역");
+  const to = page.getByRole("combobox", { name: "도착지" });
+  await to.fill("전주");
+  await expect(page.getByRole("option", { name: /전주시/ }).first()).toBeVisible({ timeout: 10_000 });
+  await to.fill("수원");
+  await to.press("Enter");                                       // 수원 결과가 오기 전
+  await page.waitForTimeout(300);
+  await expect(page.getByRole("heading", { level: 1 })).not.toContainText("전주");
+  await expect(page.getByRole("option").first()).toContainText("수원", { timeout: 10_000 });
+  await to.press("Enter");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("수원");
+});
+
+test("검색: 서버 오류 · 한도 초과를 '결과 없음'이 아니라 오류로 알린다 (WEB-04)", async ({ page }) => {
+  await page.route("**/api/v1/places/search**", (r) => r.fulfill({ status: 429, contentType: "application/json",
+    body: JSON.stringify({ code: "RATE_LIMITED", message: "요청이 너무 많습니다" }) }));
+  await page.goto("/");
+  await page.getByRole("combobox", { name: "도착지" }).fill("전주");
+  await expect(page.getByRole("listbox")).toContainText("검색하지 못했습니다", { timeout: 10_000 });
+  await expect(page.getByText("검색 결과가 없습니다")).toHaveCount(0);
+});
+
+test("검색: 고른 장소는 입력값으로 보이고, 화살표로 고르는 항목을 스크린리더에 알린다 (WEB-13)", async ({ page }) => {
+  await page.goto("/");
+  const from = page.getByRole("combobox", { name: "출발지" });
+  await expect(from).toHaveValue("서울역");                        // placeholder(대비 3.3:1)가 아니라 값
+  await from.fill("수원");
+  await expect(page.getByRole("option").first()).toBeVisible({ timeout: 10_000 });
+  await from.press("ArrowDown");
+  const active = await from.getAttribute("aria-activedescendant");
+  expect(active).toBeTruthy();
+  await expect(page.locator(`[id="${active}"]`)).toHaveAttribute("aria-selected", "true");
+  await from.press("Escape");
+  await from.blur();
+  await expect(from).toHaveValue("서울역");
+});
+
+test("검색: 고른 뒤 바로 이어서 입력해도 글자가 남고, 목록을 눌러도 입력이 지워지지 않는다 (리뷰)", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("대전역");
+  const to = page.getByRole("combobox", { name: "도착지" });
+  await to.fill("수원");
+  await expect(page.getByRole("option").first()).toContainText("수원", { timeout: 10_000 });
+  await to.press("Enter");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("수원");
+  await page.keyboard.type("전주");                              // 초점은 그대로 — 고른 값으로 되돌아가면 안 된다
+  await expect(to).toHaveValue("전주");
+  await page.route("**/api/v1/places/search**", async (r) => { await new Promise((ok) => setTimeout(ok, 1500)); await r.continue(); });
+  await to.fill("부산");
+  await page.getByRole("listbox").click({ position: { x: 20, y: 10 } });   // '검색 중…' 줄(항목 아님)
+  await expect(to).toHaveValue("부산");
+  await expect(to).toBeFocused();
+});
+
 test("메인: 서비스 소개 — 한 문장 정의 · 3단계 · 다른 메뉴", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("link", { name: /소개/ }).click();
@@ -103,6 +159,19 @@ test("지도: 기본은 잠김 — 스크롤해도 배율이 바뀌지 않고 �
   await expect(page.getByRole("button", { name: "지도 조작 끄기" })).toBeVisible();
 });
 
+test("지도: SDK 가 늦게 와도 먼저 누른 '지도 조작하기'가 풀리지 않는다 (재기동 직후 E2E 에서 발견)", async ({ page }) => {
+  // 지도를 만들 때 잠금 상태를 무조건 '잠김'으로 되돌려, SDK 를 받는 사이 누른 버튼이 저절로 꺼졌다
+  await page.route("**/dapi.kakao.com/**", async (r) => { await new Promise((ok) => setTimeout(ok, 2500)); await r.continue(); });
+  await page.goto("/");
+  const btn = page.getByRole("button", { name: "지도 조작하기 (이동 · 확대)" });
+  await expect(btn).toBeVisible({ timeout: 15_000 });
+  await btn.click();
+  await expect(page.getByRole("button", { name: "지도 조작 끄기" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => !!(window as any).kakao?.maps?.Map), { timeout: 15_000 }).toBe(true);
+  await page.waitForTimeout(500);
+  await expect(page.getByRole("button", { name: "지도 조작 끄기" })).toBeVisible();
+});
+
 test("선택 목록: 맨 아래 항목까지 잘리지 않는다", async ({ page }) => {
   await page.goto("/rail?dep=3900023&arr=3900073");
   await page.getByRole("combobox", { name: "도착역" }).click();
@@ -131,6 +200,18 @@ test("철도 분석: 임의 역 쌍 — 역 검색으로 바꾼다", async ({ pa
   await expect(page).toHaveURL(/arr=3900114/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(/서울역\s*→\s*부산역/);
   await expect(page.getByRole("heading", { name: "정시율 랭킹" })).toBeVisible();
+});
+
+test("철도 분석: 빌드한 날이 아닌 날 열어도 하이드레이션 오류 없이 그날 기준 기간 (WEB-01)", async ({ page }) => {
+  // 정적으로 미리 그린 /rail 에 빌드한 날의 기간이 박혀 있어, 다른 날 열면 React 가 하이드레이션 불일치로 전체를 다시 그렸다
+  const errors: string[] = [];
+  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
+  page.on("pageerror", (e) => errors.push(e.message.slice(0, 200)));
+  await page.clock.setFixedTime(new Date(Date.now() + 40 * 86400_000));
+  await page.goto("/rail?dep=3900023&arr=3900073", { waitUntil: "networkidle" });
+  const to = await page.evaluate(() => new Date(Date.now() - 86400_000).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }));
+  await expect(page.getByText(new RegExp(`정시성 · \\d{4}-\\d{2}-\\d{2} ~ ${to}`))).toBeVisible();
+  expect(errors.filter((e) => /hydrat|Minified React error #(418|423|425)/i.test(e))).toEqual([]);
 });
 
 test("철도 분석: 역 선택 목록은 가나다순 · 차종은 TAGO 시간표 값만 · OO발 OO행", async ({ page }) => {
@@ -167,6 +248,20 @@ test("모바일: 메뉴 드로어", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "메뉴" }).click();
   await expect(page.getByRole("dialog").getByRole("link", { name: "철도 분석" })).toBeVisible();
+});
+
+test("접근성: 메뉴 드로어는 열면 안으로 초점, Esc 로 닫고 메뉴 버튼으로 · 지도는 이름 있는 영역 (WEB-14)", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const menu = page.getByRole("button", { name: "메뉴" });
+  await menu.click();
+  const dialog = page.getByRole("dialog", { name: "메뉴" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "닫기" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(menu).toBeFocused();
+  await expect(page.getByRole("region", { name: "경로 지도 (확대·이동 가능)" })).toBeAttached();
 });
 
 test("보안 헤더(CSP 등) · 콘솔 오류 없음 · 카카오 지도는 CSP 안에서 동작", async ({ page }) => {
@@ -206,6 +301,18 @@ test("보안: 프록시는 /api/v1 아래의 정상 경로만 넘긴다", async 
   expect(r.status()).toBe(400);
   expect((await r.json()).code).toBe("VALIDATION_ERROR");
   expect((await request.get("/api/v1/corridors")).ok()).toBe(true);
+});
+
+test("보안: 프록시는 허용한 메서드만 넘기고, API 문서 경로도 다른 사이트에 끼워 넣을 수 없다", async ({ request }) => {
+  // WEB-09: TRACE 등은 API 까지 가지 않고 405 + Allow (예전: 502 '연결할 수 없습니다')
+  const r = await request.fetch("/api/v1/corridors", { method: "TRACE" });
+  expect(r.status()).toBe(405);
+  expect(r.headers()["allow"]).toContain("GET");
+  expect((await r.json()).code).toBe("METHOD_NOT_ALLOWED");
+  // WEB-10: Swagger UI 경로는 보안 헤더가 하나도 없어 다른 사이트가 프레임으로 넣을 수 있었다(클릭재킹)
+  const docs = await request.get("/swagger-ui/index.html");
+  expect(docs.headers()["x-frame-options"]).toBe("DENY");
+  expect(docs.headers()["x-content-type-options"]).toBe("nosniff");
 });
 
 test("자동차 경로: 구간별 소통이 경로 전체를 빈틈없이 덮고, 지도 범례는 느린 구간과 일치한다", async ({ page, request }) => {

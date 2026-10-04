@@ -9,18 +9,26 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.HandlerMapping;
+import org.springframework.web.util.UrlPathHelper;
 
 import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 클라이언트 IP 별 분당 요청 한도 (Redis 고정 창, INCR + EXPIRE 를 Lua 한 번으로 원자적으로).
  * 외부 API 예산을 쓰는 엔드포인트(카카오 · TAGO)가 한 사람의 반복 요청으로 하루 예산을 다 쓰지 않게,
  * 관리 API 는 토큰 추측을 막으려고. 한도는 roadrail.rate-limit (분당, 0 이면 끔).
  *
- * 클라이언트 IP: 요청이 믿을 수 있는 프록시(루프백 · 사설망 = 같은 compose 네트워크의 Next.js)에서 왔으면
+ * 버킷은 Spring 이 고른 **경로 패턴**으로 정한다 — 원본 URI 로 고르면 같은 핸들러로 가는 `/api/v1/%74rip` ·
+ * `/api/v1;x=1/trip` 이 한도 밖이었다(RVW-04).
+ * 클라이언트 IP: 요청이 믿는 프록시(루프백 · roadrail.trusted-proxies — 기본 compose 의 web)에서 왔으면
  * X-Forwarded-For 의 **맨 오른쪽** 값(그 프록시가 직접 본 주소)을 쓴다. 클라이언트가 넣은 왼쪽 값은 믿지 않는다.
+ * 사설 대역 전체를 믿으면 Docker 게이트웨이(사설 주소)로 들어온 직접 요청이 머리글로 버킷을 바꿀 수 있었다.
  * Redis 를 쓸 수 없으면 막지 않는다(fail-open) — 가용성이 우선, 외부 호출은 QuotaGuard 가 별도로 지킨다.
  */
 @Component
@@ -40,9 +48,13 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             Map.entry("/api/v1/places/search", "search"),
             Map.entry("/api/v1/rail/od/", "rail"));
 
+    private static final long RESOLVE_EVERY_MS = 60_000;
+
     private final StringRedisTemplate redis;
     private final AppProperties props;
     private volatile long lastWarn = 0;
+    private volatile Set<InetAddress> trusted = Set.of();
+    private volatile long resolvedAt = 0;
 
     public RateLimitInterceptor(StringRedisTemplate redis, AppProperties props) {
         this.redis = redis;
@@ -51,7 +63,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest req, HttpServletResponse res, Object handler) {
-        String bucket = bucket(req.getRequestURI());
+        String bucket = bucket(matchedPath(req));
         int limit = bucket == null || props.rateLimit() == null ? 0 : props.rateLimit().getOrDefault(bucket, 0);
         if (limit <= 0) return true;
         long minute = System.currentTimeMillis() / 60_000;
@@ -77,30 +89,60 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         return true;
     }
 
-    static String bucket(String uri) {
-        for (var b : BUCKETS) if (uri.startsWith(b.getKey())) return b.getValue();
+    /**
+     * 핸들러 매핑이 고른 패턴(디코딩 · 매트릭스 변수 제거 뒤). 컨트롤러가 없는 경로는 정적 자원 처리기가 '/**' 로 받으므로
+     * 디코딩한 실제 경로로 — 모르는 관리 경로도 관리 한도에서 센다(토큰 검사는 경로 기준이라 401/404 로 대입 창구가 된다)
+     */
+    static String matchedPath(HttpServletRequest req) {
+        Object pattern = req.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        String p = pattern == null ? null : pattern.toString();
+        return p != null && p.startsWith("/api/") ? p : UrlPathHelper.defaultInstance.getLookupPathForRequest(req);
+    }
+
+    static String bucket(String path) {
+        for (var b : BUCKETS) if (path.startsWith(b.getKey())) return b.getValue();
         return null;
     }
 
-    static String clientIp(HttpServletRequest req) {
+    String clientIp(HttpServletRequest req) {
+        return clientIp(req, trustedProxies());
+    }
+
+    static String clientIp(HttpServletRequest req, Set<InetAddress> trusted) {
         String remote = req.getRemoteAddr();
         String xff = req.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank() && trustedProxy(remote)) {
+        if (xff != null && !xff.isBlank() && trustedProxy(remote, trusted)) {
             String[] hops = xff.split(",");
             return hops[hops.length - 1].trim();
         }
         return remote;
     }
 
-    /** 루프백 · 사설 대역(10/8 · 172.16/12 · 192.168/16 · fc00::/7)만 프록시로 믿는다 — 포트는 127.0.0.1 에만 열려 있다 */
-    static boolean trustedProxy(String addr) {
-        // IP 문자열만 받는다 — getByName 은 IP 리터럴이면 DNS 를 조회하지 않는다
+    /** 루프백과 설정한 프록시 주소만 믿는다. IP 문자열만 받는다 — getByName 은 IP 리터럴이면 DNS 를 조회하지 않는다 */
+    static boolean trustedProxy(String addr, Set<InetAddress> trusted) {
         if (addr == null || !addr.matches("[0-9a-fA-F:.]+")) return false;
         try {
             InetAddress a = InetAddress.getByName(addr);
-            return a.isLoopbackAddress() || a.isSiteLocalAddress() || (a.getAddress().length == 16 && (a.getAddress()[0] & 0xfe) == 0xfc);
-        } catch (java.net.UnknownHostException | RuntimeException e) {
+            return a.isLoopbackAddress() || trusted.contains(a);
+        } catch (UnknownHostException | RuntimeException e) {
             return false;
         }
+    }
+
+    /** roadrail.trusted-proxies(이름 또는 IP)를 주소로 — 컨테이너를 다시 띄우면 주소가 바뀌므로 1분마다 다시 푼다 */
+    private Set<InetAddress> trustedProxies() {
+        long now = System.currentTimeMillis();
+        if (now - resolvedAt < RESOLVE_EVERY_MS) return trusted;
+        Set<InetAddress> out = new HashSet<>();
+        for (String host : props.trustedProxies() == null ? List.<String>of() : props.trustedProxies()) {
+            try {
+                out.addAll(List.of(InetAddress.getAllByName(host.trim())));
+            } catch (UnknownHostException | RuntimeException e) {
+                // 이름을 못 풀면 그 프록시는 믿지 않는다(머리글을 무시하고 접속 주소로 센다)
+            }
+        }
+        trusted = Set.copyOf(out);
+        resolvedAt = now;
+        return trusted;
     }
 }

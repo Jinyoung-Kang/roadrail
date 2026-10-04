@@ -23,7 +23,7 @@ _EDGE = re.compile(r"^[\s*,·.]+|[\s*,·.]+$")   # 입력자가 붙인 앞뒤 �
 
 
 async def incidents(ctx: JobContext) -> ET.Element:
-    return await ctx.get_xml("UTIC", "imsOpenData", URL, {"key": settings().utic_api_key})
+    return await ctx.get_xml("UTIC", "imsOpenData", URL, {"key": settings().utic_api_key}, root="result")
 
 
 def parse_time(s: str | None) -> dt.datetime | None:

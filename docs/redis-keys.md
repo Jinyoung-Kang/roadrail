@@ -7,7 +7,7 @@
 | `rr:lock:{job}` | 실행 토큰 | collector (SET NX EX) | api (→ 409 JOB_RUNNING) | 작업별 (15분~2시간) |
 | `rr:commands` | Stream `{type: run_job \| backfill, …}` | api (XADD) | collector (consumer group `collector`, 처리 후 XACK) | — |
 | `rr:collector:heartbeat` | ISO 시각 | collector (30초마다) | api `/health` | 90s |
-| `ex:tail:{start}-{end}:{yyyymmdd}` | 정수 — 오늘 본 1종 행 수 (꼬리 페이지 커서) | collector | — | 48h |
+| `ex:tail:{start}-{end}` | `YYYYMMDD:행수` — 원천 데이터 날짜(stdDate)와 그날 본 1종 행 수 (꼬리 페이지 커서 · 날짜가 바뀌면 1쪽부터) | collector | — | 48h |
 | `now:{id}:{dir}:{departIn}:{access}:{carAccess}` | 판단 카드 JSON | api | api | 60s |
 | `kakao:eta[p2]:{o}:{d}:{yyyyMMddHHmm}` | 카카오 ETA JSON (`p2` = 경로 좌표 + 좌표 범위별 소통 — 예전 `p` 형식과 섞이지 않게 바꿈) | api | api | 20분 |
 | `trip:v2:{from}:{역 코드}:{이름}:{to}:{역 코드}:{이름}:{departIn}:{access}` | 출발지→도착지 판단 카드 (pending 이면 저장 안 함) — 역 지정 · 이름도 결과를 바꾸므로 키에 포함 | api | api | 60s |

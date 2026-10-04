@@ -23,7 +23,7 @@ from ..core.log import log, mask_text
 from ..core.timeutil import now_kst
 from ..pipeline import analysis, env, holidays, rail, rail_geometry, road, stations
 from ..providers.base import JobContext
-from .quota import QuotaBudget, QuotaExhausted
+from .quota import PROVIDERS, QuotaBudget, QuotaExhausted
 
 logger = logging.getLogger(__name__)
 
@@ -94,14 +94,17 @@ _budget: QuotaBudget | None = None
 def http() -> httpx.AsyncClient:
     global _http
     if _http is None:
-        _http = httpx.AsyncClient(headers={"User-Agent": "roadrail-collector/0.1"}, follow_redirects=True)
+        # 리다이렉트는 따라가지 않는다 — 공공데이터 키가 쿼리에 있어 다른 곳 · http 로 넘어갈 수 있다(L6)
+        _http = httpx.AsyncClient(headers={"User-Agent": "roadrail-collector/0.1"}, follow_redirects=False)
     return _http
 
 
 def budget() -> QuotaBudget:
+    """공용 예산 — Redis 클라이언트를 다시 만들면(종료 · 재연결) 새 클라이언트를 따라간다."""
     global _budget
-    if _budget is None:
-        _budget = QuotaBudget(rds.client(), settings().quota_limit)
+    client = rds.client()
+    if _budget is None or _budget.r is not client:
+        _budget = QuotaBudget(client, settings().quota_limit)
     return _budget
 
 
@@ -153,19 +156,20 @@ async def _run_locked(name: str, trigger: str, spec: JobSpec, estimates: dict[st
         logger.exception("작업 실패", extra={"fields": {"job": name}})
     finally:
         await ctx.close_budgets()
+        message = mask_text(message) if message else message  # 수집 상태 화면에 그대로 보인다 — 상세와 같은 마스킹(L4)
         if status != "OK":
             detail = run_detail(name, trigger, status, message, detail, ctx)
         ms = int((time.perf_counter() - t0) * 1000)
         await db.executemany("""
             INSERT INTO ops.api_call (job_name, provider, endpoint, params_masked, http_status, result_code,
-                                      latency_ms, rows, error) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                                      latency_ms, rows, error, called_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             ctx.api_calls)
         await db.execute("""UPDATE ops.job_run SET finished_at = now(), status = %s, calls = %s, rows = %s, message = %s,
                               detail = %s WHERE run_id = %s""", (status, ctx.calls, ctx.rows, message, detail, run["run_id"]))
         await db.execute("""UPDATE ops.collect_job SET last_run_at = now(), last_status = %s, last_duration_ms = %s,
                               last_calls = %s, last_rows = %s, last_message = %s WHERE job_name = %s""",
                          (status, ms, ctx.calls, ctx.rows, message, name))
-        await persist_quota(set(ctx.estimates) | set(ctx.allowances))
+        await sync_quota(PROVIDERS)
     log(logger, "작업 종료", job=name, trigger=trigger, status=status, calls=ctx.calls, rows=ctx.rows, ms=ms)
     return status
 
@@ -193,6 +197,7 @@ async def recover_after_restart(providers: list[str]) -> int:
     locks = [k async for k in r.scan_iter(match=rds.lock_key("*"))]
     if locks:
         await r.delete(*locks)
+    await sync_quota(providers)  # 비어 있던 카운터를 DB 확정값으로 되돌린 뒤 남은 예약을 정리
     day = now_kst().strftime("%Y%m%d")
     for p in providers:
         total, used = await r.get(rds.quota_key(p, day)), await r.get(f"quota:used:{p}:{day}")
@@ -219,17 +224,27 @@ def run_detail(name: str, trigger: str, status: str, message: str | None, trace:
     return mask_text("\n".join(lines))[:20000]
 
 
-async def persist_quota(providers: set[str]) -> None:
-    """Redis 예산 카운터 → ops.quota_budget 확정값."""
+async def sync_quota(providers) -> None:
+    """Redis 예산 카운터 ↔ ops.quota_budget 확정값.
+    Redis 는 저장을 꺼 두어 다시 뜨면 그날 카운터가 0 이 된다 — DB 확정값보다 적으면 되돌려 한도를 지킨다(M1).
+    확정값은 같은 날 안에서 줄지 않는다(GREATEST): Redis 만 다시 뜬 뒤의 작은 값이 덮어쓰지 않게."""
+    b = budget()
     for p in providers:
-        if p not in ("EX", "KORAIL", "KMA", "AIRKOREA", "KAKAO", "KAKAO_LOCAL"):
+        try:
+            b.limit_of(p)
+        except KeyError:
             continue
-        s = await budget().snapshot(p)
+        now = b.clock()  # 날짜는 한 번만 — 읽기 · 복원 · 저장이 같은 날이어야 자정에 전날 값이 다음 날로 넘어가지 않는다
+        day = now.strftime("%Y%m%d")
+        row = await db.fetchone("SELECT used FROM ops.quota_budget WHERE provider = %s AND day = %s", (p, now.date()))
+        if row and await b.restore(p, row["used"], day):
+            log(logger, "예산 카운터 복원", provider=p, used=row["used"])
+        s = await b.snapshot(p, day)
         await db.execute("""
             INSERT INTO ops.quota_budget (provider, day, daily_limit, used, reserved, updated_at)
             VALUES (%s, %s, %s, %s, %s, now())
-            ON CONFLICT (provider, day) DO UPDATE SET daily_limit = EXCLUDED.daily_limit, used = EXCLUDED.used,
-              reserved = EXCLUDED.reserved, updated_at = now()""",
+            ON CONFLICT (provider, day) DO UPDATE SET daily_limit = EXCLUDED.daily_limit,
+              used = GREATEST(ops.quota_budget.used, EXCLUDED.used), reserved = EXCLUDED.reserved, updated_at = now()""",
             (p, dt.date.fromisoformat(s["day"]), s["limit"], s["used"], s["reserved"]))
 
 

@@ -87,6 +87,8 @@ roadrail:
     KASI: ${QUOTA_KASI:100}
     UTIC: ${QUOTA_UTIC:1000}
   # 클라이언트 IP 별 분당 요청 한도 — 외부 API 예산(카카오 · TAGO)을 한 사람이 다 쓰지 않게, 관리 토큰 추측 방지 (0 = 끔)
+  # X-Forwarded-For 를 믿는 프록시(쉼표로 여러 개, 이름 또는 IP) — 루프백은 늘 믿는다. 앞에 다른 프록시를 두면 그 이름을 더한다
+  trusted-proxies: ${TRUSTED_PROXIES:web}
   rate-limit:
     admin: ${RATE_LIMIT_ADMIN:20}
     trip: ${RATE_LIMIT_TRIP:40}

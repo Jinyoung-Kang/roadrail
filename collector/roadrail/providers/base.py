@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 
 from ..core.log import log, mask_params, mask_text
+from ..core.timeutil import now_kst
 from ..scheduler.quota import Allowance, QuotaBudget
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,11 @@ TIMEOUT = {"EX": 15.0, "KORAIL": 60.0, "KMA": 10.0, "AIRKOREA": 25.0, "KAKAO": 1
            "UTIC": 20.0}
 # XML 응답 상한 — UTIC 전국 돌발 목록은 약 140KB. 비정상적으로 큰 응답은 파싱 전에 거른다
 MAX_XML_CHARS = 5_000_000
+# 응답 바이트 상한 — 받는 도중에 끊는다(L5). 선로 형상(Overpass)만 크다(구역 하나 수십 MB)
+MAX_BYTES = {"OSM": 256_000_000}
+DEFAULT_MAX_BYTES = 16_000_000
+# 요청 하나의 전체 제한 시간 = 단계별 제한(TIMEOUT)의 배수 — 조금씩 흘러오는 응답이 작업 잠금 시간을 넘기지 않게
+TOTAL_TIMEOUT_FACTOR = 3
 _semaphores: dict[str, asyncio.Semaphore] = {}
 
 
@@ -101,8 +107,9 @@ class JobContext:
         return await self._get(provider, endpoint, url, params, headers, retries, parse)
 
     async def get_xml(self, provider: str, endpoint: str, url: str, params: dict,
-                      headers: dict | None = None, retries: int = 2) -> ET.Element:
-        """XML 응답(경찰청 UTIC). 표준 라이브러리 expat 은 외부 엔티티를 따라가지 않고, 엔티티 폭주는 expat ≥ 2.4 가 막는다."""
+                      headers: dict | None = None, retries: int = 2, root: str | None = None) -> ET.Element:
+        """XML 응답(경찰청 UTIC). 표준 라이브러리 expat 은 외부 엔티티를 따라가지 않고, 엔티티 폭주는 expat ≥ 2.4 가 막는다.
+        root 를 주면 루트 요소가 그 이름일 때만 성공 — 점검 안내 같은 다른 문서를 '0건'으로 읽지 않게(L10)."""
         def parse(text: str, status: int) -> tuple[ET.Element, str | None]:
             if status != 200:
                 raise ProviderError(provider, endpoint, f"HTTP {status}: " + mask_text(text[:200]), status)
@@ -120,9 +127,13 @@ class JobContext:
                     raise ProviderError(provider, endpoint,
                                         mask_text(f"오류 응답 {code}: {str(e.get('resultMsg') or '')[:200]}"), status, code)
             try:
-                return ET.fromstring(text), None
+                doc = ET.fromstring(text)
             except ET.ParseError as e:
                 raise ProviderError(provider, endpoint, "XML 아님: " + mask_text(text[:200]), status) from e
+            if root is not None and doc.tag != root:
+                raise ProviderError(provider, endpoint, f"예상한 문서가 아님 (루트 <{doc.tag[:40]}>): " + mask_text(text[:200]),
+                                    status)
+            return doc, None
         return await self._get(provider, endpoint, url, params, headers, retries, parse)
 
     async def _get(self, provider: str, endpoint: str, url: str, params: dict, headers: dict | None, retries: int,
@@ -135,23 +146,23 @@ class JobContext:
                 if attempt > 0:  # 재시도도 실제 호출이므로 예산에서 차감
                     await self._take(provider)
                 t0 = time.perf_counter()
+                called_at = now_kst()  # 호출 기록은 작업 끝에 한꺼번에 넣으므로 시각은 여기서 잡는다(L2)
                 status, code, err, rows = None, None, None, None
                 try:
-                    resp = await self.http.get(url, params=params, headers=headers or {},
-                                               timeout=TIMEOUT.get(provider, 15.0))
-                    status = resp.status_code
-                    text = resp.text
+                    status, text = await self._fetch_text(provider, endpoint, url, params, headers)
                     if status >= 500:
                         raise ProviderError(provider, endpoint, f"HTTP {status}", status)
+                    if 300 <= status < 400:  # 키가 쿼리에 있어 따라가지 않는다(L6)
+                        raise ProviderError(provider, endpoint, f"리다이렉트 응답 HTTP {status} — 따라가지 않음", status)
                     body, code = parse(text, status)
                     return body
-                except (httpx.TransportError, ProviderError) as e:
+                except (httpx.TransportError, ProviderError, TimeoutError) as e:
                     last_err = e
                     if isinstance(e, ProviderError) and e.code is not None:
                         code = e.code
                     # httpx 시간 초과 등은 str(e) 가 빈 문자열 → 예외 이름을 남긴다 (오류 상세에서 원인이 보이게)
                     err = mask_text(e.detail if isinstance(e, ProviderError) else f"{type(e).__name__}: {e}".rstrip(": "))[:500]
-                    retryable = isinstance(e, httpx.TransportError) or (status is not None and status >= 500)
+                    retryable = isinstance(e, httpx.TransportError | TimeoutError) or (status is not None and status >= 500)
                     if not retryable or attempt == retries:
                         raise ProviderError(provider, endpoint, err, status, code) from e
                     await asyncio.sleep(0.8 * (attempt + 1))
@@ -159,10 +170,25 @@ class JobContext:
                     self.calls += 1
                     self.api_calls.append((
                         self.job_name, provider, endpoint, json.dumps(mask_params(params), ensure_ascii=False),
-                        status, code, int((time.perf_counter() - t0) * 1000), rows, err,
+                        status, code, int((time.perf_counter() - t0) * 1000), rows, err, called_at,
                     ))
                     attempt += 1
         raise ProviderError(provider, endpoint, str(last_err))
+
+    async def _fetch_text(self, provider: str, endpoint: str, url: str, params: dict,
+                          headers: dict | None) -> tuple[int, str]:
+        """본문을 바이트 상한까지만 받는다 — 넘으면 받는 도중에 끊고, 전체 시간도 제한한다(L5)."""
+        step = TIMEOUT.get(provider, 15.0)
+        limit = MAX_BYTES.get(provider, DEFAULT_MAX_BYTES)
+        async with asyncio.timeout(step * TOTAL_TIMEOUT_FACTOR):
+            async with self.http.stream("GET", url, params=params, headers=headers or {}, timeout=step) as resp:
+                chunks, size = [], 0
+                async for chunk in resp.aiter_bytes():
+                    size += len(chunk)
+                    if size > limit:
+                        raise ProviderError(provider, endpoint, f"응답이 너무 큼 (>{limit:,}바이트)", resp.status_code)
+                    chunks.append(chunk)
+                return resp.status_code, b"".join(chunks).decode(resp.encoding or "utf-8", errors="replace")
 
     def note(self, msg: str, **fields) -> None:
         self.notes.append(msg)

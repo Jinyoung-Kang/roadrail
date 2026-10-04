@@ -35,4 +35,14 @@ class KakaoRouteGeometryTest {
         assertThat(g.path()).isEmpty();
         assertThat(g.traffic()).isEmpty();
     }
+
+    @Test
+    void onlyAnExplicitNonZeroResultCodeMeansNoRoute() {
+        // 리뷰: result_code 가 없는 200 응답(형식 변경 · 잘린 응답)도 asInt(-1) 로 '경로 없음'이 되어 10분 캐시됐다
+        assertThat(KakaoMobilityClient.routeFound(JSON.readTree("{\"routes\":[{\"result_code\":0}]}"))).isTrue();
+        assertThat(KakaoMobilityClient.routeFound(JSON.readTree("{\"routes\":[{\"result_code\":104,\"result_msg\":\"출발지와 도착지가 너무 가까움\"}]}"))).isFalse();
+        assertThat(KakaoMobilityClient.routeFound(JSON.readTree("{\"routes\":[{}]}"))).isNull();
+        assertThat(KakaoMobilityClient.routeFound(JSON.readTree("{\"msg\":\"internal\"}"))).isNull();
+        assertThat(KakaoMobilityClient.routeFound(null)).isNull();
+    }
 }

@@ -38,6 +38,7 @@ public class KakaoMobilityClient {
     private final QuotaGuard quota;
     private final ExecutorService exec;
     private final SingleFlight<String, Eta> inflight = new SingleFlight<>();
+    private final SingleFlight<String, Optional<Route>> routeFlight = new SingleFlight<>();
 
     /** path = [[lat, lon], …] (최대 400점, 경로가 필요할 때만) */
     /** path · traffic 은 경로 좌표를 요청했을 때만 (traffic = path 번호 범위별 소통) */
@@ -52,6 +53,10 @@ public class KakaoMobilityClient {
         this.props = props;
         this.cache = cache;
         this.quota = quota;
+    }
+
+    public boolean enabled() {
+        return props.kakaoRestApiKey() != null && !props.kakaoRestApiKey().isBlank();
     }
 
     public Optional<Eta> futureEta(double oLat, double oLon, double dLat, double dLon, OffsetDateTime departAt) {
@@ -172,14 +177,33 @@ public class KakaoMobilityClient {
     public record Route(int durationSec, int distanceM, Integer tollFare, Integer taxiFare, String departAt,
                         List<double[]> path, List<RouteGeometry.TrafficRun> traffic, List<Road> roads) {}
 
-    /** 출발 시각 기준 경로 상세. avoid = null | "motorway" (고속도로 회피). 결과 20분 캐시. */
+    /**
+     * 출발 시각 기준 경로 상세. avoid = null | "motorway" (고속도로 회피). 결과 20분 캐시, '경로 없음'은 10분 캐시.
+     * 같은 조합을 동시에 부르면 호출은 한 번(RVW-07 — 예전에는 동시 요청마다 카카오를 따로 불렀다).
+     */
     public Route route(double oLat, double oLon, double dLat, double dLon, OffsetDateTime departAt, String avoid, boolean detail) {
-        if (props.kakaoRestApiKey() == null || props.kakaoRestApiKey().isBlank()) return null;
+        if (!enabled()) return null;
         String dep = departSlot(departAt);
         // route2: 경로 좌표에 구간별 소통이 붙은 형식 (예전 route 캐시와 섞이지 않게)
         String key = String.format(Locale.ROOT, "kakao:route2:%s:%s:%.4f,%.4f:%.4f,%.4f:%s", avoid, detail, oLat, oLon, dLat, dLon, dep);
         Route hit = cache.peek(key, Route.class);
         if (hit != null) return hit;
+        if (cache.peek(key + ":none", Boolean.class) != null) return null;
+        return routeFlight.run(key, () -> Optional.ofNullable(fetchRoute(oLat, oLon, dLat, dLon, dep, avoid, detail, key)), Runnable::run)
+                .join().orElse(null);
+    }
+
+    /**
+     * 경로 응답의 결과 — true: 경로 있음(result_code 0), false: 카카오가 '갈 수 없음'이라고 답함(0 이 아닌 result_code),
+     * null: 형식을 모름(routes · result_code 없음). 모르는 형식은 '경로 없음'으로 10분 캐시하지 않는다.
+     */
+    static Boolean routeFound(JsonNode body) {
+        JsonNode code = body == null ? null : body.path("routes").path(0).path("result_code");
+        if (code == null || !code.isNumber()) return null;
+        return code.asInt() == 0;
+    }
+
+    private Route fetchRoute(double oLat, double oLon, double dLat, double dLon, String dep, String avoid, boolean detail, String key) {
         if (!quota.take("KAKAO")) return null;
         try {
             JsonNode body = http.get().uri(u -> {
@@ -189,8 +213,16 @@ public class KakaoMobilityClient {
                         if (avoid != null) b = b.queryParam("avoid", avoid);
                         return b.build();
                     }).header("Authorization", "KakaoAK " + props.kakaoRestApiKey()).retrieve().body(JsonNode.class);
-            JsonNode r = body == null ? null : body.path("routes").path(0);
-            if (r == null || r.path("result_code").asInt(-1) != 0) return null;
+            Boolean found = routeFound(body);
+            if (found == null) {
+                log.warn("카카오 경로 응답 형식이 예상과 다름 — 캐시하지 않음");
+                return null;
+            }
+            if (!found) {
+                cache.put(key + ":none", Boolean.TRUE, Duration.ofMinutes(10));   // 경로 없음(갈 수 없는 조합) — 매번 다시 부르지 않게
+                return null;
+            }
+            JsonNode r = body.path("routes").path(0);
             JsonNode s = r.path("summary");
             List<Road> roads = new ArrayList<>();
             if (detail) for (JsonNode sec : r.path("sections")) for (JsonNode road : sec.path("roads")) {

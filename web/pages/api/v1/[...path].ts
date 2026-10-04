@@ -29,7 +29,9 @@ function upstreamPath(url: string | undefined): string | null {
 }
 const REQ_HEADERS = ["accept", "accept-language", "content-type", "x-admin-token"];
 const RES_HEADERS = ["content-type", "cache-control", "etag", "x-cache", "x-trace-id", "x-ratelimit-limit",
-  "x-ratelimit-remaining", "retry-after"];
+  "x-ratelimit-remaining", "retry-after", "allow"];
+/** API 가 쓰는 메서드만 넘긴다 — 그 밖(TRACE · PUT · DELETE …)은 프록시에서 405 */
+const METHODS = ["GET", "HEAD", "POST"];
 const MAX_BODY = 64 * 1024;  // 관리 API 의 작은 JSON 만 받는다
 
 async function readBody(req: IncomingMessage): Promise<Buffer> {
@@ -44,6 +46,11 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
 }
 
 export default async function proxy(req: NextApiRequest, res: NextApiResponse) {
+  if (!METHODS.includes(req.method ?? "")) {
+    res.setHeader("Allow", METHODS.join(", "));
+    res.status(405).json({ code: "METHOD_NOT_ALLOWED", message: "허용하지 않는 메서드입니다.", traceId: null });
+    return;
+  }
   const path = upstreamPath(req.url);
   if (!path) {
     res.status(400).json({ code: "VALIDATION_ERROR", message: "요청 경로가 올바르지 않습니다.", traceId: null });
@@ -68,8 +75,11 @@ export default async function proxy(req: NextApiRequest, res: NextApiResponse) {
     }
     res.send(Buffer.from(await r.arrayBuffer()));
   } catch (e) {
-    const status = (e as { status?: number }).status ?? 502;
-    res.status(status).json({ code: status === 413 ? "VALIDATION_ERROR" : "UPSTREAM_ERROR",
-      message: status === 413 ? "요청 본문이 너무 큽니다." : "API 서버에 연결할 수 없습니다.", traceId: null });
+    const timedOut = (e as { name?: string }).name === "TimeoutError";
+    const status = (e as { status?: number }).status ?? (timedOut ? 504 : 502);
+    const [code, message] = status === 413 ? ["VALIDATION_ERROR", "요청 본문이 너무 큽니다."]
+      : timedOut ? ["UPSTREAM_TIMEOUT", "API 서버 응답이 늦습니다. 잠시 뒤 다시 시도하세요."]
+      : ["UPSTREAM_ERROR", "API 서버에 연결할 수 없습니다."];
+    res.status(status).json({ code, message, traceId: null });
   }
 }

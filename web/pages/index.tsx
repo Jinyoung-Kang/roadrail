@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import About from "@/components/About";
 import Layout from "@/components/Layout";
 import RouteMap from "@/components/RouteMap";
@@ -39,15 +39,9 @@ export default function Home() {
     fromLat: from.lat, fromLon: from.lon, fromName: from.name, fromStation: from.stationCode,
     toLat: to.lat, toLon: to.lon, toName: to.name, toStation: to.stationCode,
     departIn, accessMin: access === "auto" ? undefined : access })}` : null;
-  const trip = useApi<Trip>(url, 60_000);
+  // 카카오 경로·날씨가 아직 오는 중이면 1.5초 뒤 다시(최대 20번 — 그 뒤는 1분 주기). 서버는 조회를 계속해 캐시를 채운다
+  const trip = useApi<Trip>(url, { refreshMs: 60_000, retryWhile: (d) => d.pending, retryMs: 1500, maxRetries: 20 });
   const t = trip.data && from && trip.data.from.name === from.name && trip.data.to.name === to?.name ? trip.data : null;
-
-  // 카카오 경로·날씨가 아직 오는 중이면 잠시 뒤 다시 (서버는 조회를 계속해 캐시를 채운다)
-  useEffect(() => {
-    if (!trip.data?.pending) return;
-    const id = setTimeout(trip.reload, 1500);
-    return () => clearTimeout(id);
-  }, [trip.data, trip.reload]);
 
   const d = t?.decision;
   const car = durParts(d?.carTotalMin ?? (t?.car.durationSec ? t.car.durationSec / 60 : null));
