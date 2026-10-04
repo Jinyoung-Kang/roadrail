@@ -1,6 +1,6 @@
 package com.roadrail.domain;
 
-import com.roadrail.common.Times;
+import com.roadrail.shared.Times;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;

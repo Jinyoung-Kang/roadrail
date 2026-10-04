@@ -1,7 +1,7 @@
 package com.roadrail.domain;
 
 import com.roadrail.external.KakaoMobilityClient;
-import com.roadrail.service.RoadRouteServiceTestAccess;
+import com.roadrail.trip.app.RoadRouteServiceTestAccess;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.Test;

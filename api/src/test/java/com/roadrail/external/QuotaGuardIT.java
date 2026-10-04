@@ -1,6 +1,6 @@
 package com.roadrail.external;
 
-import com.roadrail.common.Times;
+import com.roadrail.shared.Times;
 import com.roadrail.support.IntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
