@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { browserEnv, createQuery, type Query, type QueryState } from "./query";
+import { browserEnv, createQuery, current, EMPTY, type Query, type QueryState } from "./query";
 import type { ApiError } from "./types";
 
 export class HttpError extends Error {
@@ -23,9 +23,9 @@ export async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 /** 간단한 조회 훅 — url 이 null 이면 호출하지 않는다. refreshMs 가 있으면 주기적으로 다시 부른다.
- *  상태 · 순서 처리는 React 밖의 lib/query.ts 가 맡는다. */
+ *  상태 · 순서 처리는 React 밖의 lib/query.ts 가 맡는다. data · error 는 지금 url 의 결과만 돌려준다(WEB-05). */
 export function useApi<T>(url: string | null, refreshMs?: number) {
-  const [state, setState] = useState<QueryState<T>>({ data: null, error: null, loading: false });
+  const [state, setState] = useState<QueryState<T>>(EMPTY);
   const query = useRef<Query | null>(null);
 
   useEffect(() => {
@@ -33,18 +33,12 @@ export function useApi<T>(url: string | null, refreshMs?: number) {
     query.current = q;
     return () => { q.dispose(); query.current = null; };
   }, []);
+  useEffect(() => { query.current?.setUrl(url); }, [url]);
+  useEffect(() => { query.current?.every(refreshMs ?? 0); }, [refreshMs]);
+  // 늘 지금 url 을 부른다 — 예전 렌더에서 잡아 둔 콜백이 불러도 이전 주소를 다시 부르지 않는다(WEB-02)
+  const reload = useCallback(() => query.current?.reload() ?? Promise.resolve(), []);
 
-  const load = useCallback(async () => {
-    if (url) await query.current?.load(url);
-  }, [url]);
-
-  useEffect(() => {
-    load();
-    if (url && refreshMs) query.current?.every(url, refreshMs);
-    return () => query.current?.stop();
-  }, [load, url, refreshMs]);
-
-  return { data: state.data, error: state.error, loading: state.loading, reload: load };
+  return { ...current(state, url), reload };
 }
 
 export const qs = (p: Record<string, string | number | undefined | null>) =>
