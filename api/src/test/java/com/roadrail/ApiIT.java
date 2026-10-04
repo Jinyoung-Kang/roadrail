@@ -447,4 +447,14 @@ class ApiIT extends IntegrationTest {
                     .andExpect(header().string("X-RateLimit-Limit", "3"));
         }
     }
+
+    @Test
+    void qa01_forecastHorizonsWithEmptyItemsIsA400NotA500() throws Exception {
+        // QA-01: horizons=",,," 처럼 빈 항목이 있으면 목록에 null 이 들어와 검증에서 NPE → 500 INTERNAL_ERROR
+        for (String h : List.of(",,,", "60,,120", ",")) {
+            mvc.perform(get("/api/v1/corridors/SEL-DJN/road/forecast").param("dir", "DN").param("horizons", h))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        }
+    }
 }
