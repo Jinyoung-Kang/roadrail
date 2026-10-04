@@ -1,84 +1,19 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Layout from "@/components/Layout";
+import CopyButton from "@/components/ops/CopyButton";
+import FailureLog from "@/components/ops/FailureLog";
 import { ErrorBox, Loading, Note, PageHero, Section, Spec, SpecStrip, StatusBadge } from "@/components/ui";
 import { api, errorText, runJob } from "@/lib/api/client";
-import { useApi } from "@/lib/hooks/useApi";
 import { DASH, mdhm, num, pct } from "@/lib/format";
-import type { OpsFailure, OpsStatus } from "@/lib/types";
-
-const PROVIDER: Record<string, string> = { EX: "한국도로공사", KORAIL: "한국철도공사", KMA: "기상청", AIRKOREA: "에어코리아", KAKAO: "카카오 길찾기",
-  KAKAO_LOCAL: "카카오 검색", TAGO: "TAGO 지하철", TAGO_TRAIN: "TAGO 열차", OSM: "OpenStreetMap", KASI: "천문연 특일 정보", UTIC: "경찰청 UTIC", "-": "내부 계산" };
-
-/** 클립보드 복사 — http 로 연 경우(보안 컨텍스트 아님)에는 textarea 선택 복사로 대신 */
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; }
-    const ta = document.createElement("textarea");
-    ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
-    document.body.appendChild(ta); ta.select();
-    const ok = document.execCommand("copy");
-    document.body.removeChild(ta);
-    return ok;
-  } catch { return false; }
-}
-
-function CopyButton({ text, label = "복사" }: { text: string; label?: string }) {
-  const [state, setState] = useState<"idle" | "ok" | "fail">("idle");
-  useEffect(() => { if (state === "idle") return; const t = setTimeout(() => setState("idle"), 1800); return () => clearTimeout(t); }, [state]);
-  return (
-    <>
-      <button type="button" onClick={async () => setState((await copyText(text)) ? "ok" : "fail")}
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-sm bg-white px-3 text-xs font-medium text-ink ring-1 ring-black/10 hover:bg-cloud">
-        <span aria-hidden>{state === "ok" ? "✓" : "⧉"}</span>
-        {state === "ok" ? "복사됨" : state === "fail" ? "복사 실패" : label}
-      </button>
-      <span className="sr-only" role="status">{state === "ok" ? "클립보드에 복사했습니다" : state === "fail" ? "복사하지 못했습니다" : ""}</span>
-    </>
-  );
-}
-
-const failureText = (f: OpsFailure) =>
-  `#${f.runId} ${f.job} · ${f.status} · ${f.startedAt} ~ ${f.finishedAt ?? "(종료 기록 없음)"}${f.resolvedAt ? ` · 이후 정상 ${f.resolvedAt}` : ""}\n${f.detail ?? f.message ?? ""}`;
-
-function FailureLog({ f, open }: { f: OpsFailure; open: boolean }) {
-  return (
-    <details id={`run-${f.runId}`} open={open} className="tile scroll-mt-24 overflow-hidden">
-      <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4 hover:bg-mist">
-        <StatusBadge status={f.status} />
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium">{f.job} <span className="font-normal text-muted">· 실행 #{f.runId} · {f.trigger}</span>
-            {f.resolvedAt && <span className="ml-2 rounded-sm bg-[#e8f6ef] px-1.5 py-0.5 text-[11px] font-medium text-ink2"><span className="text-good" aria-hidden>●</span> 이후 정상 실행 {mdhm(f.resolvedAt)}</span>}</span>
-          <span className="block truncate text-xs text-muted">{mdhm(f.startedAt)} · {f.message ?? "메시지 없음"}</span>
-        </span>
-        <span className="text-xs text-muted" aria-hidden>펼치기 ▾</span>
-      </summary>
-      <div className="border-t border-line bg-[#fafafa]">
-        <div className="flex items-center justify-between gap-3 px-5 py-2">
-          <span className="text-xs text-muted">전체 내용 · 작업 메모 · 실패한 외부 호출 · 스택 트레이스 (API 키는 가려져 있습니다)</span>
-          <CopyButton text={failureText(f)} />
-        </div>
-        <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-all px-5 pb-5 font-mono text-[12px] leading-relaxed text-ink2">{f.detail ?? f.message ?? "기록된 내용이 없습니다"}</pre>
-      </div>
-    </details>
-  );
-}
+import { useAdminToken } from "@/lib/hooks/useAdminToken";
+import { useApi } from "@/lib/hooks/useApi";
+import { failuresText, PROVIDER, quotaShares, summarize } from "@/lib/ops";
+import type { OpsStatus } from "@/lib/types";
 
 export default function Ops() {
   const s = useApi<OpsStatus>(api.opsStatus(), 30_000);
-  // 관리 토큰은 기본으로 메모리에만 — '이 탭에서 기억'을 켤 때만 sessionStorage (같은 출처 스크립트가 읽을 수 있으므로)
-  const [token, setToken] = useState("");
-  const [remember, setRemember] = useState(false);
+  const { token, remember, setToken, setRemember, clear } = useAdminToken();
   const [msg, setMsg] = useState<string | null>(null);
-  useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem("rr-admin");
-      if (saved) { setToken(saved); setRemember(true); }
-    } catch { /* 저장소 없음 */ }
-  }, []);
-  const saveToken = (v: string, keep = remember) => {
-    setToken(v);
-    try { if (keep && v) sessionStorage.setItem("rr-admin", v); else sessionStorage.removeItem("rr-admin"); } catch { /* 무시 */ }
-  };
 
   async function run(job: string) {
     setMsg(null);
@@ -92,13 +27,7 @@ export default function Ops() {
   }
 
   const d = s.data;
-  const road = d?.jobs.find((j) => j.job === "road_travel_time");
-  const lag = d?.publicationLag.find((l) => l.series === "road_travel_time");
-  const warnJobs = d?.jobs.filter((j) => j.warn).length ?? 0;
-  const failures = d?.failures ?? [];
-  const open = failures.filter((f) => !f.resolvedAt).length;
-  const failed: Record<string, number> = {};
-  for (const f of failures) failed[f.job] ??= f.runId;  // 작업별 가장 최근 오류 실행
+  const { road, lag, warnJobs, failures, unresolved: open, latestFailure: failed } = summarize(d);
 
   return (
     <Layout title="수집 상태">
@@ -154,15 +83,15 @@ export default function Ops() {
         <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
           <label className="flex items-center gap-2">
             <span className="text-muted">관리 토큰</span>
-            <input type="password" value={token} onChange={(e) => saveToken(e.target.value)} placeholder="X-Admin-Token (.env ADMIN_TOKEN)"
+            <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="X-Admin-Token (.env ADMIN_TOKEN)"
                    autoComplete="off" spellCheck={false}
                    className="h-8 w-72 rounded-sm bg-cloud px-3 text-sm focus:outline-hidden focus:ring-2 focus:ring-accent" />
           </label>
           <label className="flex items-center gap-1.5 text-xs text-muted">
-            <input type="checkbox" checked={remember} onChange={(e) => { setRemember(e.target.checked); saveToken(token, e.target.checked); }} />
+            <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
             이 탭에서 기억
           </label>
-          {token && <button type="button" onClick={() => saveToken("", false)} className="text-xs text-muted hover:underline">지우기</button>}
+          {token && <button type="button" onClick={clear} className="text-xs text-muted hover:underline">지우기</button>}
           {msg && <span className="text-ink2" role="status">{msg}</span>}
         </div>
         <Note>토큰은 기본으로 이 화면의 메모리에만 두고, '이 탭에서 기억'을 켜면 이 탭의 sessionStorage 에 둡니다. 실행 요청은 Redis Stream(rr:commands) 을 거쳐 수집기가 처리하며, 실행 중이면 409 JOB_RUNNING 입니다.</Note>
@@ -175,7 +104,7 @@ export default function Ops() {
           {failures.length === 0 ? <p className="text-center text-sm text-muted"><span className="text-good">●</span> 모든 작업이 정상 종료했습니다.</p> : (
             <>
               <div className="mb-4 flex justify-end">
-                <CopyButton text={failures.map(failureText).join("\n\n" + "─".repeat(40) + "\n\n")} label={`전체 ${failures.length}건 복사`} />
+                <CopyButton text={failuresText(failures)} label={`전체 ${failures.length}건 복사`} />
               </div>
               <div className="space-y-3">{failures.map((f, i) => <FailureLog key={f.runId} f={f} open={i === 0 && !f.resolvedAt} />)}</div>
             </>
@@ -187,7 +116,7 @@ export default function Ops() {
         {d && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {d.quota.map((q) => {
-              const used = q.limit ? q.used / q.limit : 0, res = q.limit ? q.reserved / q.limit : 0;
+              const { used, reserved: res } = quotaShares(q);
               return (
                 <div key={q.provider} className="tile p-5">
                   <p className="text-sm font-medium">{PROVIDER[q.provider]}</p>

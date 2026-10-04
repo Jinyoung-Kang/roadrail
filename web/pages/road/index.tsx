@@ -11,6 +11,7 @@ import { SimpleBars } from "@/components/LazyCharts";
 import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Spec, SpecStrip } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import { useApi } from "@/lib/hooks/useApi";
+import { forPlaces } from "@/lib/trip";
 import { DASH, dur, durMin, durParts, hm, num, pct } from "@/lib/format";
 import { decodePlace, encodePlace, KIND_LABEL, suggestedPlaces } from "@/lib/places";
 import type { Place, RouteAnalysis, RouteSummary } from "@/lib/types";
@@ -63,9 +64,8 @@ export default function RoadIndex() {
   const set = (p: Record<string, string | number>) => router.replace({ pathname: "/road", query: {
     ...(from ? { from: encodePlace(from) } : {}), ...(to ? { to: encodePlace(to) } : {}), t: departIn, ...p } },
     undefined, { shallow: true, scroll: false });
-  const url = router.isReady && from && to ? api.roadRoute(from, to, departIn) : null;
-  const a = useApi<RouteAnalysis>(url);
-  const d = a.data && from && a.data.from.name === from.name && a.data.to.name === to?.name ? a.data : null;
+  const a = useApi<RouteAnalysis>(router.isReady && from && to ? api.roadRoute(from, to, departIn) : null);
+  const d = forPlaces(a.data, from, to);
   const rec = d?.recommended, avo = d?.avoidMotorway;
   const motorway = rec?.byType.filter((b) => b.type === "고속도로").reduce((s, b) => s + b.share, 0);
   const recP = durParts(rec?.durationSec != null ? rec.durationSec / 60 : null);
