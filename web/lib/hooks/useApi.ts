@@ -1,26 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { browserEnv, createQuery, current, EMPTY, type Query, type QueryOptions, type QueryState } from "./query";
-import type { ApiError } from "./types";
-
-export class HttpError extends Error {
-  constructor(public status: number, public body: ApiError | null) {
-    super(body?.message ?? `HTTP ${status}`);
-  }
-}
-
-export async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { ...init, headers: { Accept: "application/json", ...(init?.headers ?? {}) } });
-  const text = await res.text();
-  let body: unknown = null;
-  try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    // JSON 이 아닌 본문(프록시 · 서버의 HTML 오류 페이지 등) — 오류면 상태 코드로 알리고, 성공인데 JSON 이 아니면 그대로 알린다
-    if (res.ok) throw new Error("응답을 해석할 수 없습니다 (JSON 아님)");
-  }
-  if (!res.ok) throw new HttpError(res.status, body as ApiError | null);
-  return body as T;
-}
+import { getJson } from "../api/client";
+import { browserEnv, createQuery, current, EMPTY, type Query, type QueryOptions, type QueryState } from "../query";
 
 export interface ApiOptions<T> extends QueryOptions<T> {
   /** 주기 갱신 — 탭을 숨긴 동안은 멈추고 다시 보이면 바로 갱신 */
@@ -48,7 +28,3 @@ export function useApi<T>(url: string | null, opts?: number | ApiOptions<T>) {
 
   return { ...current(state, url), reload };
 }
-
-export const qs = (p: Record<string, string | number | undefined | null>) =>
-  Object.entries(p).filter(([, v]) => v !== undefined && v !== null && v !== "")
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`).join("&");

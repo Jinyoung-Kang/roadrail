@@ -8,13 +8,14 @@ import SearchPicker from "@/components/SearchPicker";
 import TrafficLegend from "@/components/TrafficLegend";
 import { CarTile, EnvRow, Evidence, TrainTile } from "@/components/Tiles";
 import { ErrorBox, Loading, Section, Segmented, Select, Spec, SpecStrip } from "@/components/ui";
-import { qs, useApi } from "@/lib/api";
+import { api } from "@/lib/api/client";
+import { useApi } from "@/lib/hooks/useApi";
 import { DASH, durParts, hm, num } from "@/lib/format";
 import { locatedIncidents, tripLayers, WARN } from "@/lib/layers";
 import { corridorEnds, decodePlace, encodePlace, KIND_LABEL } from "@/lib/places";
 import { slowSummary } from "@/lib/traffic";
 import type { Incident, Place, Trip } from "@/lib/types";
-import { useCorridors } from "@/lib/useCorridors";
+import { useCorridors } from "@/lib/hooks/useCorridors";
 
 const DEPART = [0, 30, 60, 120, 180].map((v) => ({ value: v, label: v === 0 ? "지금" : `+${v >= 60 ? `${v / 60}시간` : `${v}분`}` }));
 const ACCESS = [{ value: "auto", label: "역까지 실제 경로" }, ...[10, 20, 30, 45].map((v) => ({ value: String(v), label: `역까지 ${v}분` }))];
@@ -35,10 +36,7 @@ export default function Home() {
     router.replace({ pathname: "/", query: { ...q, ...(from && !q.from ? { from: encodePlace(from) } : {}),
       ...(to && !q.to ? { to: encodePlace(to) } : {}), ...p } }, undefined, { shallow: true, scroll: false });
 
-  const url = router.isReady && from && to ? `/api/v1/trip?${qs({
-    fromLat: from.lat, fromLon: from.lon, fromName: from.name, fromStation: from.stationCode,
-    toLat: to.lat, toLon: to.lon, toName: to.name, toStation: to.stationCode,
-    departIn, accessMin: access === "auto" ? undefined : access })}` : null;
+  const url = router.isReady && from && to ? api.trip(from, to, departIn, access === "auto" ? undefined : access) : null;
   // 카카오 경로·날씨가 아직 오는 중이면 1.5초 뒤 다시(최대 20번 — 그 뒤는 1분 주기). 서버는 조회를 계속해 캐시를 채운다
   const trip = useApi<Trip>(url, { refreshMs: 60_000, retryWhile: (d) => d.pending, retryMs: 1500, maxRetries: 20 });
   const t = trip.data && from && trip.data.from.name === from.name && trip.data.to.name === to?.name ? trip.data : null;
@@ -59,7 +57,7 @@ export default function Home() {
   };
   const picker = (label: string, value: Place | null, key: "from" | "to") => (
     <SearchPicker<Place> label={label} placeholder="지역 · 역 · 장소 검색" value={value?.name ?? ""} className="w-full sm:w-[300px]"
-      search={(term) => `/api/v1/places/search?q=${encodeURIComponent(term)}`}
+      search={api.placesSearch}
       keyOf={(p) => `${p.kind}:${p.name}:${p.lat}`} render={(p) => ({ title: p.name, sub: p.address, badge: KIND_LABEL[p.kind] })}
       onPick={(p) => set({ [key]: encodePlace(p) })} />
   );

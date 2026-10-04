@@ -2,17 +2,20 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useMemo } from "react";
 import Layout from "@/components/Layout";
-import RouteMap, { ROAD, type MapLayers } from "@/components/RouteMap";
+import RouteMap from "@/components/RouteMap";
+import { C } from "@/lib/palette";
+import type { MapLayers } from "@/lib/map";
 import SearchPicker from "@/components/SearchPicker";
 import TrafficLegend from "@/components/TrafficLegend";
 import { SimpleBars } from "@/components/LazyCharts";
 import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Spec, SpecStrip } from "@/components/ui";
-import { qs, useApi } from "@/lib/api";
+import { api } from "@/lib/api/client";
+import { useApi } from "@/lib/hooks/useApi";
 import { DASH, dur, durMin, durParts, hm, num, pct } from "@/lib/format";
 import { decodePlace, encodePlace, KIND_LABEL, suggestedPlaces } from "@/lib/places";
 import type { Place, RouteAnalysis, RouteSummary } from "@/lib/types";
 import { carLines, slowSummary } from "@/lib/traffic";
-import { useCorridors } from "@/lib/useCorridors";
+import { useCorridors } from "@/lib/hooks/useCorridors";
 
 const DEPART = [0, 60, 120, 180].map((v) => ({ value: v, label: v === 0 ? "지금" : `+${v / 60}시간` }));
 /* 도로 종류 — 범주형 팔레트 슬롯 순서 고정 (dataviz 기본: 파랑 · 청록 · 주황 · 회색) */
@@ -60,8 +63,7 @@ export default function RoadIndex() {
   const set = (p: Record<string, string | number>) => router.replace({ pathname: "/road", query: {
     ...(from ? { from: encodePlace(from) } : {}), ...(to ? { to: encodePlace(to) } : {}), t: departIn, ...p } },
     undefined, { shallow: true, scroll: false });
-  const url = router.isReady && from && to ? `/api/v1/road/route?${qs({ fromLat: from.lat, fromLon: from.lon, fromName: from.name,
-    toLat: to.lat, toLon: to.lon, toName: to.name, departIn })}` : null;
+  const url = router.isReady && from && to ? api.roadRoute(from, to, departIn) : null;
   const a = useApi<RouteAnalysis>(url);
   const d = a.data && from && a.data.from.name === from.name && a.data.to.name === to?.name ? a.data : null;
   const rec = d?.recommended, avo = d?.avoidMotorway;
@@ -78,7 +80,7 @@ export default function RoadIndex() {
   } : null;
   const picker = (label: string, value: Place | null, key: "from" | "to") => (
     <SearchPicker<Place> label={label} placeholder="지역 · 역 · 장소 검색" value={value?.name ?? ""} className="w-full sm:w-[300px]"
-      search={(term) => `/api/v1/places/search?q=${encodeURIComponent(term)}`}
+      search={api.placesSearch}
       keyOf={(p) => `${p.kind}:${p.name}:${p.lat}`} render={(p) => ({ title: p.name, sub: p.address, badge: KIND_LABEL[p.kind] })}
       onPick={(p) => set({ [key]: encodePlace(p) })} />
   );
@@ -133,7 +135,7 @@ export default function RoadIndex() {
                    desc="같은 경로 요청을 출발 시각만 바꿔 카카오 미래 운행 정보로 계산했습니다 (예측값).">
             {d.profile.some((p) => p.durationSec != null) ? (
               <div className="tile p-6">
-                <SimpleBars height={260} color={ROAD} x="label" y="min"
+                <SimpleBars height={260} color={C.road} x="label" y="min"
                             data={d.profile.map((p) => ({ label: hm(p.departAt), min: p.durationSec == null ? null : Math.round(p.durationSec / 60) }))}
                             yFormat={(v) => `${v}분`} format={(v, row) => `${row.label} 출발 · ${durMin(v)}`} />
               </div>

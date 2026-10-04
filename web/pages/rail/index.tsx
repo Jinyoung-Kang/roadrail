@@ -5,7 +5,8 @@ import SearchPicker from "@/components/SearchPicker";
 import { SimpleBars } from "@/components/LazyCharts";
 import { C } from "@/lib/palette";
 import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Select, Spec, SpecStrip, TrainName } from "@/components/ui";
-import { qs, useApi } from "@/lib/api";
+import { api } from "@/lib/api/client";
+import { useApi } from "@/lib/hooks/useApi";
 import { DASH, daysUntilYesterday, dowLabel, durMin, hm, num, pct } from "@/lib/format";
 import type { Punctuality, Station, Trains } from "@/lib/types";
 
@@ -26,16 +27,16 @@ export default function RailPage() {
     router.push({ pathname: "/rail", query: { dep, arr, ...p } }, undefined, { scroll: false });
 
   // 비어 있을 때는 운행 중인 모든 역을 가나다순으로 (목록 안에서 스크롤)
-  const allStations = useApi<Station[]>("/api/v1/stations?limit=400&sort=name");
+  const allStations = useApi<Station[]>(api.stations({ limit: 400, sort: "name" }));
   // 기간은 여는 날 기준 — 정적으로 미리 그린 HTML(빌드한 날)과 달라 하이드레이션이 깨지지 않게 라우터 준비 뒤에만 (WEB-01)
   const period = router.isReady ? daysUntilYesterday(new Date(), days) : null;
   const base = period && dep !== arr ? { dep, arr, ...period, thresholdMin: thr } : null;
   // 처음 보는 역 쌍은 TAGO 시간표를 받는 동안 일부를 확인 불가로 둔다 → 4초 뒤 다시(최대 30번 = 2분, 서버도 시간당 상한)
   const pending = { retryWhile: (d: Punctuality) => d.timetablePending, retryMs: 4000, maxRetries: 30 };
-  const byTrain = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "train" })}` : null, pending);
-  const byDow = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "dow" })}` : null, pending);
-  const byHour = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "hour" })}` : null, pending);
-  const trains = useApi<Trains>(base ? `/api/v1/rail/od/trains?${qs({ dep, arr, date })}` : null);
+  const byTrain = useApi<Punctuality>(base ? api.railPunctuality({ ...base, groupBy: "train" }) : null, pending);
+  const byDow = useApi<Punctuality>(base ? api.railPunctuality({ ...base, groupBy: "dow" }) : null, pending);
+  const byHour = useApi<Punctuality>(base ? api.railPunctuality({ ...base, groupBy: "hour" }) : null, pending);
+  const trains = useApi<Trains>(base ? api.railTrains({ dep, arr, date }) : null);
   const ttPending = !!(byTrain.data?.timetablePending || byDow.data?.timetablePending || byHour.data?.timetablePending);
   // 운행표도 같은 시간표를 쓴다 — 이 역 쌍의 시간표 받기가 끝나면 한 번 다시
   const pair = `${dep}-${arr}`;
@@ -51,7 +52,7 @@ export default function RailPage() {
   const arrName = byTrain.data?.arrStation ?? trains.data?.arrStation;
   const stationPicker = (label: string, value: string | undefined, key: "dep" | "arr") => (
     <SearchPicker<Station> label={label} placeholder="역 이름 검색" value={value ? `${value}역` : ""} className="w-full sm:w-[260px]"
-      search={(t) => `/api/v1/stations?limit=60&sort=name&q=${encodeURIComponent(t.replace(/역$/, ""))}`}
+      search={(t) => api.stations({ limit: 60, sort: "name", q: t.replace(/역$/, "") })}
       suggestions={allStations.data ?? []} keyOf={(st) => st.code}
       render={(st) => ({ title: `${st.name}역`, sub: `최근 7일 ${st.trains7d.toLocaleString()}회 정차` })}
       onPick={(st) => go({ [key]: st.code })} />

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { getJson } from "@/lib/api";
+import { getJson } from "@/lib/api/client";
 import { pickerItems, type SearchResult } from "@/lib/picker";
 
 /**

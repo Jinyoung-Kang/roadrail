@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import Layout from "@/components/Layout";
 import { ErrorBox, Loading, Note, PageHero, Section, Spec, SpecStrip, StatusBadge } from "@/components/ui";
-import { getJson, HttpError, useApi } from "@/lib/api";
+import { api, errorText, runJob } from "@/lib/api/client";
+import { useApi } from "@/lib/hooks/useApi";
 import { DASH, mdhm, num, pct } from "@/lib/format";
 import type { OpsFailure, OpsStatus } from "@/lib/types";
 
@@ -63,7 +64,7 @@ function FailureLog({ f, open }: { f: OpsFailure; open: boolean }) {
 }
 
 export default function Ops() {
-  const s = useApi<OpsStatus>("/api/v1/ops/collect-status", 30_000);
+  const s = useApi<OpsStatus>(api.opsStatus(), 30_000);
   // 관리 토큰은 기본으로 메모리에만 — '이 탭에서 기억'을 켤 때만 sessionStorage (같은 출처 스크립트가 읽을 수 있으므로)
   const [token, setToken] = useState("");
   const [remember, setRemember] = useState(false);
@@ -82,11 +83,11 @@ export default function Ops() {
   async function run(job: string) {
     setMsg(null);
     try {
-      const r = await getJson<{ requestId: string }>(`/api/v1/admin/jobs/${job}/run`, { method: "POST", headers: { "X-Admin-Token": token } });
+      const r = await runJob(job, token);
       setMsg(`${job} 실행 요청 (${r.requestId}) — 수집기가 곧 실행합니다.`);
       setTimeout(s.reload, 3000);
     } catch (e) {
-      setMsg(e instanceof HttpError ? `${e.body?.code ?? e.status}: ${e.message}` : String(e));
+      setMsg(errorText(e));
     }
   }
 

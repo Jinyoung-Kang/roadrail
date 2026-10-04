@@ -2,10 +2,11 @@ import { useState } from "react";
 import Layout from "@/components/Layout";
 import { MaeChart } from "@/components/LazyCharts";
 import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Select } from "@/components/ui";
-import { useApi } from "@/lib/api";
+import { api } from "@/lib/api/client";
+import { useApi } from "@/lib/hooks/useApi";
 import { DASH, dur, durMin, hm, mdhm, num, pct } from "@/lib/format";
 import type { Dir, Forecast } from "@/lib/types";
-import { useCorridors } from "@/lib/useCorridors";
+import { useCorridors } from "@/lib/hooks/useCorridors";
 
 const MODELS = [
   { key: "M0", name: "M0 기준선", desc: "같은 요일·시간 최근 8주 중앙값" },
@@ -18,7 +19,7 @@ export default function ForecastPage() {
   const [dir, setDir] = useState<Dir>("DN");
   const corridors = useCorridors();
   const c = corridors.data?.find((x) => x.id === cid);
-  const f = useApi<Forecast>(`/api/v1/corridors/${encodeURIComponent(cid)}/road/forecast?dir=${dir}&horizons=60,120,180`);
+  const f = useApi<Forecast>(api.corridorForecast(cid, dir, [60, 120, 180]));
   const bt = f.data?.backtest;
 
   return (
