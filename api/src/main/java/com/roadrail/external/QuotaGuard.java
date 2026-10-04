@@ -1,7 +1,7 @@
 package com.roadrail.external;
 
-import com.roadrail.common.Times;
-import com.roadrail.config.AppProperties;
+import com.roadrail.shared.Times;
+import com.roadrail.shared.AppProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;

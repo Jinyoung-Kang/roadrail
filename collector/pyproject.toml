@@ -1,8 +1,8 @@
 [project]
 name = "roadrail-collector"
 version = "0.1.0"
-description = "RoadRail collector + analytics (Python 3.11 · asyncio · httpx · APScheduler · pandas)"
-requires-python = ">=3.11,<3.12"
+description = "RoadRail collector + analytics (Python 3.13 · asyncio · httpx · APScheduler · pandas)"
+requires-python = ">=3.13,<3.14"
 dependencies = [
   "httpx==0.28.1",
   "psycopg[binary,pool]==3.3.6",
@@ -40,7 +40,7 @@ markers = ["integration: PostgreSQL · Redis 가 필요한 테스트 (DATABASE_U
 
 [tool.ruff]
 line-length = 120
-target-version = "py311"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "ASYNC", "BLE"]  # BLE: 광범위 except 는 의도를 noqa 로 밝혀야 한다

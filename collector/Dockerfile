@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1.7
-# collector + analytics (Python 3.11). 빌드 컨텍스트는 저장소 루트 (seed/ · fixtures/ · db/migrations 를 함께 넣기 위해)
+# collector + analytics (Python 3.13). 빌드 컨텍스트는 저장소 루트 (seed/ · fixtures/ · db/migrations 를 함께 넣기 위해)
 #
 #   runtime  운영 이미지 — 의존성은 pyproject.toml 한 곳에서만 (버전 고정), 테스트 도구 · 테스트 코드 없음
 #   test     runtime + pytest · ruff · pip-audit + tests · fixtures · migrations  (make test-collector / CI)
 
-FROM python:3.11-slim AS runtime
+FROM python:3.13-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1 TZ=Asia/Seoul
 WORKDIR /app/collector
 COPY collector/pyproject.toml ./

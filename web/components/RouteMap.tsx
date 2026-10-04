@@ -6,8 +6,6 @@ import { sdkLoader } from "@/lib/sdkLoader";
 declare global { interface Window { kakao: any } }
 const KEY = process.env.NEXT_PUBLIC_KAKAO_JS_KEY;
 
-export const ROAD = "#2a78d6", RAIL = "#eb6834";
-
 export type { MapLayers, MapLine, MapMarker } from "@/lib/map";
 
 /**

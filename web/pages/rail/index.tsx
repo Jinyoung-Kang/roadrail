@@ -1,57 +1,22 @@
-import { useRouter } from "next/router";
-import { useEffect, useRef, useState } from "react";
 import Layout from "@/components/Layout";
 import SearchPicker from "@/components/SearchPicker";
 import { SimpleBars } from "@/components/LazyCharts";
 import { C } from "@/lib/palette";
 import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Select, Spec, SpecStrip, TrainName } from "@/components/ui";
-import { qs, useApi } from "@/lib/api";
-import { DASH, daysUntilYesterday, dowLabel, durMin, hm, num, pct } from "@/lib/format";
-import type { Punctuality, Station, Trains } from "@/lib/types";
-
-const PERIODS = [{ value: 30, label: "최근 30일" }, { value: 90, label: "최근 90일" }];
-const THRESHOLDS = [{ value: 3, label: "정시 ≤3분" }, { value: 5, label: "≤5분" }, { value: 10, label: "≤10분" }];
+import { api } from "@/lib/api/client";
+import { useRailOd } from "@/lib/hooks/useRailOd";
+import { DASH, durMin, hm, num, pct } from "@/lib/format";
+import { dowBars, hourBars, mostlyUnplanned, PERIODS, THRESHOLDS } from "@/lib/rail";
+import type { Station } from "@/lib/types";
 
 export default function RailPage() {
-  const router = useRouter();
-  // 모든 운행 역 중 두 역 — 기본은 서울 → 대전
-  const dep = (router.query.dep as string) || "3900023";
-  const arr = (router.query.arr as string) || "3900073";
-  const [days, setDays] = useState(30);
-  const [thr, setThr] = useState(5);
-  const [date, setDate] = useState<string | null>(null);
-  const [all, setAll] = useState(false);
-  useEffect(() => { setDate(null); setAll(false); }, [dep, arr]);
-  const go = (p: { dep?: string; arr?: string }) =>
-    router.push({ pathname: "/rail", query: { dep, arr, ...p } }, undefined, { scroll: false });
-
-  // 비어 있을 때는 운행 중인 모든 역을 가나다순으로 (목록 안에서 스크롤)
-  const allStations = useApi<Station[]>("/api/v1/stations?limit=400&sort=name");
-  // 기간은 여는 날 기준 — 정적으로 미리 그린 HTML(빌드한 날)과 달라 하이드레이션이 깨지지 않게 라우터 준비 뒤에만 (WEB-01)
-  const period = router.isReady ? daysUntilYesterday(new Date(), days) : null;
-  const base = period && dep !== arr ? { dep, arr, ...period, thresholdMin: thr } : null;
-  // 처음 보는 역 쌍은 TAGO 시간표를 받는 동안 일부를 확인 불가로 둔다 → 4초 뒤 다시(최대 30번 = 2분, 서버도 시간당 상한)
-  const pending = { retryWhile: (d: Punctuality) => d.timetablePending, retryMs: 4000, maxRetries: 30 };
-  const byTrain = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "train" })}` : null, pending);
-  const byDow = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "dow" })}` : null, pending);
-  const byHour = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "hour" })}` : null, pending);
-  const trains = useApi<Trains>(base ? `/api/v1/rail/od/trains?${qs({ dep, arr, date })}` : null);
-  const ttPending = !!(byTrain.data?.timetablePending || byDow.data?.timetablePending || byHour.data?.timetablePending);
-  // 운행표도 같은 시간표를 쓴다 — 이 역 쌍의 시간표 받기가 끝나면 한 번 다시
-  const pair = `${dep}-${arr}`;
-  const pendingFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (ttPending) pendingFor.current = pair;
-    else if (pendingFor.current === pair && byTrain.data) { pendingFor.current = null; trains.reload(); }
-  }, [ttPending, pair, byTrain.data, trains.reload]);
-
+  const { dep, arr, go, days, setDays, thr, setThr, date, setDate, all, setAll, period, allStations, byTrain, byDow, byHour, trains,
+    ttPending, depName, arrName } = useRailOd();
   const s = byTrain.data?.summary;
   const nat = byTrain.data?.nationwideExact;
-  const depName = byTrain.data?.depStation ?? trains.data?.depStation;
-  const arrName = byTrain.data?.arrStation ?? trains.data?.arrStation;
   const stationPicker = (label: string, value: string | undefined, key: "dep" | "arr") => (
     <SearchPicker<Station> label={label} placeholder="역 이름 검색" value={value ? `${value}역` : ""} className="w-full sm:w-[260px]"
-      search={(t) => `/api/v1/stations?limit=60&sort=name&q=${encodeURIComponent(t.replace(/역$/, ""))}`}
+      search={(t) => api.stations({ limit: 60, sort: "name", q: t.replace(/역$/, "") })}
       suggestions={allStations.data ?? []} keyOf={(st) => st.code}
       render={(st) => ({ title: `${st.name}역`, sub: `최근 7일 ${st.trains7d.toLocaleString()}회 정차` })}
       onPick={(st) => go({ [key]: st.code })} />
@@ -94,13 +59,13 @@ export default function RailPage() {
           </div>
           <div className="tile p-6">
             <p className="text-sm font-medium">요일별 정시율 <span className="font-normal text-muted">(공휴일은 따로)</span></p>
-            {byDow.data ? <SimpleBars data={byDow.data.items.map((i) => ({ ...i, label: dowLabel(i.key), rate: i.onTimeRate == null ? null : i.onTimeRate * 100 }))}
+            {byDow.data ? <SimpleBars data={dowBars(byDow.data.items)}
                                       x="label" y="rate" color={C.rail} yFormat={(v) => `${v}%`}
                                       format={(v, d) => `정시율 ${num(v, 1)}% · 평균 지연 ${num(d.avgArrDelayMin)}분 · ${d.verified}회`} /> : <Loading />}
           </div>
           <div className="tile p-6">
             <p className="text-sm font-medium">출발 시간대별 정시율</p>
-            {byHour.data ? <SimpleBars data={byHour.data.items.map((i) => ({ ...i, label: `${Number(i.key)}`, rate: i.onTimeRate == null ? null : i.onTimeRate * 100 }))}
+            {byHour.data ? <SimpleBars data={hourBars(byHour.data.items)}
                                        x="label" y="rate" color={C.rail} yFormat={(v) => `${v}%`}
                                        format={(v, d) => `${d.label}시 출발 · 정시율 ${num(v, 1)}% · ${d.verified}회`} /> : <Loading />}
           </div>
@@ -145,7 +110,7 @@ export default function RailPage() {
                   options={(trains.data?.availableDates ?? []).map((d) => ({ value: d, label: d }))} />
         </div>
         <ErrorBox error={trains.error} />
-        {trains.data && trains.data.trains.length > 0 && trains.data.trains.filter((t) => t.arrDelayMin == null).length >= trains.data.trains.length / 2 && (
+        {mostlyUnplanned(trains.data) && (
           <p className="mb-4 rounded-sm bg-mist px-4 py-3 text-center text-xs text-muted">
             이 날짜는 TAGO 열차 시간표가 제공되지 않아 중간역의 계획 시각을 알 수 없습니다 — 계획·지연은 '—' 로 두고 추정하지 않습니다.
           </p>

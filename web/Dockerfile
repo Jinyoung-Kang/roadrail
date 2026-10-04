@@ -1,11 +1,11 @@
 # Next.js 16 (Pages Router, React 18) — standalone 출력
 # 운영 빌드는 webpack(npm run build = next build --webpack): 16 기본값 Turbopack 은 페이지마다 첫 로드 JS 가 gzip 약 14KB 많다(실측)
-FROM node:22-bookworm-slim AS deps
+FROM node:24-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
-FROM node:22-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 WORKDIR /app
 # rewrites 는 빌드 시점에 고정 → 컨테이너 네트워크 주소를 인자로
 ARG API_INTERNAL_URL=http://api:8300
@@ -18,7 +18,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN rm -f .env.local && npm run build
 
-FROM node:22-bookworm-slim
+FROM node:24-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3300 HOSTNAME=0.0.0.0 TZ=Asia/Seoul
 COPY --from=build /app/.next/standalone ./

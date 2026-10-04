@@ -1,8 +1,8 @@
 package com.roadrail.external;
 
-import com.roadrail.common.JsonCache;
-import com.roadrail.common.SingleFlight;
-import com.roadrail.config.AppProperties;
+import com.roadrail.shared.JsonCache;
+import com.roadrail.shared.SingleFlight;
+import com.roadrail.shared.AppProperties;
 import com.roadrail.domain.RouteGeometry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

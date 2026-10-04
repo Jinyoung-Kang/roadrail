@@ -1,4 +1,7 @@
-import { RAIL, ROAD, type MapLayers } from "@/components/RouteMap";
+import type { MapLayers } from "./map";
+import { C } from "./palette";
+
+const ROAD = C.road, RAIL = C.rail;
 import { carLines } from "./traffic";
 import type { Corridor, Dir, Incident, Trip } from "./types";
 

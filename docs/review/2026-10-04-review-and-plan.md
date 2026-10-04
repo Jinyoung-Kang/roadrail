@@ -176,3 +176,19 @@ ops/       web(Admin · Health · 수집 상태) · app(OpsService · AdminServi
 - **믿는 프록시 주소는 1분마다 다시 푼다** — web 컨테이너가 새 주소로 다시 뜨면 최대 1분 동안 모든 사용자가 한 버킷(분당 40)으로 묶일 수 있다.
 - **새벽 '원천 없음'은 원천 표본 수의 성질** — 완전성 경고가 꺼지려면 24시간 창이 수집 공백 없이 채워져야 한다(지금은 10-02~10-04 스택 정지 구간이 창에 걸림).
 - PR 2 `refactor/layered-architecture` — 기능 단위 패키지 · 화면/로직 분리 · Node 24 · Python 3.13 (계획 3절).
+
+## 6. PR 2 결과 (2026-10-04) — `refactor/layered-architecture`
+
+설계는 [ADR-025](../adr/025-layered-architecture.md). 리팩터링만(동작 · 공개 경로 · SQL 문자열 그대로), 커밋마다 테스트 통과.
+
+| 항목 | 전 | 후 |
+|---|---|---|
+| API 패키지 | common · config · domain · external · service · web(+dto) — 서비스 → 웹 DTO 23곳, common ↔ config 순환 | 기능 5개 × (web · app · data · model) + shared · shared.web · domain · external — 서비스 → 웹 0, 순환 0 |
+| SQL 위치 | 서비스 12개 · 컨트롤러 1개에 68문장 | 저장소 8개에만(중복 3문장은 하나로) — `ArchitectureTest` 가 지킴 |
+| 웹 | 화면이 주소 · 상태 · 부수효과 · 변환을 함께, `Tiles.tsx` 439줄 | `lib/api/client` · `lib/hooks/*` · 순수 함수(`lib/trip · rail · ops …`) · `components/trip/*` · `components/ops/*` |
+| 런타임 | Node 22 · Python 3.11 | Node 24 LTS · Python 3.13 |
+| 테스트 | API 122 · 수집기 123 · 웹 단위 24 · E2E 29 | API 125 · 수집기 123 · 웹 단위 35 · E2E 29 |
+| 첫 로드 JS(`/`) · API p50 | 111.0KB · 수집 상태 35.3 · 정시율 3.8ms | 111.5KB · 38.6 · 5.6ms (캐시 상태 차이 수준 — 회귀 없음) |
+
+철도 · 길 저장소 분리는 별도 에이전트 두 개가 각자 작업 트리에서 맡고(파일이 겹치지 않게 나눔), SQL 문자열이 옮기기 전과 같은지
+스크립트로 확인한 뒤 가져왔다.

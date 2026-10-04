@@ -4,10 +4,11 @@ import Layout from "@/components/Layout";
 import CorridorBar from "@/components/CorridorBar";
 import { Heatmap, TravelChart } from "@/components/LazyCharts";
 import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Spec, SpecStrip } from "@/components/ui";
-import { qs, useApi } from "@/lib/api";
+import { api } from "@/lib/api/client";
+import { useApi } from "@/lib/hooks/useApi";
 import { DASH, DIR_LABEL, dur, durParts, mdhm, num, pct } from "@/lib/format";
 import type { Baseline, Dir, Series } from "@/lib/types";
-import { useCorridors } from "@/lib/useCorridors";
+import { useCorridors } from "@/lib/hooks/useCorridors";
 
 const RANGES = [
   { value: "1d", label: "24시간", hours: 24, agg: "5m" },
@@ -31,9 +32,8 @@ export default function RoadPage() {
   const corridors = useCorridors();
   const corridor = corridors.data?.find((c) => c.id === cid);
   const ready = router.isReady;
-  const path = `/api/v1/corridors/${encodeURIComponent(cid)}/road`;  // cid 는 URL 에서 온 값
-  const series = useApi<Series>(ready ? `${path}/series?${qs({ dir, agg: r.agg, ...win })}` : null);
-  const baseline = useApi<Baseline>(ready ? `${path}/baseline?dir=${dir}` : null);
+  const series = useApi<Series>(ready ? api.corridorSeries(cid, { dir, agg: r.agg, ...win }) : null);  // cid 는 URL 에서 온 값 — 경로 조각으로 인코딩
+  const baseline = useApi<Baseline>(ready ? api.corridorBaseline(cid, dir) : null);
 
   const pts = series.data?.points ?? [];
   const last = pts[pts.length - 1];

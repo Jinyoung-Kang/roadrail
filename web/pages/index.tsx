@@ -1,23 +1,26 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import About from "@/components/About";
 import Layout from "@/components/Layout";
 import RouteMap from "@/components/RouteMap";
 import SearchPicker from "@/components/SearchPicker";
 import TrafficLegend from "@/components/TrafficLegend";
-import { CarTile, EnvRow, Evidence, TrainTile } from "@/components/Tiles";
+import { CarTile } from "@/components/trip/CarTile";
+import { EnvRow } from "@/components/trip/EnvRow";
+import { Evidence } from "@/components/trip/Evidence";
+import { TrainTile } from "@/components/trip/TrainTile";
 import { ErrorBox, Loading, Section, Segmented, Select, Spec, SpecStrip } from "@/components/ui";
-import { qs, useApi } from "@/lib/api";
+import { api } from "@/lib/api/client";
+import { useMapFocus } from "@/lib/hooks/useMapFocus";
+import { useTrip } from "@/lib/hooks/useTrip";
+import { ACCESS_OPTIONS, DEPART_OPTIONS } from "@/lib/trip";
 import { DASH, durParts, hm, num } from "@/lib/format";
 import { locatedIncidents, tripLayers, WARN } from "@/lib/layers";
 import { corridorEnds, decodePlace, encodePlace, KIND_LABEL } from "@/lib/places";
 import { slowSummary } from "@/lib/traffic";
-import type { Incident, Place, Trip } from "@/lib/types";
-import { useCorridors } from "@/lib/useCorridors";
-
-const DEPART = [0, 30, 60, 120, 180].map((v) => ({ value: v, label: v === 0 ? "지금" : `+${v >= 60 ? `${v / 60}시간` : `${v}분`}` }));
-const ACCESS = [{ value: "auto", label: "역까지 실제 경로" }, ...[10, 20, 30, 45].map((v) => ({ value: String(v), label: `역까지 ${v}분` }))];
+import type { Place } from "@/lib/types";
+import { useCorridors } from "@/lib/hooks/useCorridors";
 
 export default function Home() {
   const router = useRouter();
@@ -35,13 +38,7 @@ export default function Home() {
     router.replace({ pathname: "/", query: { ...q, ...(from && !q.from ? { from: encodePlace(from) } : {}),
       ...(to && !q.to ? { to: encodePlace(to) } : {}), ...p } }, undefined, { shallow: true, scroll: false });
 
-  const url = router.isReady && from && to ? `/api/v1/trip?${qs({
-    fromLat: from.lat, fromLon: from.lon, fromName: from.name, fromStation: from.stationCode,
-    toLat: to.lat, toLon: to.lon, toName: to.name, toStation: to.stationCode,
-    departIn, accessMin: access === "auto" ? undefined : access })}` : null;
-  // 카카오 경로·날씨가 아직 오는 중이면 1.5초 뒤 다시(최대 20번 — 그 뒤는 1분 주기). 서버는 조회를 계속해 캐시를 채운다
-  const trip = useApi<Trip>(url, { refreshMs: 60_000, retryWhile: (d) => d.pending, retryMs: 1500, maxRetries: 20 });
-  const t = trip.data && from && trip.data.from.name === from.name && trip.data.to.name === to?.name ? trip.data : null;
+  const { trip, t } = useTrip(router.isReady, from, to, departIn, access);
 
   const d = t?.decision;
   const car = durParts(d?.carTotalMin ?? (t?.car.durationSec ? t.car.durationSec / 60 : null));
@@ -51,15 +48,10 @@ export default function Home() {
   const located = locatedIncidents(t);
   const carSlow = t ? slowSummary(t.car.path ?? [], t.car.traffic) : null;
   // 돌발 안내 '지도에서 보기' → 아래 지도로 내려가 그 지점으로 확대
-  const [focus, setFocus] = useState<{ lat: number; lon: number; n: number } | null>(null);
-  const locate = (i: Incident) => {
-    if (i.lat == null || i.lon == null) return;
-    setFocus((f) => ({ lat: i.lat!, lon: i.lon!, n: (f?.n ?? 0) + 1 }));
-    document.getElementById("map")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  const { focus, locate } = useMapFocus("map");
   const picker = (label: string, value: Place | null, key: "from" | "to") => (
     <SearchPicker<Place> label={label} placeholder="지역 · 역 · 장소 검색" value={value?.name ?? ""} className="w-full sm:w-[300px]"
-      search={(term) => `/api/v1/places/search?q=${encodeURIComponent(term)}`}
+      search={api.placesSearch}
       keyOf={(p) => `${p.kind}:${p.name}:${p.lat}`} render={(p) => ({ title: p.name, sub: p.address, badge: KIND_LABEL[p.kind] })}
       onPick={(p) => set({ [key]: encodePlace(p) })} />
   );
@@ -91,8 +83,8 @@ export default function Home() {
             {picker("도착지", to, "to")}
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-            <Segmented label="출발 시점" value={departIn} onChange={(v) => set({ t: v })} options={DEPART} />
-            <Select label="역까지 걸리는 시간" value={access} onChange={(v) => set({ a: v })} options={ACCESS} />
+            <Segmented label="출발 시점" value={departIn} onChange={(v) => set({ t: v })} options={DEPART_OPTIONS} />
+            <Select label="역까지 걸리는 시간" value={access} onChange={(v) => set({ a: v })} options={ACCESS_OPTIONS} />
           </div>
         </div>
 

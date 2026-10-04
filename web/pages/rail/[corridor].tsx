@@ -2,7 +2,7 @@ import { useRouter } from "next/router";
 import { useEffect } from "react";
 import Layout from "@/components/Layout";
 import { Loading } from "@/components/ui";
-import { useCorridors } from "@/lib/useCorridors";
+import { useCorridors } from "@/lib/hooks/useCorridors";
 
 /** 예전 주소 /rail/{길} → 그 길의 역 쌍으로 /rail?dep=…&arr=… */
 export default function RailCorridorRedirect() {
