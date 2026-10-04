@@ -22,7 +22,7 @@ services:
       retries: 30
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     ports: ["127.0.0.1:6410:6379"]
     healthcheck:

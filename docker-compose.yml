@@ -24,7 +24,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     # 영속화 끔 — 예산 확정값은 ops.quota_budget 에도 저장.
     # 비밀번호(requirepass)는 .env 의 REDIS_PASSWORD (make env 가 만든다) — 비어 있으면 기동하지 않는다(ADR-028).
     # 값은 명령줄이 아니라 환경 변수로 넘긴다(docker inspect 의 Cmd 에 남지 않게). redis-cli 는 REDISCLI_AUTH 를 쓴다.
