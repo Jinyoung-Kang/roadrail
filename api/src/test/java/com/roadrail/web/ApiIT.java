@@ -359,6 +359,24 @@ class ApiIT extends IntegrationTest {
     }
 
     @Test
+    void storedForecastForNowComesFromTheLatestIssueThatHasThatHour() {
+        // RVW-02: 단기예보 새 발표는 발표 +1시간부터 값이 있다(14시 발표 → 15시부터). 가장 최근 발표에서만 찾아
+        // 발표 직후 한 시간(하루 약 6시간)은 '지금 출발' 날씨가 비었다 → 그 시각을 가진 가장 최근 발표에서 읽는다
+        OffsetDateTime day = OffsetDateTime.now(KST).withHour(0).withMinute(0).withSecond(0).withNano(0);
+        jdbc.update("DELETE FROM env.weather_fcst WHERE nx = 7 AND ny = 7");
+        for (int h = 12; h <= 17; h++) insertFcst(day.withHour(11), day.withHour(h), "TMP", "1" + h);   // 11시 발표: 12~17시
+        for (int h = 15; h <= 20; h++) insertFcst(day.withHour(14), day.withHour(h), "TMP", "2" + h);   // 14시 발표: 15시~
+        assertThat(env.at(7, 7, day.withHour(14).withMinute(30))).get().extracting(EnvDtos.WeatherHour::tmp).isEqualTo(114);
+        assertThat(env.at(7, 7, day.withHour(16).withMinute(10))).get().extracting(EnvDtos.WeatherHour::tmp).isEqualTo(216);  // 새 발표가 있으면 새 발표
+        jdbc.update("DELETE FROM env.weather_fcst WHERE nx = 7 AND ny = 7");
+    }
+
+    private void insertFcst(OffsetDateTime base, OffsetDateTime at, String category, String value) {
+        jdbc.update("INSERT INTO env.weather_fcst (base_at, fcst_at, nx, ny, category, value) VALUES (?, ?, 7, 7, ?, ?)",
+                base, at, category, value);
+    }
+
+    @Test
     void everyResponseCarriesAntiFramingHeaders() throws Exception {
         // WEB-10: API 문서(Swagger UI)를 웹이 외부 rewrite 로 넘겨 보안 헤더가 하나도 없었다 — API 가 직접 붙인다
         for (String path : List.of("/api/v1/corridors", "/v3/api-docs")) {
