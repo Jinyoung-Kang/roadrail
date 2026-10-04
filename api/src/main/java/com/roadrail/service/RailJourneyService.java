@@ -1,5 +1,6 @@
 package com.roadrail.service;
 
+import com.roadrail.common.Futures;
 import com.roadrail.external.KakaoMobilityClient;
 import com.roadrail.common.Memo;
 import com.roadrail.common.Times;
@@ -205,7 +206,7 @@ public class RailJourneyService {
                         (int) Math.max(1, Math.round(l.durationSec() / 60.0)), l.distanceM(), "CAR"));
                 continue;
             }
-            var e = TripService.join(single.get(s.code()), TripService.left(deadline));
+            var e = Futures.join(single.get(s.code()), Futures.left(deadline));
             if (e != null && e.isPresent()) {
                 out.put(s.code(), new Transfer(s.code(), s.name(), s.lat(), s.lon(), s.distanceKm(),
                         (int) Math.max(1, Math.round(e.get().durationSec() / 60.0)), e.get().distanceM(), "CAR"));
@@ -284,7 +285,7 @@ public class RailJourneyService {
         return new Plan(journeys, ref.getFirst(), basis.getFirst(), origins.size(), dests.size(), BOARDING_BUFFER_MIN, TRANSFER_MIN,
                 "코레일 여객열차(KTX·ITX·무궁화 등) 기준. 지하철·버스 환승 경로는 공개 데이터가 없어 다루지 않습니다."
                         + (depHoliday || arrHoliday ? " 공휴일에는 지하철 시간표 구분(평일·토·일)을 알 수 없어 지하철 시각을 표시하지 않습니다." : ""),
-                TripService.join(fSubDep, TripService.left(subDeadline)), TripService.join(fSubArr, TripService.left(subDeadline)), pending);
+                Futures.join(fSubDep, Futures.left(subDeadline)), Futures.join(fSubArr, Futures.left(subDeadline)), pending);
     }
 
     /** 갈아탈 지하철 — 부가 정보라 실패해도 여정 응답은 낸다(예전에는 예외가 /trip 전체를 500 으로 만들었다) */
@@ -355,11 +356,11 @@ public class RailJourneyService {
         for (int i = 0; i < j.legs().size(); i++) {
             var l = j.legs().get(i);
             String trn = trainNo(l.trip());
-            var st = TripService.join(stats.get(i), TripService.left(deadline));
+            var st = Futures.join(stats.get(i), Futures.left(deadline));
             var s = st == null ? null : st.get(trn);
             OffsetDateTime dep = OffsetDateTime.ofInstant(Instant.ofEpochSecond(l.dep()), Times.KST);
             OffsetDateTime arr = OffsetDateTime.ofInstant(Instant.ofEpochSecond(l.arr()), Times.KST);
-            Planned pl = TripService.join(plans.get(i), TripService.left(deadline));
+            Planned pl = Futures.join(plans.get(i), Futures.left(deadline));
             if (!plans.get(i).isDone() || !stats.get(i).isDone()) late.set(true);  // 늦음 ≠ 없음
             boolean real = pl != null && pl.dep() != null;
             if (real) {  // 기준일 → 목표일: CSA 가 옮긴 날짜 수만큼

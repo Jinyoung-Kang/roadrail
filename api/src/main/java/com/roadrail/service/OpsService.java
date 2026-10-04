@@ -1,5 +1,6 @@
 package com.roadrail.service;
 
+import com.roadrail.common.Rows;
 import com.roadrail.common.Times;
 import com.roadrail.config.AppProperties;
 import com.roadrail.web.dto.OpsDtos.*;
@@ -88,7 +89,7 @@ public class OpsService {
                       SELECT 'road_volume_all', extract(epoch FROM collected_at - slot_ts) / 60
                       FROM ts.road_volume WHERE collected_at > now() - interval '24 hours') x
                 GROUP BY s ORDER BY s""")
-                .query((rs, i) -> new Lag(rs.getString("s"), RailService.round(rs, "med", 0), RailService.round(rs, "p90", 0),
+                .query((rs, i) -> new Lag(rs.getString("s"), Rows.round(rs, "med", 0), Rows.round(rs, "p90", 0),
                         rs.getInt("n"))).list();
         String hb = safe(() -> redis.opsForValue().get("rr:collector:heartbeat"));
         return new Status(now, hb != null, hb == null ? null : OffsetDateTime.parse(hb), jobs, quotas(), runs, errors,

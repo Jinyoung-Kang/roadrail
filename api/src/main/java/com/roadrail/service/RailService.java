@@ -1,5 +1,6 @@
 package com.roadrail.service;
 
+import com.roadrail.common.Rows;
 import com.roadrail.common.JsonCache;
 import com.roadrail.common.ApiException;
 import com.roadrail.common.Times;
@@ -175,7 +176,7 @@ public class RailService {
                 .param("f", end.minusDays(29)).param("t", end).param("trains", trains)
                 .query(rs -> {
                     m.put(rs.getString("trn_no"), new TrainStats(rs.getInt("samples"), rs.getInt("verified"),
-                            round(rs, "rate", 3), round(rs, "avg_delay", 1), round(rs, "p90", 1), round(rs, "ride", 1)));
+                            Rows.round(rs, "rate", 3), Rows.round(rs, "avg_delay", 1), Rows.round(rs, "p90", 1), Rows.round(rs, "ride", 1)));
                 });
         return m;
     }
@@ -272,11 +273,11 @@ public class RailService {
                         String[] labels = {"≤0분", "1–5분", "6–10분", "11–20분", "21–30분", ">30분"};
                         for (int i = 0; i < 6; i++) hist.add(new Bucket(labels[i], rs.getInt("b" + i)));
                         summary[0] = new Summary(rs.getInt("samples"), rs.getInt("verified"),
-                                rs.getInt("samples") - rs.getInt("verified"), round(rs, "rate", 3), round(rs, "avg_delay", 1),
-                                round(rs, "p90", 1));
+                                rs.getInt("samples") - rs.getInt("verified"), Rows.round(rs, "rate", 3), Rows.round(rs, "avg_delay", 1),
+                                Rows.round(rs, "p90", 1));
                     } else {
                         items.add(new PunctualityItem(rs.getString("k"), rs.getInt("samples"), rs.getInt("verified"),
-                                round(rs, "rate", 3), round(rs, "avg_delay", 1), round(rs, "p90", 1), round(rs, "ride", 1),
+                                Rows.round(rs, "rate", 3), Rows.round(rs, "avg_delay", 1), Rows.round(rs, "p90", 1), Rows.round(rs, "ride", 1),
                                 null, "train".equals(groupBy) ? rs.getString("grade") : null));
                     }
                 });
@@ -348,8 +349,8 @@ public class RailService {
                 FROM rail.train_punctuality WHERE run_ymd BETWEEN :f AND :t""")
                 .param("thr", thr).param("f", from).param("t", to)
                 .query((rs, i) -> new Summary(rs.getInt("samples"), rs.getInt("verified"),
-                        rs.getInt("samples") - rs.getInt("verified"), round(rs, "rate", 3), round(rs, "avg_delay", 1),
-                        round(rs, "p90", 1))).single()).value();
+                        rs.getInt("samples") - rs.getInt("verified"), Rows.round(rs, "rate", 3), Rows.round(rs, "avg_delay", 1),
+                        Rows.round(rs, "p90", 1))).single()).value();
     }
 
     /** 좌표에서 가까운 (최근 14일 운행이 있는) 역 */
@@ -365,13 +366,5 @@ public class RailService {
                 .param("la", lat).param("lo", lon).param("l", latest).param("r", radiusKm).param("lim", limit)
                 .query((rs, i) -> new StationNear(rs.getString(1), rs.getString(2), rs.getDouble(3), rs.getDouble(4),
                         Math.round(rs.getDouble(5) * 10) / 10.0)).list();
-    }
-
-    static Double round(ResultSet rs, String col, int digits) throws SQLException {
-        Object v = rs.getObject(col);
-        if (v == null) return null;
-        double d = ((Number) v).doubleValue();
-        double f = Math.pow(10, digits);
-        return Math.round(d * f) / f;
     }
 }

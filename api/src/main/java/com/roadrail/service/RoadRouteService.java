@@ -1,5 +1,6 @@
 package com.roadrail.service;
 
+import com.roadrail.common.Futures;
 import com.roadrail.external.KakaoMobilityClient;
 import com.roadrail.common.Times;
 import com.roadrail.domain.KmaGrid;
@@ -47,11 +48,11 @@ public class RoadRouteService {
             }, exec));
         }
         long deadline = System.nanoTime() + Duration.ofSeconds(8).toNanos();  // 병렬 조회 11건이 마감을 공유 (건마다 8초씩 더해지지 않게)
-        var rec = TripService.join(fRec, TripService.left(deadline));
-        var avoid = TripService.join(fAvoid, TripService.left(deadline));
+        var rec = Futures.join(fRec, Futures.left(deadline));
+        var avoid = Futures.join(fAvoid, Futures.left(deadline));
         List<ProfilePoint> profile = new ArrayList<>();
         profile.add(new ProfilePoint(depart, 0, rec == null ? null : rec.durationSec()));
-        fProfile.stream().map(f -> TripService.join(f, TripService.left(deadline))).filter(Objects::nonNull).forEach(profile::add);
+        fProfile.stream().map(f -> Futures.join(f, Futures.left(deadline))).filter(Objects::nonNull).forEach(profile::add);
         ProfilePoint best = profile.stream().filter(p -> p.durationSec() != null).min(Comparator.comparingInt(ProfilePoint::durationSec)).orElse(null);
         var obs = trips.observed(from, to, depart, Times.now());
         return new Analysis(from, to, Math.round(KmaGrid.km(from.lat(), from.lon(), to.lat(), to.lon()) * 10) / 10.0, depart,

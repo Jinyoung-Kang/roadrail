@@ -1,5 +1,7 @@
 package com.roadrail.service;
 
+import com.roadrail.domain.WeatherCodes;
+import com.roadrail.common.Futures;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.roadrail.external.KakaoMobilityClient;
@@ -77,10 +79,6 @@ public class TripService {
         this.holidays = holidays;
     }
 
-    static Duration left(long deadlineNanos) {
-        return Duration.ofNanos(Math.max(deadlineNanos - System.nanoTime(), 1_000_000));
-    }
-
     /** 보조 조회의 결과 — 값이 없을 때 '정말 없음'인지(완료) '아직 · 실패'인지(incomplete) 구분한다 */
     record Part<T>(T value, boolean incomplete) {}
 
@@ -100,20 +98,6 @@ public class TripService {
         } catch (ExecutionException e) {
             log.warn("{} 조회 실패 — 비워 두고 다시 묻게 함: {}", what, e.getCause().getClass().getSimpleName());
             return new Part<>(null, true);
-        }
-    }
-
-    static <T> T join(CompletableFuture<T> f, Duration wait) {
-        try {
-            return f.get(wait.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (TimeoutException e) {
-            return null;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return null;
-        } catch (ExecutionException e) {
-            if (e.getCause() instanceof RuntimeException re) throw re;
-            throw new IllegalStateException(e.getCause());
         }
     }
 
@@ -154,7 +138,7 @@ public class TripService {
         long deadline = System.nanoTime() + DEADLINE.toNanos();
         var fCar = CompletableFuture.supplyAsync(
                 () -> mobility.futureEta(from.lat(), from.lon(), to.lat(), to.lon(), depart, true), exec);
-        var eta = Optional.ofNullable(join(fCar, left(deadline))).flatMap(e -> e);
+        var eta = Optional.ofNullable(Futures.join(fCar, Futures.left(deadline))).flatMap(e -> e);
         boolean pending = eta.isEmpty() && mobility.pending(from.lat(), from.lon(), to.lat(), to.lon(), depart, true);
         Car car = new Car(eta.map(KakaoMobilityClient.Eta::durationSec).orElse(null),
                 eta.map(KakaoMobilityClient.Eta::distanceM).orElse(null), eta.map(KakaoMobilityClient.Eta::departAt).orElse(null),
@@ -162,10 +146,10 @@ public class TripService {
                 pending, "KAKAO_FUTURE_DIRECTIONS");
 
         // 시작 시각 기준 마감 — 앞의 대기가 길어도 뒤의 대기가 그만큼 더해지지 않는다(예전: 3초 + 4초)
-        var obsPart = part(fObs, left(started + Duration.ofSeconds(3).toNanos()), "길 매칭");              // DB 만 — 넉넉히
-        var railPart = part(fRail, left(started + Duration.ofSeconds(4).toNanos()), "기차 여정");         // DB + 카카오 다중 길찾기 (캐시)
-        var originPart = part(fOrigin, left(deadline), "출발지 날씨");
-        var destPart = part(fDest, left(deadline), "도착지 날씨");
+        var obsPart = part(fObs, Futures.left(started + Duration.ofSeconds(3).toNanos()), "길 매칭");              // DB 만 — 넉넉히
+        var railPart = part(fRail, Futures.left(started + Duration.ofSeconds(4).toNanos()), "기차 여정");         // DB + 카카오 다중 길찾기 (캐시)
+        var originPart = part(fOrigin, Futures.left(deadline), "출발지 날씨");
+        var destPart = part(fDest, Futures.left(deadline), "도착지 날씨");
         Observed obs = obsPart.value();
         JourneyDtos.Plan railOpt = railPart.value();
         var origin = originPart.value();
@@ -299,14 +283,14 @@ public class TripService {
             var h = shortTermHour(kma.forecast(cell.nx(), cell.ny()),
                     () -> kma.forecast(cell.nx(), cell.ny(), KmaClient.latestBase(Times.now()).minusHours(3)), at);
             if (h != null) {
-                pop = RoadService.parseInt(h.get("POP"));
-                tmp = RoadService.parseInt(h.get("TMP"));
-                pty = RoadService.ptyName(h.get("PTY"));
-                sky = EnvService.skyName(h.get("SKY"));
+                pop = WeatherCodes.parseInt(h.get("POP"));
+                tmp = WeatherCodes.parseInt(h.get("TMP"));
+                pty = WeatherCodes.ptyName(h.get("PTY"));
+                sky = WeatherCodes.skyName(h.get("SKY"));
             }
         }
         Weather w = mergeWeather(new Weather(pop, pty, tmp, sky, null, pop == null && pty == null && tmp == null ? null : "단기예보"),
-                fUltra == null ? null : join(fUltra, Duration.ofSeconds(5)), fNow == null ? null : join(fNow, Duration.ofSeconds(5)), at);
+                fUltra == null ? null : Futures.join(fUltra, Duration.ofSeconds(5)), fNow == null ? null : Futures.join(fNow, Duration.ofSeconds(5)), at);
         var region = local.region(p.lat(), p.lon());
         String sido = region == null ? null : AirKoreaClient.sidoOf(region.region1(), region.region2());
         Integer pm25 = null, g25 = null, khai = null;
@@ -334,13 +318,13 @@ public class TripService {
         Weather w = base;
         var h = ultra == null || ultra.hours() == null ? null : ultra.hours().get(KmaClient.hourKey(at));
         if (h != null && h.get("PTY") != null) {
-            w = new Weather(w.pop(), RoadService.ptyName(h.get("PTY")), orElse(RoadService.parseInt(h.get("T1H")), w.tmp()),
-                    orElse(EnvService.skyName(h.get("SKY")), w.sky()), forecastRain(h.get("RN1")), "초단기예보 " + hm(ultra.baseAt()) + " 발표");
+            w = new Weather(w.pop(), WeatherCodes.ptyName(h.get("PTY")), orElse(WeatherCodes.parseInt(h.get("T1H")), w.tmp()),
+                    orElse(WeatherCodes.skyName(h.get("SKY")), w.sky()), forecastRain(h.get("RN1")), "초단기예보 " + hm(ultra.baseAt()) + " 발표");
         }
         var v = now == null ? null : now.values();
         if (v != null && v.get("PTY") != null) {
             Integer t = v.get("T1H") == null ? null : parseRounded(v.get("T1H"));
-            w = new Weather(w.pop(), RoadService.ptyName(v.get("PTY")), orElse(t, w.tmp()), w.sky(), observedRain(v.get("RN1")),
+            w = new Weather(w.pop(), WeatherCodes.ptyName(v.get("PTY")), orElse(t, w.tmp()), w.sky(), observedRain(v.get("RN1")),
                     "초단기실황 " + hm(now.baseAt()) + " 관측");
         }
         return w;

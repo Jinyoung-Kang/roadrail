@@ -1,5 +1,6 @@
 package com.roadrail.service;
 
+import com.roadrail.domain.WeatherCodes;
 import com.roadrail.common.Times;
 import com.roadrail.domain.KmaGrid;
 import com.roadrail.web.dto.EnvDtos.*;
@@ -48,8 +49,8 @@ public class EnvService {
                             .put(rs.getString(2), rs.getString(3));
                 });
         List<WeatherHour> out = new ArrayList<>();
-        byHour.forEach((t, m) -> out.add(new WeatherHour(t, RoadService.parseInt(m.get("TMP")), RoadService.parseInt(m.get("POP")),
-                RoadService.ptyName(m.get("PTY")), skyName(m.get("SKY")))));
+        byHour.forEach((t, m) -> out.add(new WeatherHour(t, WeatherCodes.parseInt(m.get("TMP")), WeatherCodes.parseInt(m.get("POP")),
+                WeatherCodes.ptyName(m.get("PTY")), WeatherCodes.skyName(m.get("SKY")))));
         return out;
     }
 
@@ -168,14 +169,4 @@ public class EnvService {
     }
 
     static Integer toInt(Object o) { return o == null ? null : ((Number) o).intValue(); }
-
-    static String skyName(String code) {
-        if (code == null) return null;
-        return switch (code.trim()) {
-            case "1" -> "맑음";
-            case "3" -> "구름많음";
-            case "4" -> "흐림";
-            default -> code;
-        };
-    }
 }

@@ -1,5 +1,6 @@
 package com.roadrail.service;
 
+import com.roadrail.domain.WeatherCodes;
 import com.roadrail.common.ApiException;
 import com.roadrail.common.Times;
 import com.roadrail.config.AppProperties;
@@ -86,7 +87,7 @@ public class RoadService {
                 WHERE w.fcst_at >= :f AND w.fcst_at < :t AND w.category IN ('POP', 'PTY')
                 ORDER BY w.fcst_at, w.base_at DESC""").param("c", cid).param("d", dir).param("f", from).param("t", to)
                 .query((rs, i) -> new RainPoint(Times.kst(rs.getObject(1, OffsetDateTime.class)),
-                        parseInt(rs.getString(2)), ptyName(rs.getString(3)))).list();
+                        WeatherCodes.parseInt(rs.getString(2)), WeatherCodes.ptyName(rs.getString(3)))).list();
         List<EtaPoint> eta = jdbc.sql("""
                 SELECT DISTINCT ON (depart_at) depart_at, duration_sec FROM ana.kakao_eta
                 WHERE corridor_id = :c AND direction = :d AND depart_at >= :f AND depart_at < :t
@@ -145,25 +146,5 @@ public class RoadService {
         String period = meta[2] == null ? "최근 28일" : String.format("%s ~ %s",
                 Times.kst((OffsetDateTime) meta[2]).toLocalDate(), Times.kst((OffsetDateTime) meta[3]).toLocalDate().minusDays(1));
         return new Backtest(period, (String) meta[0], (String) meta[1], mae, cells);
-    }
-
-    static Integer parseInt(String s) {
-        try { return s == null ? null : Integer.valueOf(s.trim()); } catch (NumberFormatException e) { return null; }
-    }
-
-    /** 기상청 PTY 코드 → 이름 (0 없음, 1 비, 2 비/눈, 3 눈, 4 소나기) */
-    public static String ptyName(String code) {
-        if (code == null) return null;
-        return switch (code.trim()) {
-            case "0" -> "없음";
-            case "1" -> "비";
-            case "2" -> "비/눈";
-            case "3" -> "눈";
-            case "4" -> "소나기";
-            case "5" -> "빗방울";           // 5 · 6 · 7 은 초단기예보 · 실황에만
-            case "6" -> "빗방울눈날림";
-            case "7" -> "눈날림";
-            default -> code;
-        };
     }
 }
