@@ -99,6 +99,7 @@ services:
       args:
         NEXT_PUBLIC_KAKAO_JS_KEY: ${NEXT_PUBLIC_KAKAO_JS_KEY:-}
         PUBLIC_HTTPS: ${PUBLIC_HTTPS:-}
+        NEXT_PUBLIC_API_DOCS: ${SWAGGER_ENABLED:-}
     environment:
       API_INTERNAL_URL: http://api:8300
       TZ: Asia/Seoul

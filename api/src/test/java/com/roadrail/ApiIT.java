@@ -429,6 +429,14 @@ class ApiIT extends IntegrationTest {
     }
 
     @Test
+    void apiDocsAreOffByDefault() throws Exception {
+        // 공개 배포 체크리스트: Swagger UI · OpenAPI 는 기본으로 끈다 — 로컬에서만 SWAGGER_ENABLED=true (ADR-028)
+        for (String path : List.of("/v3/api-docs", "/docs", "/swagger-ui/index.html")) {
+            mvc.perform(get(path)).andExpect(status().isNotFound());
+        }
+    }
+
+    @Test
     void everyResponseCarriesAntiFramingHeaders() throws Exception {
         // WEB-10: API 문서(Swagger UI)를 웹이 외부 rewrite 로 넘겨 보안 헤더가 하나도 없었다 — API 가 직접 붙인다
         for (String path : List.of("/api/v1/corridors", "/v3/api-docs")) {
