@@ -1,5 +1,6 @@
 import Head from "next/head";
 import Nav from "./Nav";
+import { API_DOCS } from "@/lib/features";
 
 export default function Layout({ title, overlay = false, children }: { title: string; overlay?: boolean; children: React.ReactNode }) {
   return (
@@ -16,8 +17,7 @@ export default function Layout({ title, overlay = false, children }: { title: st
           <p>
             데이터: 한국도로공사 고속도로 공공데이터 포털 · 한국철도공사 열차운행정보 · 기상청 단기예보 · 한국환경공단 에어코리아 · 카카오
             · 국토교통부 TAGO · 한국천문연구원 특일 정보 · 경찰청 도시교통정보센터(UTIC) · 선로 © OpenStreetMap contributors (ODbL)
-            <span className="mx-2">·</span>
-            <a className="underline underline-offset-2" href="/docs">API 문서</a>
+            {API_DOCS && <><span className="mx-2">·</span><a className="underline underline-offset-2" href="/docs">API 문서</a></>}
           </p>
         </div>
       </footer>

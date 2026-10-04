@@ -56,6 +56,8 @@ export const api = {
   corridorForecast: (cid: string, dir: Dir, horizons: number[]) =>
     `${BASE}/corridors/${seg(cid)}/road/forecast?dir=${dir}&horizons=${horizons.join(",")}`,
   opsStatus: () => `${BASE}/ops/collect-status`,
+  /** 오류 상세까지 — X-Admin-Token 필요(공개 경로는 상세를 비운다) */
+  adminOpsStatus: () => `${BASE}/admin/collect-status`,
   runJob: (job: string) => `${BASE}/admin/jobs/${seg(job)}/run`,
 };
 

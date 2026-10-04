@@ -38,8 +38,10 @@ def tail_key(start: str, end: str) -> str:
 def client() -> aioredis.Redis:
     global _client
     if _client is None:
+        # 비밀번호: 주소에 있으면 그것(redis-py 는 주소 값이 인자보다 우선), 없으면 REDIS_PASSWORD
         pool = aioredis.BlockingConnectionPool.from_url(settings().redis_url, decode_responses=True,
-                                                         socket_timeout=SOCKET_TIMEOUT_S, max_connections=MAX_CONNECTIONS)
+                                                         socket_timeout=SOCKET_TIMEOUT_S, max_connections=MAX_CONNECTIONS,
+                                                         password=settings().redis_password or None)
         _client = aioredis.Redis.from_pool(pool)  # aclose() 가 풀까지 닫는다
     return _client
 

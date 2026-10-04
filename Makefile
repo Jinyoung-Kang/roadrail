@@ -8,9 +8,16 @@ ADMIN_TOKEN = $(shell grep -E '^ADMIN_TOKEN=' .env 2>/dev/null | cut -d= -f2-)
 help: ## 명령 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[1m%-16s\033[0m %s\n", $$1, $$2}'
 
-env: ## .env 가 없으면 만들고 ADMIN_TOKEN 을 채운다
+env: ## .env 가 없으면 만들고 ADMIN_TOKEN · REDIS_PASSWORD 가 비어 있으면 채운다 (값은 출력하지 않음)
 	@test -f .env || cp .env.example .env
-	@grep -qE '^ADMIN_TOKEN=.+' .env || sed -i.bak "s/^ADMIN_TOKEN=.*/ADMIN_TOKEN=$$(openssl rand -hex 24)/" .env && rm -f .env.bak
+	@for k in ADMIN_TOKEN REDIS_PASSWORD; do \
+	  if ! grep -qE "^$$k=.+" .env; then \
+	    v=$$(openssl rand -hex 24); \
+	    if grep -qE "^$$k=" .env; then sed -i.bak "s/^$$k=.*/$$k=$$v/" .env && rm -f .env.bak; \
+	    else [ -z "$$(tail -c 1 .env)" ] || echo >> .env; printf '%s=%s\n' "$$k" "$$v" >> .env; fi; \
+	    echo "$$k 를 만들어 .env 에 넣었습니다"; \
+	  fi; \
+	done
 	@echo ".env 준비 완료 — API 키를 채웠는지 확인하세요 (README 1장)"
 
 build: env ## 이미지 빌드
@@ -48,7 +55,7 @@ smoke: ## 외부 API 5종 키 스모크 (호스트 Python 표준 라이브러리
 
 test: test-collector test-api ## 전체 테스트 (collector 단위·계약·통합 + api JUnit·Testcontainers)
 
-test-collector: ## collector pytest (compose 의 db·redis 사용, roadrail_test DB)
+test-collector: env ## collector pytest (compose 의 db·redis 사용, roadrail_test DB)
 	$(COMPOSE) up -d db redis
 	$(COMPOSE) --profile test build collector-test
 	$(COMPOSE) --profile test run --rm --no-deps collector-test pytest -q -p no:cacheprovider
@@ -56,8 +63,9 @@ test-collector: ## collector pytest (compose 의 db·redis 사용, roadrail_test
 test-api: ## api JUnit + Testcontainers (Docker 필요, JDK 21 은 Gradle 이 자동 설치)
 	cd api && ./gradlew --no-daemon test
 
-e2e: ## Playwright 스모크 (스택이 떠 있어야 함, 설치된 Chrome 사용)
-	cd web && npm ci --no-audit --no-fund && E2E_CHANNEL=chrome npx playwright test smoke
+e2e: ## Playwright 스모크 (스택이 떠 있어야 함, 설치된 Chrome 사용 — 관리 토큰은 .env 에서, 출력하지 않음)
+	cd web && npm ci --no-audit --no-fund
+	@cd web && E2E_ADMIN_TOKEN="$(ADMIN_TOKEN)" E2E_CHANNEL=chrome npx playwright test smoke
 
 bench: ## API 응답 시간 측정 (p50 · p95 · 최대, 표준 라이브러리만)
 	python3 tools/bench.py http://localhost:8300 15

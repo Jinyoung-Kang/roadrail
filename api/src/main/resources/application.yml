@@ -46,15 +46,15 @@ spring:
     locale: ko_KR
     locale-resolver: fixed
 
-# 공개 API 문서(포트폴리오) — 켜 둔다는 것을 명시한다. springdoc 3 은 명시하지 않으면 기본으로 켜되 기동마다 경고를 남긴다
-# (enabled 필드 기본값 false · 엔드포인트는 matchIfMissing). 공개 배포에서 끄려면 둘 다 false
+# API 문서(Swagger UI · OpenAPI) — 기본은 끈다(공개 배포 체크리스트, ADR-028). 로컬에서 볼 때만 .env 에 SWAGGER_ENABLED=true.
+# springdoc 3 은 명시하지 않으면 기본으로 켜되 기동마다 경고를 남긴다 — 둘 다 명시한다
 springdoc:
   swagger-ui:
     path: /docs
-    enabled: true
+    enabled: ${SWAGGER_ENABLED:false}
   api-docs:
     path: /v3/api-docs
-    enabled: true
+    enabled: ${SWAGGER_ENABLED:false}
 
 management:
   endpoints:

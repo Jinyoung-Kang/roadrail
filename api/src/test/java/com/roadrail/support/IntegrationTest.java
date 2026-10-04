@@ -18,7 +18,7 @@ import java.nio.file.Path;
 public abstract class IntegrationTest {
     public static final String ADMIN = "test-admin-token";
     static final PostgreSQLContainer PG = new PostgreSQLContainer(DockerImageName.parse("postgres:16-alpine"));
-    static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse("redis:7-alpine")).withExposedPorts(6379);
+    static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse("redis:8-alpine")).withExposedPorts(6379);
 
     static {
         PG.start();

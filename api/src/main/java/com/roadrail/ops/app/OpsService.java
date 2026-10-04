@@ -26,7 +26,8 @@ public class OpsService {
         this.props = props;
     }
 
-    public Status status() {
+    /** 수집 상태. detailed=false 면 오류 상세를 비운다(공개 경로) — 공개 배포 체크리스트(ADR-028) */
+    public Status status(boolean detailed) {
         OffsetDateTime now = Times.now();
         Map<String, Double> completeness = completeness();
         // 원천에 표본이 없는 슬롯(NO_SAMPLES — 전체를 다시 받아도 빔)은 수집 결측이 아니라 따로 센다(M3)
@@ -49,8 +50,23 @@ public class OpsService {
         List<Backfill> backfills = repo.recentBackfills();
         List<Lag> lag = repo.publishLag();  // 공개 지연: 원본 행이 처음 저장된 시각 − 슬롯 시각
         String hb = safe(() -> redis.opsForValue().get("rr:collector:heartbeat"));
+        if (!detailed) {
+            jobs = jobs.stream().map(j -> ok(j.lastStatus()) ? j : new Job(j.job(), j.provider(), j.cron(), j.description(), j.enabled(),
+                    j.lastStatus(), j.lastRunAt(), j.lastDurationMs(), j.lastCalls(), j.lastRows(), null, j.completeness24h(),
+                    j.gaps24h(), j.noSamples24h(), j.running(), j.warn())).toList();
+            runs = runs.stream().map(r -> ok(r.status()) ? r : new Run(r.runId(), r.job(), r.trigger(), r.startedAt(), r.finishedAt(),
+                    r.status(), r.calls(), r.rows(), null)).toList();
+            errors = errors.stream().map(e -> new ApiError(e.calledAt(), e.provider(), null, e.httpStatus(), null)).toList();
+            failures = failures.stream().map(f -> new Failure(f.runId(), f.job(), f.trigger(), f.startedAt(), f.finishedAt(),
+                    f.status(), null, null, f.resolvedAt())).toList();
+        }
         return new Status(now, hb != null, hb == null ? null : OffsetDateTime.parse(hb), jobs, quotas(), runs, errors,
-                failures, backfills, lag, volumes());
+                failures, backfills, lag, volumes(), detailed);
+    }
+
+    /** 정상 종료(또는 아직 실행 전 · 실행 중)의 메시지는 작업 메모라 공개해도 된다 — 실패 · 부분 성공 · 예산 부족의 메시지는 오류 내용 */
+    private static boolean ok(String status) {
+        return status == null || "OK".equals(status) || "RUNNING".equals(status);
     }
 
     private record Volumes(Map<String, Object> values, long measuredAt) {}

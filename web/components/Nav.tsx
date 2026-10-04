@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useRef, useState } from "react";
+import { API_DOCS } from "@/lib/features";
 
 const LINKS = [
   { href: "/", label: "판단" },
@@ -50,7 +51,7 @@ export default function Nav({ overlay = false }: { overlay?: boolean }) {
             ))}
           </nav>
           <div className="flex items-center gap-1">
-            <a href="/docs" className="nav-link hidden lg:inline-flex">API</a>
+            {API_DOCS && <a href="/docs" className="nav-link hidden lg:inline-flex">API</a>}
             <button ref={menuBtn} className="nav-link lg:hidden" onClick={() => setOpen(true)} aria-expanded={open} aria-haspopup="dialog">메뉴</button>
           </div>
         </div>
@@ -70,7 +71,7 @@ export default function Nav({ overlay = false }: { overlay?: boolean }) {
                   </Link>
                 </li>
               ))}
-              <li><a href="/docs" className="block rounded-sm px-4 py-3 text-[15px] font-medium hover:bg-black/5">API 문서</a></li>
+              {API_DOCS && <li><a href="/docs" className="block rounded-sm px-4 py-3 text-[15px] font-medium hover:bg-black/5">API 문서</a></li>}
             </ul>
           </div>
         </div>
