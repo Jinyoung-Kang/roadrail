@@ -1,13 +1,16 @@
 import type { Corridor, Place } from "./types";
 
-/** URL 에 담는 장소: 이름~위도~경도~역코드 */
+/** URL 에 담는 장소: 이름~위도~경도~역코드 — 이름에 '~' 가 있을 수 있어 되읽을 때는 뒤의 세 칸을 뗀다 */
 export function encodePlace(p: Place): string {
   return [p.name, p.lat.toFixed(5), p.lon.toFixed(5), p.stationCode ?? ""].join("~");
 }
 
 export function decodePlace(s: string | string[] | undefined): Place | null {
   if (typeof s !== "string") return null;
-  const [name, lat, lon, code] = s.split("~");
+  const parts = s.split("~");
+  if (parts.length === 3) parts.push("");  // 역코드 칸이 없는 손으로 쓴 링크
+  if (parts.length < 4) return null;
+  const [lat, lon, code] = parts.slice(-3), name = parts.slice(0, -3).join("~");
   const la = Number(lat), lo = Number(lon);
   if (!name || !Number.isFinite(la) || !Number.isFinite(lo)) return null;
   return { name, address: null, lat: la, lon: lo, kind: code ? "STATION" : "PLACE", stationCode: code || null };
