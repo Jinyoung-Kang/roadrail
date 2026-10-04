@@ -101,3 +101,29 @@ async def test_allowance_books_everything_on_the_day_it_was_reserved():
     r = rds.client()
     assert int(await r.get("quota:EX:20261003")) == 3     # 전날: 예약 10 중 쓴 3만 남김
     assert int(await r.get("quota:EX:20261004")) == 5     # 다음 날: 다른 작업의 예약 그대로
+
+
+async def test_sync_across_midnight_does_not_copy_yesterdays_usage_into_today():
+    # 리뷰: 동기화가 DB 행은 D 로 읽고 Redis 키 날짜는 따로 다시 계산해, 그 사이 자정이 지나면
+    # D 의 사용량(95)을 D+1 카운터에 더했다 — GREATEST 로 하루 내내 남아 다음 날 예산을 깎는다
+    import datetime as dt
+
+    from roadrail.core import db
+    from roadrail.core.timeutil import KST
+    from roadrail.scheduler import jobs
+    ticks = iter([dt.datetime(2030, 1, 1, 23, 59, 59, tzinfo=KST)])
+    clock = lambda: next(ticks, dt.datetime(2030, 1, 2, 0, 0, 1, tzinfo=KST))  # noqa: E731 — 첫 호출 뒤 자정을 넘긴다
+    jobs._budget = QuotaBudget(rds.client(), lambda p: 100, clock=clock)
+    r = rds.client()
+    await r.set("quota:EX:20300101", 95)
+    await r.set("quota:used:EX:20300101", 95)
+    await db.execute("DELETE FROM ops.quota_budget WHERE day >= '2030-01-01'")
+    await db.execute("INSERT INTO ops.quota_budget (provider, day, daily_limit, used, reserved) VALUES ('EX', '2030-01-01', 100, 95, 0)")
+    try:
+        await jobs.sync_quota(["EX"])
+        assert int(await r.get("quota:used:EX:20300102") or 0) == 0
+        row = await db.fetchone("SELECT used FROM ops.quota_budget WHERE provider = 'EX' AND day = '2030-01-02'")
+        assert row is None or row["used"] == 0
+    finally:
+        await db.execute("DELETE FROM ops.quota_budget WHERE day >= '2030-01-01'")
+        jobs._budget = None

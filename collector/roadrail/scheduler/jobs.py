@@ -234,10 +234,12 @@ async def sync_quota(providers) -> None:
             b.limit_of(p)
         except KeyError:
             continue
-        row = await db.fetchone("SELECT used FROM ops.quota_budget WHERE provider = %s AND day = %s", (p, b.clock().date()))
-        if row and await b.restore(p, row["used"]):
+        now = b.clock()  # 날짜는 한 번만 — 읽기 · 복원 · 저장이 같은 날이어야 자정에 전날 값이 다음 날로 넘어가지 않는다
+        day = now.strftime("%Y%m%d")
+        row = await db.fetchone("SELECT used FROM ops.quota_budget WHERE provider = %s AND day = %s", (p, now.date()))
+        if row and await b.restore(p, row["used"], day):
             log(logger, "예산 카운터 복원", provider=p, used=row["used"])
-        s = await b.snapshot(p)
+        s = await b.snapshot(p, day)
         await db.execute("""
             INSERT INTO ops.quota_budget (provider, day, daily_limit, used, reserved, updated_at)
             VALUES (%s, %s, %s, %s, %s, now())

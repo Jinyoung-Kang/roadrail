@@ -89,18 +89,20 @@ class QuotaBudget:
         await self.r.incrby(key, n)
         await self.r.expire(key, 172800)
 
-    async def restore(self, provider: str, used_floor: int) -> bool:
+    async def restore(self, provider: str, used_floor: int, day: str | None = None) -> bool:
         """실제 호출 수가 확정값(used_floor)보다 적으면 — Redis 가 다시 떠 카운터가 비었다 — 확정값을 두 카운터에 더한다.
-        재시작 뒤 새로 쓴 몫은 그대로 남는다. 한 번의 Lua 라 동시에 불려도 한 번만 더해진다."""
+        재시작 뒤 새로 쓴 몫은 그대로 남는다. 한 번의 Lua 라 동시에 불려도 한 번만 더해진다.
+        day 는 확정값을 읽은 날 — 따로 다시 계산하면 그 사이 자정이 지날 때 전날 사용량이 다음 날 카운터로 간다."""
         if used_floor <= 0:
             return False
-        return bool(await self._restore(keys=[self._k(provider), self._ku(provider)], args=[used_floor]))
+        return bool(await self._restore(keys=[self._k(provider, day), self._ku(provider, day)], args=[used_floor]))
 
-    async def snapshot(self, provider: str) -> dict:
-        reserved_total = int(await self.r.get(self._k(provider)) or 0)
-        used = int(await self.r.get(self._ku(provider)) or 0)
+    async def snapshot(self, provider: str, day: str | None = None) -> dict:
+        day = day or self._day()
+        reserved_total = int(await self.r.get(self._k(provider, day)) or 0)
+        used = int(await self.r.get(self._ku(provider, day)) or 0)
         limit = self.limit_of(provider)
-        return {"provider": provider, "day": self.clock().date().isoformat(), "limit": limit,
+        return {"provider": provider, "day": dt.datetime.strptime(day, "%Y%m%d").date().isoformat(), "limit": limit,
                 "used": used, "reserved": max(reserved_total - used, 0), "remaining": max(limit - reserved_total, 0)}
 
     async def allowance(self, provider: str, estimate: int) -> Allowance:
