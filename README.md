@@ -329,7 +329,7 @@ roadrail/
 ├─ web/                   # pages(index=출발지→도착지 · road · rail · forecast · ops) · components · lib · e2e
 ├─ db/migrations/         # V1 스키마·파티션 함수 · V2 ref · V3 ts · V4 rail/env/ana · V5 ops · V6 역 쌍(od_trips) · V7 하루 시간표(day_stops)
 │                          #   V8 선로 경로 · 오류 상세 · V9 용어 · V10 돌발 좌표 · V11 TAGO 시간표 · V12 시간표 완전성 · 철도 수집 시각 · V13 실제 비교만(od_trips_real)
-│                          #   V14 성능(JIT 끔 · 역 쌍 해시 조인) · V15 공휴일 달력 · V16 돌발 출처(UTIC)
+│                          #   V14 성능(JIT 끔 · 역 쌍 해시 조인) · V15 공휴일 달력 · V16 돌발 출처(UTIC) · V17 값 영역 제약
 ├─ seed/corridors.yaml    # 길 정의 (tools/build_seed.py 생성)
 ├─ fixtures/              # 공급자 응답 fixture · 예측 골든 케이스(언어 공유)
 ├─ tools/                 # smoke.py · build_seed.py · bench.py(make bench) (표준 라이브러리만)
