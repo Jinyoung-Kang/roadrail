@@ -34,6 +34,21 @@ return cur - n
 """
 
 
+RESTORE_LUA = """
+local used = tonumber(redis.call('GET', KEYS[2]) or '0')
+local floor = tonumber(ARGV[1])
+if used >= floor then return 0 end
+redis.call('INCRBY', KEYS[1], floor)
+redis.call('EXPIRE', KEYS[1], 172800)
+redis.call('INCRBY', KEYS[2], floor)
+redis.call('EXPIRE', KEYS[2], 172800)
+return 1
+"""
+
+# 예산 확정값을 저장 · 복원하는 공급자 — 수집기가 부르는 것과 API 만 부르는 것(TAGO · TAGO_TRAIN · KAKAO_LOCAL)
+PROVIDERS = ("EX", "KORAIL", "KMA", "AIRKOREA", "KAKAO", "KAKAO_LOCAL", "OSM", "KASI", "UTIC", "TAGO", "TAGO_TRAIN")
+
+
 class QuotaExhausted(Exception):
     def __init__(self, provider: str, needed: int, remaining: int):
         super().__init__(f"{provider} 일일 예산 부족 (필요 {needed}, 남음 {remaining})")
@@ -47,6 +62,7 @@ class QuotaBudget:
         self.clock = clock
         self._reserve = redis.register_script(RESERVE_LUA)
         self._refund = redis.register_script(REFUND_LUA)
+        self._restore = redis.register_script(RESTORE_LUA)
 
     def _day(self) -> str:
         return self.clock().strftime("%Y%m%d")
@@ -72,6 +88,13 @@ class QuotaBudget:
         key = self._ku(provider)
         await self.r.incrby(key, n)
         await self.r.expire(key, 172800)
+
+    async def restore(self, provider: str, used_floor: int) -> bool:
+        """실제 호출 수가 확정값(used_floor)보다 적으면 — Redis 가 다시 떠 카운터가 비었다 — 확정값을 두 카운터에 더한다.
+        재시작 뒤 새로 쓴 몫은 그대로 남는다. 한 번의 Lua 라 동시에 불려도 한 번만 더해진다."""
+        if used_floor <= 0:
+            return False
+        return bool(await self._restore(keys=[self._k(provider), self._ku(provider)], args=[used_floor]))
 
     async def snapshot(self, provider: str) -> dict:
         reserved_total = int(await self.r.get(self._k(provider)) or 0)

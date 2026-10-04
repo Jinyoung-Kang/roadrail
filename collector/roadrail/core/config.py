@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     quota_osm: int = 60              # Overpass (공개 미러 공정 사용 — 한 번 실행에 최대 24회)
     quota_kasi: int = 100            # 특일 정보 (한 번 실행에 3회)
     quota_utic: int = 1000           # UTIC 돌발정보 (5분마다 1회 = 하루 288회)
+    quota_tago: int = 9000           # API 가 쓰는 공급자 — 예산 확정값 저장 · 복원만 (application.yml 과 같은 값)
+    quota_tago_train: int = 9000
 
     on_time_threshold_min: int = 5
     forecast_tau_min: int = 90
@@ -49,7 +51,7 @@ class Settings(BaseSettings):
             "EX": self.quota_ex, "KORAIL": self.quota_korail, "KMA": self.quota_kma,
             "AIRKOREA": self.quota_airkorea, "KAKAO": self.quota_kakao,
             "KAKAO_LOCAL": self.quota_kakao_local, "OSM": self.quota_osm, "KASI": self.quota_kasi,
-            "UTIC": self.quota_utic,
+            "UTIC": self.quota_utic, "TAGO": self.quota_tago, "TAGO_TRAIN": self.quota_tago_train,
         }[provider]
 
     def secrets(self) -> list[str]:

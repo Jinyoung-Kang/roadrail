@@ -17,8 +17,8 @@ from ..core.timeutil import KST, now_kst
 from ..pipeline import rail
 from ..pipeline.analysis import ensure_partitions
 from ..pipeline.seed import apply_seed
-from ..providers.base import CONCURRENCY
 from .jobs import JOBS, new_id, recover_after_restart, run_backfill, run_job
+from .quota import PROVIDERS
 
 logger = logging.getLogger(__name__)
 _tasks: set[asyncio.Task] = set()   # 상주 작업(heartbeat · 명령 소비) + 작업 실행
@@ -164,7 +164,7 @@ async def main() -> None:
     await wait_for_schema()
     await apply_seed()
     await ensure_partitions()
-    await recover_after_restart(list(CONCURRENCY))
+    await recover_after_restart(list(PROVIDERS))
     sched = AsyncIOScheduler(timezone=KST)
     n = await schedule_jobs(sched) if s.scheduler_enabled else 0
     sched.start()
