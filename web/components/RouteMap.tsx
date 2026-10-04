@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { frameSignature, layersSignature, type MapLayers, type MapMarker } from "@/lib/map";
+import { sdkLoader } from "@/lib/sdkLoader";
 
 /* 카카오 지도 JS SDK — 브라우저에 노출되는 유일한 키(NEXT_PUBLIC_KAKAO_JS_KEY). 실패하면 SVG 노선도로 대체. */
 declare global { interface Window { kakao: any } }
 const KEY = process.env.NEXT_PUBLIC_KAKAO_JS_KEY;
-let loader: Promise<any> | null = null;
 
 export const ROAD = "#2a78d6", RAIL = "#eb6834";
 
@@ -34,22 +34,22 @@ function markerNode(m: MapMarker): HTMLElement {
   return box;
 }
 
+const loadSdk = sdkLoader({
+  sdk: () => window.kakao,
+  appendScript: (src) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    document.head.appendChild(s);
+    return s;
+  },
+  setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+}, `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KEY}&autoload=false`);
+
 function loadKakao(): Promise<any> {
   if (typeof window === "undefined") return Promise.reject(new Error("ssr"));
   if (!KEY) return Promise.reject(new Error("NEXT_PUBLIC_KAKAO_JS_KEY 없음"));
-  if (window.kakao?.maps?.LatLng) return Promise.resolve(window.kakao);
-  if (!loader) {
-    loader = new Promise((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KEY}&autoload=false`;
-      s.async = true;
-      s.onload = () => (window.kakao?.maps ? window.kakao.maps.load(() => resolve(window.kakao)) : reject(new Error("kakao 로드 실패")));
-      s.onerror = () => reject(new Error("kakao 스크립트 로드 실패 (도메인 등록 확인)"));
-      document.head.appendChild(s);
-      setTimeout(() => reject(new Error("kakao 로드 시간 초과")), 8000);
-    }).catch((e) => { loader = null; throw e; });
-  }
-  return loader;
+  return loadSdk();
 }
 
 /**
