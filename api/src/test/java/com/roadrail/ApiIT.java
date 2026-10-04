@@ -457,4 +457,38 @@ class ApiIT extends IntegrationTest {
                     .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
         }
     }
+
+    @Test
+    void qa05_aBackfillForARangeAlreadyQueuedIsRefusedNotQueuedAgain() throws Exception {
+        // QA-05: 같은 기간 백필을 연달아(또는 동시에) 요청하면 모두 202 로 대기열에 쌓였다 — 실행 단계에서 하나만 돌고 나머지는
+        // FAILED 로 남거나, 순서대로 돌며 같은 코레일 호출을 되풀이할 수 있다. 겹치는 기간이 대기 · 실행 중이면 409
+        LocalDate y = LocalDate.now(KST).minusDays(1);
+        String body = "{\"provider\":\"KORAIL\",\"job\":\"rail_daily\",\"from\":\"%s\",\"to\":\"%s\"}";
+        mvc.perform(post("/api/v1/admin/backfill").header("X-Admin-Token", ADMIN).contentType(MediaType.APPLICATION_JSON)
+                        .content(body.formatted(y.minusDays(5), y.minusDays(3))))
+                .andExpect(status().isAccepted());
+        mvc.perform(post("/api/v1/admin/backfill").header("X-Admin-Token", ADMIN).contentType(MediaType.APPLICATION_JSON)
+                        .content(body.formatted(y.minusDays(4), y)))      // 겹침
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("JOB_RUNNING"));
+        mvc.perform(post("/api/v1/admin/backfill").header("X-Admin-Token", ADMIN).contentType(MediaType.APPLICATION_JSON)
+                        .content(body.formatted(y.minusDays(2), y)))      // 겹치지 않음
+                .andExpect(status().isAccepted());
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT count(*) FROM ops.backfill", Integer.class)).isEqualTo(2);
+    }
+
+    @Test
+    void qa05_concurrentIdenticalBackfillsQueueOnlyOne() throws Exception {
+        // QA-05: QA 스택 실측 — 같은 기간 백필 5건을 동시에 보내면 5건 모두 202 · 대기열 5건
+        LocalDate y = LocalDate.now(KST).minusDays(1);
+        String body = "{\"provider\":\"KORAIL\",\"job\":\"rail_daily\",\"from\":\"%s\",\"to\":\"%s\"}".formatted(y.minusDays(8), y.minusDays(7));
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(5)) {
+            var codes = pool.invokeAll(java.util.Collections.nCopies(5, (java.util.concurrent.Callable<Integer>) () ->
+                    mvc.perform(post("/api/v1/admin/backfill").header("X-Admin-Token", ADMIN).contentType(MediaType.APPLICATION_JSON).content(body))
+                            .andReturn().getResponse().getStatus()));
+            var list = new java.util.ArrayList<Integer>();
+            for (var c : codes) list.add(c.get());
+            org.assertj.core.api.Assertions.assertThat(list).containsOnlyOnce(202).containsOnly(202, 409);
+        }
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT count(*) FROM ops.backfill", Integer.class)).isEqualTo(1);
+    }
 }
