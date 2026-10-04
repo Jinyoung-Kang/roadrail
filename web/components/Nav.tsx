@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const LINKS = [
   { href: "/", label: "판단" },
@@ -22,6 +22,17 @@ export default function Nav({ overlay = false }: { overlay?: boolean }) {
     return () => window.removeEventListener("scroll", on);
   }, []);
   useEffect(() => setOpen(false), [router.asPath]);
+  // 드로어: 열면 닫기 버튼으로 초점, Esc 로 닫으면 메뉴 버튼으로 돌려준다 (WEB-14)
+  const menuBtn = useRef<HTMLButtonElement>(null);
+  const closeBtn = useRef<HTMLButtonElement>(null);
+  const close = () => { setOpen(false); menuBtn.current?.focus(); };
+  useEffect(() => {
+    if (!open) return;
+    closeBtn.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
   const solid = !overlay || scrolled;
   const active = (l: (typeof LINKS)[number]) =>
     l.match ? router.pathname.startsWith(l.match) : router.pathname === l.href;
@@ -40,16 +51,16 @@ export default function Nav({ overlay = false }: { overlay?: boolean }) {
           </nav>
           <div className="flex items-center gap-1">
             <a href="/docs" className="nav-link hidden lg:inline-flex">API</a>
-            <button className="nav-link lg:hidden" onClick={() => setOpen(true)} aria-expanded={open}>메뉴</button>
+            <button ref={menuBtn} className="nav-link lg:hidden" onClick={() => setOpen(true)} aria-expanded={open} aria-haspopup="dialog">메뉴</button>
           </div>
         </div>
       </header>
       {open && (
-        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-xs" onClick={() => setOpen(false)} />
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="메뉴">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-xs" onClick={close} />
           <div className="absolute right-0 top-0 h-full w-[300px] bg-white px-6 pt-5 shadow-xl">
             <div className="flex justify-end">
-              <button className="nav-link" onClick={() => setOpen(false)} aria-label="닫기">✕</button>
+              <button ref={closeBtn} className="nav-link" onClick={close} aria-label="닫기">✕</button>
             </div>
             <ul className="mt-4 space-y-1">
               {LINKS.map((l) => (

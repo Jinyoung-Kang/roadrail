@@ -220,6 +220,20 @@ test("모바일: 메뉴 드로어", async ({ page }) => {
   await expect(page.getByRole("dialog").getByRole("link", { name: "철도 분석" })).toBeVisible();
 });
 
+test("접근성: 메뉴 드로어는 열면 안으로 초점, Esc 로 닫고 메뉴 버튼으로 · 지도는 이름 있는 영역 (WEB-14)", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const menu = page.getByRole("button", { name: "메뉴" });
+  await menu.click();
+  const dialog = page.getByRole("dialog", { name: "메뉴" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "닫기" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(menu).toBeFocused();
+  await expect(page.getByRole("region", { name: "경로 지도 (확대·이동 가능)" })).toBeAttached();
+});
+
 test("보안 헤더(CSP 등) · 콘솔 오류 없음 · 카카오 지도는 CSP 안에서 동작", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });

@@ -152,7 +152,7 @@ export default function RouteMap({ layers, interactive = false, className = "", 
   if (failed || !KEY) return <SvgRoute layers={layers} className={className} note={failed ?? "카카오 JS 키 없음"} />;
   // 카카오 SDK 가 컨테이너를 position: relative 로 바꾸므로 배치는 바깥 래퍼가, 쌓임 맥락은 isolate 가 맡는다
   return (
-    <div className={`${className} isolate ${interactive ? "" : "rr-map-muted"}`} aria-label={label}
+    <div className={`${className} isolate ${interactive ? "" : "rr-map-muted"}`} role="region" aria-label={label}
          onMouseLeave={() => interactive && unlocked && lock(true)}>
       <div ref={ref} className="h-full w-full" />
       {interactive && (
@@ -178,7 +178,7 @@ export function SvgRoute({ layers, className, note }: { layers: MapLayers | null
   const py = (lat: number) => H - pad - (lat - y0) * s - ((H - 2 * pad) - (y1 - y0) * s) / 2;
   return (
     <div className={`${className} bg-linear-to-b from-[#e9eef3] to-[#f7f8f9]`} title={note}>
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full" preserveAspectRatio="xMidYMid meet" aria-label="노선도">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full" preserveAspectRatio="xMidYMid meet" role="img" aria-label="노선도">
         {layers.lines.map((l, i) => (
           <polyline key={i} points={l.path.map(([la, lo]) => `${px(lo)},${py(la)}`).join(" ")} fill="none" stroke={l.color}
                     strokeWidth={l.weight ?? 4} strokeDasharray={l.dashed ? "10 8" : undefined} strokeLinejoin="round" strokeLinecap="round" />
