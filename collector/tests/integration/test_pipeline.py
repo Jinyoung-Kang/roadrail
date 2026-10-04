@@ -566,3 +566,18 @@ async def test_gap_that_survives_a_full_refetch_is_marked_no_samples_and_not_ret
     ctx.job_name = "road_gap_backfill"
     await road.backfill_gaps(ctx)
     assert state["calls"] == []                            # 다시 받지 않는다
+
+
+async def test_volume_keeps_the_first_collected_at_when_seen_again(seeded, fixtures_dir):
+    # L1: 전국 교통량은 15분 슬롯을 네 번씩 다시 준다. 다시 받을 때마다 collected_at 을 갱신해
+    # '공개 지연'(처음 본 시각 − 슬롯)이 152분으로 부풀려졌다(실제 약 80분)
+    body = json.loads((fixtures_dir / "ex" / "traffic_all.json").read_text())
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body)
+    await db.execute("TRUNCATE ts.road_volume")
+    await road.collect_volume(ctx_with(handler))
+    first = await db.fetchone("SELECT min(collected_at) AS a, max(collected_at) AS b FROM ts.road_volume")
+    await road.collect_volume(ctx_with(handler))
+    again = await db.fetchone("SELECT min(collected_at) AS a, max(collected_at) AS b FROM ts.road_volume")
+    assert again == first

@@ -291,8 +291,10 @@ async def collect_volume(ctx: JobContext) -> int:
     rows = ex.parse_traffic_all(await ex.traffic_all(ctx))
     await db.executemany("""
         INSERT INTO ts.road_volume (slot_ts, ex_div_code, tcs_type, car_type, volume) VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT (slot_ts, ex_div_code, tcs_type, car_type) DO UPDATE SET volume = EXCLUDED.volume, collected_at = now()
+        ON CONFLICT (slot_ts, ex_div_code, tcs_type, car_type) DO UPDATE SET volume = EXCLUDED.volume
         """, [(r["slot_ts"], r["ex_div_code"], r["tcs_type"], r["car_type"], r["volume"]) for r in rows])
+    # collected_at = 처음 저장한 시각(갱신하지 않음) — 원천은 같은 15분 슬롯을 네 번씩 다시 주므로, 갱신하면
+    # '공개 지연'(처음 본 시각 − 슬롯)이 부풀려졌다(152분, 실제 약 80분 · L1)
     ctx.rows += len(rows)
     return len(rows)
 
