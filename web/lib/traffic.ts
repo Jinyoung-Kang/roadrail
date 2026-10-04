@@ -1,4 +1,4 @@
-import type { MapLine } from "@/components/RouteMap";   // 타입만 — 지도 모듈을 끌고 오지 않는다
+import type { MapLine } from "./map";
 import { C } from "./palette";
 import type { TrafficRun } from "./types";
 

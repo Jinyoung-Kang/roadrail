@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { layersSignature, type MapLayers, type MapMarker } from "@/lib/map";
 
 /* 카카오 지도 JS SDK — 브라우저에 노출되는 유일한 키(NEXT_PUBLIC_KAKAO_JS_KEY). 실패하면 SVG 노선도로 대체. */
 declare global { interface Window { kakao: any } }
@@ -7,10 +8,7 @@ let loader: Promise<any> | null = null;
 
 export const ROAD = "#2a78d6", RAIL = "#eb6834";
 
-export interface MapLine { path: [number, number][]; color: string; dashed?: boolean; weight?: number }
-/** warn = 돌발 안내 (삼각형) */
-export interface MapMarker { lat: number; lon: number; label?: string; color: string; ring?: boolean; size?: number; warn?: boolean }
-export interface MapLayers { lines: MapLine[]; markers: MapMarker[] }
+export type { MapLayers, MapLine, MapMarker } from "@/lib/map";
 
 /**
  * 지도 표식 — HTML 문자열이 아니라 DOM 노드로 만든다.
@@ -70,7 +68,7 @@ export default function RouteMap({ layers, interactive = false, className = "", 
     const m = mapRef.current;
     if (m) { m.setDraggable(!on); m.setZoomable(!on); }
   };
-  const sig = layers ? JSON.stringify(layers).length + ":" + layers.lines.length + ":" + layers.markers.map((m) => m.lat.toFixed(3)).join() : "";
+  const sig = layersSignature(layers);
 
   useEffect(() => {
     if (!layers || !ref.current) return;
