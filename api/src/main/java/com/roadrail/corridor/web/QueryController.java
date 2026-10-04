@@ -3,10 +3,8 @@ package com.roadrail.corridor.web;
 import com.roadrail.shared.Times;
 import com.roadrail.corridor.app.CorridorService;
 import com.roadrail.env.app.EnvService;
-import com.roadrail.ops.app.OpsService;
 import com.roadrail.rail.app.RailService;
 import com.roadrail.env.model.EnvDtos;
-import com.roadrail.ops.model.OpsDtos;
 import com.roadrail.rail.model.RailDtos;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -23,17 +21,16 @@ import java.time.OffsetDateTime;
 @RequestMapping("/api/v1")
 @Validated
 @Tag(name = "analysis", description = "정시율 · 돌발 · 수집 상태")
+/** 길 단위 분석 조회 — 길의 역 쌍 정시율 · 돌발 안내 */
 public class QueryController {
     private final CorridorService corridors;
     private final RailService rail;
     private final EnvService env;
-    private final OpsService ops;
 
-    public QueryController(CorridorService corridors, RailService rail, EnvService env, OpsService ops) {
+    public QueryController(CorridorService corridors, RailService rail, EnvService env) {
         this.corridors = corridors;
         this.rail = rail;
         this.env = env;
-        this.ops = ops;
     }
 
     @GetMapping("/rail/punctuality")
@@ -56,11 +53,5 @@ public class QueryController {
                                        @RequestParam(defaultValue = "50") @Min(1) @Max(200) int limit) {
         if (corridorId != null) corridors.require(corridorId);
         return env.incidents(corridorId, since != null ? since : Times.now().minusHours(24), limit);
-    }
-
-    @GetMapping("/ops/collect-status")
-    @Operation(summary = "수집 상태 (FR-701) — 작업별 최근 실행 · 24h 완전성 · 예산 · 공개 지연 · 최근 오류")
-    public OpsDtos.Status collectStatus() {
-        return ops.status();
     }
 }

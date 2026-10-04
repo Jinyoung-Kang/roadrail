@@ -3,7 +3,7 @@ package com.roadrail.ops.app;
 import com.roadrail.shared.ApiException;
 import com.roadrail.shared.ErrorCode;
 import com.roadrail.shared.Times;
-import com.roadrail.shared.web.TraceIdFilter;
+import com.roadrail.shared.Ids;
 import com.roadrail.ops.model.OpsDtos.*;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -39,7 +39,7 @@ public class AdminService {
                 .query(Boolean.class).single();
         if (!known) throw new ApiException(ErrorCode.NOT_FOUND, "작업 '" + job + "' 이 없습니다.");
         ensureNotRunning(job);
-        String id = TraceIdFilter.ulid();
+        String id = Ids.ulid();
         redis.opsForStream().add(StreamRecords.string(Map.of("type", "run_job", "job", job, "requestId", id)).withStreamKey(STREAM));
         return new Accepted(id, job, "QUEUED");
     }
@@ -72,7 +72,7 @@ public class AdminService {
                     "KORAIL 일일 예산이 부족합니다 (예상 " + planned + "건, 남은 예산 " + remaining + "건).");
         }
         ensureNotRunning("rail_backfill");
-        String id = TraceIdFilter.ulid();
+        String id = Ids.ulid();
         jdbc.sql("""
                 INSERT INTO ops.backfill (backfill_id, provider, job_name, from_date, to_date, planned_calls)
                 VALUES (:id, 'KORAIL', 'rail_daily', :f, :t, :p)""")
