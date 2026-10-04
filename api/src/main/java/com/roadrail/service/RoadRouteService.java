@@ -39,6 +39,7 @@ public class RoadRouteService {
         var fAvoid = CompletableFuture.supplyAsync(() -> kakao.route(from.lat(), from.lon(), to.lat(), to.lon(), depart, "motorway", true), exec);
         List<CompletableFuture<ProfilePoint>> fProfile = new ArrayList<>();
         for (int off : PROFILE_OFFSETS_MIN) {
+            if (off == 0) continue;   // 0분 = 추천 경로와 같은 출발 — 따로 부르지 않고 추천 경로의 소요를 쓴다
             OffsetDateTime t = depart.plusMinutes(off);
             fProfile.add(CompletableFuture.supplyAsync(() -> {
                 var r = kakao.route(from.lat(), from.lon(), to.lat(), to.lon(), t, null, false);
@@ -48,7 +49,9 @@ public class RoadRouteService {
         long deadline = System.nanoTime() + Duration.ofSeconds(8).toNanos();  // 병렬 조회 11건이 마감을 공유 (건마다 8초씩 더해지지 않게)
         var rec = TripService.join(fRec, TripService.left(deadline));
         var avoid = TripService.join(fAvoid, TripService.left(deadline));
-        List<ProfilePoint> profile = fProfile.stream().map(f -> TripService.join(f, TripService.left(deadline))).filter(Objects::nonNull).toList();
+        List<ProfilePoint> profile = new ArrayList<>();
+        profile.add(new ProfilePoint(depart, 0, rec == null ? null : rec.durationSec()));
+        fProfile.stream().map(f -> TripService.join(f, TripService.left(deadline))).filter(Objects::nonNull).forEach(profile::add);
         ProfilePoint best = profile.stream().filter(p -> p.durationSec() != null).min(Comparator.comparingInt(ProfilePoint::durationSec)).orElse(null);
         var obs = trips.observed(from, to, depart, Times.now());
         return new Analysis(from, to, Math.round(KmaGrid.km(from.lat(), from.lon(), to.lat(), to.lon()) * 10) / 10.0, depart,
