@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { browserEnv, createQuery, type Query, type QueryState } from "./query";
 import type { ApiError } from "./types";
 
 export class HttpError extends Error {
@@ -21,35 +22,29 @@ export async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-/** 간단한 조회 훅 — url 이 null 이면 호출하지 않는다. refreshMs 가 있으면 주기적으로 다시 부른다. */
+/** 간단한 조회 훅 — url 이 null 이면 호출하지 않는다. refreshMs 가 있으면 주기적으로 다시 부른다.
+ *  상태 · 순서 처리는 React 밖의 lib/query.ts 가 맡는다. */
 export function useApi<T>(url: string | null, refreshMs?: number) {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<HttpError | Error | null>(null);
-  const [loading, setLoading] = useState(false);
-  const seq = useRef(0);
+  const [state, setState] = useState<QueryState<T>>({ data: null, error: null, loading: false });
+  const query = useRef<Query | null>(null);
+
+  useEffect(() => {
+    const q = createQuery<T>((u) => getJson<T>(u), setState, browserEnv());
+    query.current = q;
+    return () => { q.dispose(); query.current = null; };
+  }, []);
 
   const load = useCallback(async () => {
-    if (!url) return;
-    const my = ++seq.current;
-    setLoading(true);
-    try {
-      const d = await getJson<T>(url);
-      if (my === seq.current) { setData(d); setError(null); }
-    } catch (e) {
-      if (my === seq.current) setError(e as Error);
-    } finally {
-      if (my === seq.current) setLoading(false);
-    }
+    if (url) await query.current?.load(url);
   }, [url]);
 
   useEffect(() => {
     load();
-    if (!refreshMs) return;
-    const id = setInterval(load, refreshMs);
-    return () => clearInterval(id);
-  }, [load, refreshMs]);
+    if (url && refreshMs) query.current?.every(url, refreshMs);
+    return () => query.current?.stop();
+  }, [load, url, refreshMs]);
 
-  return { data, error, loading, reload: load };
+  return { data: state.data, error: state.error, loading: state.loading, reload: load };
 }
 
 export const qs = (p: Record<string, string | number | undefined | null>) =>
