@@ -1,5 +1,6 @@
 package com.roadrail.corridor.data;
 
+import com.roadrail.corridor.model.CorridorDtos.CorridorMatch;
 import com.roadrail.corridor.model.CorridorDtos.EnvPoint;
 import com.roadrail.corridor.model.CorridorDtos.Point;
 import com.roadrail.corridor.model.CorridorDtos.RailPair;
@@ -130,10 +131,9 @@ public class CorridorRepository {
     }
 
     /** 두 지점과 맞는 길 · 방향 */
-    public record EndsMatch(String corridorId, String direction) {}
 
     /** 두 지점이 운영 중인 길의 끝(출발 · 도착 도시 역)과 각각 30km 안인 길 · 방향 중 가장 가까운 것 */
-    public Optional<EndsMatch> matchByEnds(double fromLat, double fromLon, double toLat, double toLon) {
+    public Optional<CorridorMatch> matchByEnds(double fromLat, double fromLon, double toLat, double toLon) {
         return jdbc.sql("""
                 WITH p AS (
                   SELECT o.corridor_id, o.lat AS olat, o.lon AS olon, d.lat AS dlat, d.lon AS dlon
@@ -146,6 +146,6 @@ public class CorridorRepository {
                   SELECT corridor_id, 'UP', greatest(ops.km(dlat, dlon, :fla, :flo), ops.km(olat, olon, :tla, :tlo)) FROM p) x
                 WHERE m <= 30 ORDER BY m LIMIT 1""")
                 .param("fla", fromLat).param("flo", fromLon).param("tla", toLat).param("tlo", toLon)
-                .query((rs, i) -> new EndsMatch(rs.getString(1), rs.getString(2))).optional();
+                .query((rs, i) -> new CorridorMatch(rs.getString(1), rs.getString(2))).optional();
     }
 }

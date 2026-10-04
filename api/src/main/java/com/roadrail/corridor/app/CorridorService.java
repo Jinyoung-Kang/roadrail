@@ -26,11 +26,10 @@ public class CorridorService {
     }
 
     /** 두 지점과 맞는 길 · 방향 */
-    public record Match(String corridorId, String direction) {}
 
     /** 두 지점이 운영 중인 길의 끝(출발 · 도착 도시 역)과 각각 30km 안이면 그 길 · 방향 — 여럿이면 가장 가까운 것 */
-    public Optional<Match> matchByEnds(double fromLat, double fromLon, double toLat, double toLon) {
-        return repo.matchByEnds(fromLat, fromLon, toLat, toLon).map(m -> new Match(m.corridorId(), m.direction()));
+    public Optional<CorridorMatch> matchByEnds(double fromLat, double fromLon, double toLat, double toLon) {
+        return repo.matchByEnds(fromLat, fromLon, toLat, toLon);
     }
 
     public static String dir(String d) {
