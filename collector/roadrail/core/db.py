@@ -12,9 +12,11 @@ _pool: AsyncConnectionPool | None = None
 async def pool() -> AsyncConnectionPool:
     global _pool
     if _pool is None:
+        # check: 내주기 전에 연결이 살아 있는지 본다 — DB 가 다시 시작되면 쉬던 연결은 서버가 이미 끊었다(QA-10)
         _pool = AsyncConnectionPool(
             settings().database_url, min_size=1, max_size=8, open=False,
             kwargs={"row_factory": dict_row, "options": "-c timezone=Asia/Seoul"},
+            check=AsyncConnectionPool.check_connection,
         )
         await _pool.open(wait=True, timeout=30)
     return _pool
