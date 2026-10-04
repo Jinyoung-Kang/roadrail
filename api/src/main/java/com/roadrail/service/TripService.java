@@ -1,5 +1,7 @@
 package com.roadrail.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.roadrail.external.KakaoMobilityClient;
 import com.roadrail.common.JsonCache;
 import com.roadrail.common.ApiException;
@@ -38,6 +40,7 @@ import java.util.concurrent.*;
  */
 @Service
 public class TripService {
+    private static final Logger log = LoggerFactory.getLogger(TripService.class);
     static final double MIN_RAIL_KM = 15;
     static final Duration DEADLINE = Duration.ofMillis(750);
     /** 응답에 싣는 경로 돌발 목록의 상한 (최근 순) — 건수는 상한과 무관하게 전체를 경고 · incidentTotal 에 */
@@ -76,6 +79,28 @@ public class TripService {
 
     static Duration left(long deadlineNanos) {
         return Duration.ofNanos(Math.max(deadlineNanos - System.nanoTime(), 1_000_000));
+    }
+
+    /** 보조 조회의 결과 — 값이 없을 때 '정말 없음'인지(완료) '아직 · 실패'인지(incomplete) 구분한다 */
+    record Part<T>(T value, boolean incomplete) {}
+
+    /**
+     * 보조 조회(철도 · 길 매칭 · 날씨)를 마감까지 기다린다. 늦거나 실패하면 비워 두되 incomplete — 카드는 pending 으로 나가
+     * 캐시하지 않고 화면이 다시 묻는다. 예전에는 늦으면 '없음'과 같아져 "열차 없음" 결론을 캐시했고,
+     * 일시적 DB 오류 하나가 /trip 전체를 500 으로 만들었다(RVW-01).
+     */
+    static <T> Part<T> part(CompletableFuture<T> f, Duration wait, String what) {
+        try {
+            return new Part<>(f.get(wait.toMillis(), TimeUnit.MILLISECONDS), false);
+        } catch (TimeoutException e) {
+            return new Part<>(null, true);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new Part<>(null, true);
+        } catch (ExecutionException e) {
+            log.warn("{} 조회 실패 — 비워 두고 다시 묻게 함: {}", what, e.getCause().getClass().getSimpleName());
+            return new Part<>(null, true);
+        }
     }
 
     static <T> T join(CompletableFuture<T> f, Duration wait) {
@@ -137,11 +162,16 @@ public class TripService {
                 pending, "KAKAO_FUTURE_DIRECTIONS");
 
         // 시작 시각 기준 마감 — 앞의 대기가 길어도 뒤의 대기가 그만큼 더해지지 않는다(예전: 3초 + 4초)
-        Observed obs = join(fObs, left(started + Duration.ofSeconds(3).toNanos()));             // DB 만 — 넉넉히
-        JourneyDtos.Plan railOpt = join(fRail, left(started + Duration.ofSeconds(4).toNanos()));  // DB + 카카오 다중 길찾기 (캐시)
-        var origin = join(fOrigin, left(deadline));
-        var dest = join(fDest, left(deadline));
+        var obsPart = part(fObs, left(started + Duration.ofSeconds(3).toNanos()), "길 매칭");              // DB 만 — 넉넉히
+        var railPart = part(fRail, left(started + Duration.ofSeconds(4).toNanos()), "기차 여정");         // DB + 카카오 다중 길찾기 (캐시)
+        var originPart = part(fOrigin, left(deadline), "출발지 날씨");
+        var destPart = part(fDest, left(deadline), "도착지 날씨");
+        Observed obs = obsPart.value();
+        JourneyDtos.Plan railOpt = railPart.value();
+        var origin = originPart.value();
+        var dest = destPart.value();
         boolean envPending = origin == null || dest == null;
+        boolean incomplete = obsPart.incomplete() || railPart.incomplete();
         Map<String, NowDtos.PointEnv> envMap = new LinkedHashMap<>();
         envMap.put("origin", origin != null ? origin : new NowDtos.PointEnv(from.name(), null, null, null, null, null, null, null, null, null));
         envMap.put("dest", dest != null ? dest : new NowDtos.PointEnv(to.name(), null, null, null, null, null, null, null, null, null));
@@ -178,7 +208,7 @@ public class TripService {
         if (km < MIN_RAIL_KM) {
             decision = new DecisionRule.Result(decision.rule(), "CAR", "가까운 거리(" + km + "km)라 기차 비교는 하지 않습니다.",
                     decision.carTotalMin(), null, null, decision.reasons(), decision.warnings());
-        } else if (dtrain == null && car.durationSec() != null) {
+        } else if (dtrain == null && car.durationSec() != null && !railPart.incomplete()) {  // 계산 중이면 '열차 없음'이 아니다
             List<String> r = new ArrayList<>(decision.reasons().stream().filter(x -> !x.contains("데이터가 없어 한쪽만")).toList());
             r.add(railOpt == null || railOpt.note() == null ? "두 지점 근처 역을 잇는 열차가 없습니다" : railOpt.note());
             decision = new DecisionRule.Result(decision.rule(), "CAR", "이어지는 열차가 없어 자동차만 비교합니다.",
@@ -197,7 +227,7 @@ public class TripService {
                 + (accessMin == null ? "카카오 실제 운전 경로(1km 미만만 도보 추정, 경로를 얻지 못한 역은 제외)" : "역까지 입력값 " + accessMin + "분 · 역에서는 카카오 실제 경로")
                 + "입니다. 지하철·버스 환승은 포함하지 않습니다. 참고 정보이며 교통 안내 서비스가 아닙니다.";
         return new Trip(from, to, km, now, depart, accessMin, car, obs, railOpt, envMap, inc, near.size(), decision, fresh, caveat,
-                pending || envPending || (railOpt != null && railOpt.pending()), "MISS");
+                pending || envPending || incomplete || (railOpt != null && railOpt.pending()), "MISS");
     }
 
     /** 두 지점이 수집 중인 길의 끝(출발·도착 도시 역)과 각각 30km 안이면 그 길 · 방향 */
