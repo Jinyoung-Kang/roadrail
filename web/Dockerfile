@@ -11,7 +11,9 @@ WORKDIR /app
 ARG API_INTERNAL_URL=http://api:8300
 # 브라우저에 노출되는 유일한 키 (카카오 JS, 도메인 제한 키)
 ARG NEXT_PUBLIC_KAKAO_JS_KEY=
-ENV API_INTERNAL_URL=$API_INTERNAL_URL NEXT_PUBLIC_KAKAO_JS_KEY=$NEXT_PUBLIC_KAKAO_JS_KEY NEXT_TELEMETRY_DISABLED=1
+# HTTPS 로 공개할 때 1 — CSP 에서 http 지도 출처를 빼고 upgrade-insecure-requests · HSTS (next.config.mjs)
+ARG PUBLIC_HTTPS=
+ENV API_INTERNAL_URL=$API_INTERNAL_URL NEXT_PUBLIC_KAKAO_JS_KEY=$NEXT_PUBLIC_KAKAO_JS_KEY PUBLIC_HTTPS=$PUBLIC_HTTPS NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN rm -f .env.local && npm run build
