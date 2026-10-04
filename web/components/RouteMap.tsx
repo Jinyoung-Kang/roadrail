@@ -128,8 +128,8 @@ export default function RouteMap({ layers, interactive = false, className = "", 
     }
     bounds.current = b;
     if (frame !== fitted.current) {
-      fitted.current = frame;
-      const id = setTimeout(fit, 30);
+      // 맞춘 범위는 실제로 맞춘 뒤에 기록 — 30ms 안에 내용이 또 바뀌어 타이머가 취소돼도 다음 실행이 다시 맞춘다
+      const id = setTimeout(() => { fitted.current = frame; fit(); }, 30);
       return () => clearTimeout(id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
