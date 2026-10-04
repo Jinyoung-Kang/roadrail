@@ -565,25 +565,75 @@ async def test_oversized_response_is_cut_off(monkeypatch):
 
 async def test_gap_that_survives_a_full_refetch_is_marked_no_samples_and_not_retried(seeded, monkeypatch):
     # M3: 새벽엔 원천 표본이 원래 적어 길 슬롯이 '결측'으로 남는다. 다시 받아도 채울 수 없는데 2시간마다 6번씩 전체를
-    # 다시 받았다(실측 하루 약 900건). 공개 지연(약 3시간)이 지난 뒤 전체를 다시 받아도 비어 있으면 NO_SAMPLES 로 두고 그만 받는다.
+    # 다시 받았다(실측 하루 약 900건). 공개 지연(약 3시간)이 지난 뒤 전체를 두 번 다시 받아도 비어 있으면 NO_SAMPLES 로 두고 그만 받는다.
     d1 = now_kst().replace(hour=0, minute=0, second=0, microsecond=0)
     clock = {"now": d1 + dt.timedelta(hours=1)}
     monkeypatch.setattr(road, "now_kst", lambda: clock["now"])
     state = {"day": d1.strftime("%Y%m%d"), "slots": 12, "calls": [], "drop": {"00:10"}}   # 00:00~00:55, 00:10 은 원천에 없음
     await road.collect_travel_time(ctx_with(fake_ex_source(state)), full=True)
-    clock["now"] = d1 + dt.timedelta(hours=6, minutes=7)  # 06:07 백필 — 00:10 은 공개 지연이 한참 지났다
+    slot = d1 + dt.timedelta(minutes=10)
+    reason = "SELECT reason, backfilled_at FROM ops.slot_gap WHERE series_key = 'TST:DN' AND slot_ts = %s"
+    for hour, expected in ((6, "LOW_COVERAGE"), (8, "NO_SAMPLES")):   # 06:07 · 08:07 백필 — 공개 지연이 한참 지났다
+        clock["now"] = d1 + dt.timedelta(hours=hour, minutes=7)
+        ctx = ctx_with(fake_ex_source(state))
+        ctx.job_name = "road_gap_backfill"
+        await road.backfill_gaps(ctx)
+        gap = await db.fetchone(reason, (slot,))
+        assert gap["reason"] == expected and gap["backfilled_at"] is None, hour
+    state["calls"] = []
+    clock["now"] = d1 + dt.timedelta(hours=10, minutes=7)
+    ctx = ctx_with(fake_ex_source(state))
+    ctx.job_name = "road_gap_backfill"
+    await road.backfill_gaps(ctx)
+    assert state["calls"] == []                            # 다시 받지 않는다
+
+
+async def test_one_empty_refetch_does_not_close_gaps_for_good(seeded, monkeypatch):
+    # 리뷰: 전체 재조회 한 번이 '성공 · 빈 목록'(원천 일시 장애)이어도 결측을 NO_SAMPLES 로 영영 닫았다
+    d1 = now_kst().replace(hour=0, minute=0, second=0, microsecond=0)
+    clock = {"now": d1 + dt.timedelta(hours=1)}
+    monkeypatch.setattr(road, "now_kst", lambda: clock["now"])
+    state = {"day": d1.strftime("%Y%m%d"), "slots": 12, "calls": [], "drop": {"00:10"}}
+    await road.collect_travel_time(ctx_with(fake_ex_source(state)), full=True)
+    clock["now"] = d1 + dt.timedelta(hours=6, minutes=7)
+    ctx = ctx_with(lambda request: httpx.Response(200, json={"count": 0, "pageNo": 1, "pageSize": 0,
+                                                             "realUnitTrtmVO": [], "code": "SUCCESS"}))
+    ctx.job_name = "road_gap_backfill"
+    await road.backfill_gaps(ctx)                          # 원천이 잠깐 빈 목록
+    clock["now"] = d1 + dt.timedelta(hours=8, minutes=7)
+    state.update(drop=set(), calls=[])                     # 원천이 돌아와 00:10 도 준다
     ctx = ctx_with(fake_ex_source(state))
     ctx.job_name = "road_gap_backfill"
     await road.backfill_gaps(ctx)
     gap = await db.fetchone("SELECT reason, backfilled_at FROM ops.slot_gap WHERE series_key = 'TST:DN' AND slot_ts = %s",
                             (d1 + dt.timedelta(minutes=10),))
-    assert gap["reason"] == "NO_SAMPLES" and gap["backfilled_at"] is None
+    assert gap["backfilled_at"] is not None, gap
+
+
+async def test_yesterdays_gaps_expire_rather_than_no_samples_when_the_source_switches_mid_refetch(seeded, monkeypatch):
+    # 리뷰: 원천 날짜를 확인(어제)한 뒤 전체를 다시 받는 사이 원천이 오늘로 넘어가면, 어제 슬롯은 다시 받지 못했는데
+    # '원천 표본 없음'으로 닫아 완전성을 부풀렸다 → 원천 만료(SOURCE_EXPIRED)
+    d1 = now_kst().replace(hour=0, minute=0, second=0, microsecond=0)
+    d = d1 - dt.timedelta(days=1)
+    clock = {"now": d.replace(hour=23, minute=30)}
+    monkeypatch.setattr(road, "now_kst", lambda: clock["now"])
+    state = {"day": d.strftime("%Y%m%d"), "slots": 228, "calls": [], "drop": {"18:00"}}   # 00:00~18:55, 18:00 없음
+    await road.collect_travel_time(ctx_with(fake_ex_source(state)), full=True)
+    await db.execute("UPDATE ops.slot_gap SET attempts = 1 WHERE series_key = 'TST:DN'")  # 앞선 재조회에서도 비었음
+    clock["now"] = d1 + dt.timedelta(hours=1, minutes=30)
+    inner = fake_ex_source(state)
+
+    def switching(request: httpx.Request) -> httpx.Response:
+        if state["calls"]:                                  # 날짜 확인(첫 호출) 뒤 원천이 오늘로 넘어간다
+            state.update(day=d1.strftime("%Y%m%d"), slots=12, drop=set())
+        return inner(request)
     state["calls"] = []
-    clock["now"] = d1 + dt.timedelta(hours=8, minutes=7)
-    ctx = ctx_with(fake_ex_source(state))
+    ctx = ctx_with(switching)
     ctx.job_name = "road_gap_backfill"
     await road.backfill_gaps(ctx)
-    assert state["calls"] == []                            # 다시 받지 않는다
+    gap = await db.fetchone("SELECT reason FROM ops.slot_gap WHERE series_key = 'TST:DN' AND slot_ts = %s",
+                            (d + dt.timedelta(hours=18),))
+    assert gap["reason"] == "SOURCE_EXPIRED", (gap, state["calls"][:3])
 
 
 async def test_volume_keeps_the_first_collected_at_when_seen_again(seeded, fixtures_dir):

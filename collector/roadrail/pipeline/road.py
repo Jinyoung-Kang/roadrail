@@ -250,7 +250,7 @@ async def backfill_gaps(ctx: JobContext) -> int:
     """열린 결측 → 해당 길 구간을 처음부터 다시 받아 재합산.
     원천은 자정 뒤 약 01:30 까지 전날을 주므로 어제 결측은 원천이 아직 어제를 주는 동안 다시 받고,
     원천이 넘어간 것을 확인한 뒤에만 SOURCE_EXPIRED 로 닫는다(M2). 그보다 오래된 결측은 바로 닫는다.
-    공개 지연이 지난 슬롯이 전체를 다시 받아도 비면 NO_SAMPLES 로 두고 더 받지 않는다 — 새벽처럼 원천 표본이 원래 적은
+    공개 지연이 지난 슬롯이 전체를 두 번 다시 받아도 비면 NO_SAMPLES 로 두고 더 받지 않는다 — 새벽처럼 원천 표본이 원래 적은
     슬롯을 2시간마다 6번씩 다시 받던 것(하루 약 900건, M3). 완전성 계산에서도 뺀다(API)."""
     today = now_kst().date()
     start = day_start(today)
@@ -280,11 +280,17 @@ async def backfill_gaps(ctx: JobContext) -> int:
     n = await collect_travel_time(ctx, full=True, only=segs)
     now = now_kst()
     await recompute_corridors({k: v for k, v in chains.items() if k in keys}, since, now)
+    judged_from = since
+    if since == y_start and await source_day(ctx, chains) != y_start.strftime("%Y%m%d"):
+        # 받는 사이 원천이 오늘로 넘어갔다(또는 모름) — 어제 슬롯은 다시 받지 못했으니 '원천 없음'이 아니다
+        await db.execute(expire, (JOB, start, list(CLOSED_REASONS)))
+        judged_from = start
     if not any(note.startswith("PARTIAL") for note in ctx.notes):   # 모든 구간을 다시 받았을 때만 '원천에 없음'으로 판단
+        # 앞선 전체 재조회에서도 비었던 슬롯만(attempts ≥ 1) — 원천이 한 번 빈 목록을 줘도 영영 닫지 않게
         await db.execute("""UPDATE ops.slot_gap SET reason = 'NO_SAMPLES'
                             WHERE job_name = %s AND backfilled_at IS NULL AND reason IN ('LOW_COVERAGE', 'NO_DATA')
-                              AND series_key = ANY(%s) AND slot_ts >= %s AND slot_ts < %s""",
-                         (JOB, [g["series_key"] for g in open_gaps], since, now - PUBLISH_MARGIN))
+                              AND attempts >= 1 AND series_key = ANY(%s) AND slot_ts >= %s AND slot_ts < %s""",
+                         (JOB, [g["series_key"] for g in open_gaps], judged_from, now - PUBLISH_MARGIN))
     await db.execute("""UPDATE ops.slot_gap SET attempts = attempts + 1
                         WHERE job_name = %s AND backfilled_at IS NULL AND reason <> ALL(%s) AND slot_ts >= %s""",
                      (JOB, list(CLOSED_REASONS), since))
