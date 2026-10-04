@@ -39,3 +39,28 @@ test("스크립트 오류면 실패를 알리고, 다시 부르면 새로 받는
   void load().catch(() => {});
   assert.equal(scripts.length, 2);
 });
+
+test("시간 초과 뒤 다시 불러도 받던 스크립트를 재사용하고, 늦게 와도 성공한다 (WEB-08)", { timeout: 2000 }, async () => {
+  // 느린 망에서 8초가 지나면 실패로 끝나고, 다시 부르면 <script> 를 또 붙여 SDK 를 두 번 실행할 수 있었다
+  const { env, scripts, timers, arrive } = fakeEnv();
+  const load = sdkLoader(env, "x");
+  const a = load();
+  timers[0]();                                  // 8초 초과
+  await assert.rejects(a, /시간 초과/);
+  const b = load();
+  assert.equal(scripts.length, 1);              // 새로 붙이지 않는다
+  arrive(scripts[0]);                           // 첫 스크립트가 늦게 도착
+  assert.ok((await b).maps.LatLng);
+});
+
+test("스크립트는 왔지만 maps.load 전이면 load 만 부른다", { timeout: 2000 }, async () => {
+  const { env, scripts, timers, arrive } = fakeEnv();
+  const load = sdkLoader(env, "x");
+  const a = load();
+  timers[0]();
+  await assert.rejects(a);
+  arrive({ onload: null, onerror: null });      // 전역 객체는 생겼지만 첫 약속은 이미 끝남
+  const k = await load();
+  assert.ok(k.maps.LatLng);
+  assert.equal(scripts.length, 1);
+});
