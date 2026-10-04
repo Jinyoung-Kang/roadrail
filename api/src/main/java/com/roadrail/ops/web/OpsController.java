@@ -20,8 +20,9 @@ public class OpsController {
     }
 
     @GetMapping("/ops/collect-status")
-    @Operation(summary = "수집 상태 (FR-701) — 작업별 최근 실행 · 24h 완전성 · 예산 · 공개 지연 · 최근 오류")
+    @Operation(summary = "수집 상태 (FR-701) — 작업별 최근 실행 · 24h 완전성 · 예산 · 공개 지연 · 최근 오류. "
+            + "오류 상세(메시지 · 스택 트레이스 · 외부 호출)는 비운다 — 전체는 /admin/collect-status")
     public OpsDtos.Status collectStatus() {
-        return ops.status();
+        return ops.status(false);
     }
 }

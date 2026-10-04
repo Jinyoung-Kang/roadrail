@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Layout from "@/components/Layout";
 import CopyButton from "@/components/ops/CopyButton";
 import FailureLog from "@/components/ops/FailureLog";
@@ -7,6 +7,7 @@ import { api, errorText, runJob } from "@/lib/api/client";
 import { DASH, mdhm, num, pct } from "@/lib/format";
 import { useAdminToken } from "@/lib/hooks/useAdminToken";
 import { useApi } from "@/lib/hooks/useApi";
+import { useDebounced } from "@/lib/hooks/useDebounced";
 import { failuresText, PROVIDER, quotaShares, summarize } from "@/lib/ops";
 import type { OpsStatus } from "@/lib/types";
 
@@ -14,6 +15,15 @@ export default function Ops() {
   const s = useApi<OpsStatus>(api.opsStatus(), 30_000);
   const { token, remember, setToken, setRemember, clear } = useAdminToken();
   const [msg, setMsg] = useState<string | null>(null);
+  // 오류 상세는 관리 토큰이 있을 때만 관리 경로에서 — 공개 경로는 상세를 비운다(ADR-028). 틀린 토큰이어도 공개 화면은 그대로
+  const key = useDebounced(token, 600);
+  const full = useApi<OpsStatus>(key ? api.adminOpsStatus() : null, { refreshMs: 30_000, init: { headers: { "X-Admin-Token": key } } });
+  const prevKey = useRef(key);
+  const reloadFull = full.reload;
+  useEffect(() => {  // 토큰만 바뀌고 주소는 같을 때(이미 관리 경로) 새 토큰으로 다시
+    if (prevKey.current && key && prevKey.current !== key) reloadFull();
+    prevKey.current = key;
+  }, [key, reloadFull]);
 
   async function run(job: string) {
     setMsg(null);
@@ -26,7 +36,8 @@ export default function Ops() {
     }
   }
 
-  const d = s.data;
+  const d = full.data ?? s.data;
+  const detailed = !!d?.detailed;
   const { road, lag, warnJobs, failures, unresolved: open, latestFailure: failed } = summarize(d);
 
   return (
@@ -93,8 +104,9 @@ export default function Ops() {
           </label>
           {token && <button type="button" onClick={clear} className="text-xs text-muted hover:underline">지우기</button>}
           {msg && <span className="text-ink2" role="status">{msg}</span>}
+          {key && full.error && <span className="text-crit" role="status">오류 상세를 불러오지 못했습니다 — {errorText(full.error)}</span>}
         </div>
-        <Note>토큰은 기본으로 이 화면의 메모리에만 두고, '이 탭에서 기억'을 켜면 이 탭의 sessionStorage 에 둡니다. 실행 요청은 Redis Stream(rr:commands) 을 거쳐 수집기가 처리하며, 실행 중이면 409 JOB_RUNNING 입니다.</Note>
+        <Note>관리 토큰을 넣으면 오류 상세(실패 메시지 · 스택 트레이스 · 외부 호출)도 보입니다. 토큰은 기본으로 이 화면의 메모리에만 두고, '이 탭에서 기억'을 켜면 이 탭의 sessionStorage 에 둡니다. 실행 요청은 Redis Stream(rr:commands) 을 거쳐 수집기가 처리하며, 실행 중이면 409 JOB_RUNNING 입니다.</Note>
       </Section>
 
       {d && (
@@ -103,10 +115,11 @@ export default function Ops() {
                  desc="실패 · 부분 성공 · 예산 부족으로 끝난 실행의 전체 내용입니다. 해결 안 된 것부터 보이며, 같은 작업이 그 뒤 정상 종료했으면 '이후 정상'으로 표시합니다.">
           {failures.length === 0 ? <p className="text-center text-sm text-muted"><span className="text-good">●</span> 모든 작업이 정상 종료했습니다.</p> : (
             <>
-              <div className="mb-4 flex justify-end">
-                <CopyButton text={failuresText(failures)} label={`전체 ${failures.length}건 복사`} />
+              <div className="mb-4 flex items-center justify-end gap-3">
+                {detailed ? <CopyButton text={failuresText(failures)} label={`전체 ${failures.length}건 복사`} />
+                  : <span className="text-sm text-muted">오류 메시지 · 스택 트레이스는 위의 관리 토큰을 넣으면 보입니다.</span>}
               </div>
-              <div className="space-y-3">{failures.map((f, i) => <FailureLog key={f.runId} f={f} open={i === 0 && !f.resolvedAt} />)}</div>
+              <div className="space-y-3">{failures.map((f, i) => <FailureLog key={f.runId} f={f} detailed={detailed} open={detailed && i === 0 && !f.resolvedAt} />)}</div>
             </>
           )}
         </Section>
@@ -150,7 +163,7 @@ export default function Ops() {
                 <p className="text-sm font-medium">최근 24시간 외부 호출 오류</p>
                 {d.recentErrors.length === 0 ? <p className="mt-2 text-sm text-muted"><span className="text-good">●</span> 오류 없음</p> : (
                   <ul className="mt-2 space-y-2 text-xs">{d.recentErrors.map((e, i) => (
-                    <li key={i} className="text-ink2"><span className="text-crit">✕</span> {mdhm(e.calledAt)} · {e.provider} {e.endpoint} · HTTP {e.httpStatus ?? DASH} · {e.error}</li>
+                    <li key={i} className="text-ink2"><span className="text-crit">✕</span> {mdhm(e.calledAt)} · {PROVIDER[e.provider] ?? e.provider}{e.endpoint ? ` ${e.endpoint}` : ""} · HTTP {e.httpStatus ?? DASH}{e.error ? ` · ${e.error}` : ""}</li>
                   ))}</ul>
                 )}
               </div>

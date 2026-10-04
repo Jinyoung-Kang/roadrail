@@ -229,7 +229,13 @@ test("철도 분석: 역 선택 목록은 가나다순 · 차종은 TAGO 시간�
   expect(await page.getByTitle("TAGO 열차 시간표의 그날 배정 차종").count()).toBe(n);
 });
 
-test("수집 상태: 작업 표 · 예산 · 오류 상세와 복사", async ({ page, context }) => {
+test("수집 상태: 작업 표 · 예산 · 공개 응답은 오류 상세를 비우고, 관리 토큰이면 상세와 복사", async ({ page, context, request }) => {
+  // 공개 배포 체크리스트(ADR-028): 공개 경로는 실패 메시지 · 스택 트레이스 · 외부 호출을 비우고, 관리 경로는 토큰 없이 401
+  const pub = await (await request.get("/api/v1/ops/collect-status")).json();
+  expect(pub.detailed).toBe(false);
+  expect(pub.failures.filter((f: { detail: unknown; message: unknown }) => f.detail !== null || f.message !== null)).toEqual([]);
+  expect(pub.recentErrors.filter((e: { endpoint: unknown; error: unknown }) => e.endpoint !== null || e.error !== null)).toEqual([]);
+  expect((await request.get("/api/v1/admin/collect-status")).status()).toBe(401);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/ops");
   await expect(page.getByText("road_travel_time").first()).toBeVisible();
@@ -237,6 +243,10 @@ test("수집 상태: 작업 표 · 예산 · 오류 상세와 복사", async ({ 
   const heading = page.getByRole("heading", { name: /최근 24시간 오류/ });
   await expect(heading).toBeVisible();
   if (/없음/.test(await heading.innerText())) return;  // 오류가 없으면 여기까지
+  await expect(page.getByText("오류 메시지 · 스택 트레이스는 위의 관리 토큰을 넣으면 보입니다.")).toBeVisible();
+  const token = process.env.E2E_ADMIN_TOKEN;  // make e2e 가 .env 의 ADMIN_TOKEN 을 넘긴다 — 없으면 공개 화면까지만
+  if (!token) return;
+  await page.getByPlaceholder(/X-Admin-Token/).fill(token);
   await page.getByRole("button", { name: /전체 \d+건 복사/ }).click();
   await expect(page.getByRole("button", { name: /복사됨/ })).toBeVisible();
   const text = await page.evaluate(() => navigator.clipboard.readText());

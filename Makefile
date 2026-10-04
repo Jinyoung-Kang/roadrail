@@ -56,8 +56,9 @@ test-collector: ## collector pytest (compose 의 db·redis 사용, roadrail_test
 test-api: ## api JUnit + Testcontainers (Docker 필요, JDK 21 은 Gradle 이 자동 설치)
 	cd api && ./gradlew --no-daemon test
 
-e2e: ## Playwright 스모크 (스택이 떠 있어야 함, 설치된 Chrome 사용)
-	cd web && npm ci --no-audit --no-fund && E2E_CHANNEL=chrome npx playwright test smoke
+e2e: ## Playwright 스모크 (스택이 떠 있어야 함, 설치된 Chrome 사용 — 관리 토큰은 .env 에서, 출력하지 않음)
+	cd web && npm ci --no-audit --no-fund
+	@cd web && E2E_ADMIN_TOKEN="$(ADMIN_TOKEN)" E2E_CHANNEL=chrome npx playwright test smoke
 
 bench: ## API 응답 시간 측정 (p50 · p95 · 최대, 표준 라이브러리만)
 	python3 tools/bench.py http://localhost:8300 15

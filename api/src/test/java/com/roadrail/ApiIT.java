@@ -225,8 +225,18 @@ class ApiIT extends IntegrationTest {
                 .andExpect(jsonPath("$.jobs[?(@.job == 'road_travel_time')].cron").value(hasItem("*/10 * * * *")))
                 .andExpect(jsonPath("$.quota[?(@.provider == 'AIRKOREA')].limit").value(hasItem(450)))
                 .andExpect(jsonPath("$.failures[0].job").value("road_travel_time"))
-                .andExpect(jsonPath("$.failures[0].detail").value(org.hamcrest.Matchers.containsString("[스택 트레이스]")))
+                .andExpect(jsonPath("$.failures[0].status").value("FAILED"))
+                // 공개 경로는 오류 상세(메시지 · 스택 트레이스 · 외부 호출)를 비운다 — 전체는 관리 토큰으로 /admin/collect-status (ADR-028)
+                .andExpect(jsonPath("$.failures[0].detail").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.failures[0].message").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.detailed").value(false))
                 .andExpect(jsonPath("$.collectorAlive").value(false));
+        mvc.perform(get("/api/v1/admin/collect-status")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/admin/collect-status").header("X-Admin-Token", "wrong")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/admin/collect-status").header("X-Admin-Token", ADMIN)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.detailed").value(true))
+                .andExpect(jsonPath("$.failures[0].detail").value(org.hamcrest.Matchers.containsString("[스택 트레이스]")))
+                .andExpect(jsonPath("$.jobs[?(@.job == 'road_travel_time')].running").value(hasItem(true)));
         mvc.perform(get("/api/v1/health")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.components.db").value("UP"))
                 .andExpect(jsonPath("$.components.collector").value("DOWN"))

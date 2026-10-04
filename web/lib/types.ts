@@ -90,12 +90,14 @@ export interface OpsStatus {
   quota: { provider: string; day: string; limit: number; used: number; reserved: number; remaining: number }[];
   recentRuns: { runId: number; job: string; trigger: string; startedAt: string; finishedAt: string | null; status: string;
     calls: number; rows: number; message: string | null }[];
-  recentErrors: { calledAt: string; provider: string; endpoint: string; httpStatus: number | null; error: string | null }[];
+  recentErrors: { calledAt: string; provider: string; endpoint: string | null; httpStatus: number | null; error: string | null }[];
   failures: OpsFailure[];
   backfills: { backfillId: string; provider: string; job: string; from: string; to: string; plannedCalls: number; doneDays: number;
     status: string; requestedAt: string; finishedAt: string | null }[];
   publicationLag: { series: string; medianMin: number | null; p90Min: number | null; n: number }[];
   volumes: Record<string, number | string | null>;
+  /** 오류 상세(메시지 · 스택 트레이스 · 외부 호출) 포함 — 공개 경로는 false, 관리 경로는 true */
+  detailed: boolean;
 }
 export interface OpsFailure { runId: number; job: string; trigger: string; startedAt: string; finishedAt: string | null;
   status: string; message: string | null; detail: string | null; resolvedAt: string | null }

@@ -5,6 +5,8 @@ import { browserEnv, createQuery, current, EMPTY, type Query, type QueryOptions,
 export interface ApiOptions<T> extends QueryOptions<T> {
   /** 주기 갱신 — 탭을 숨긴 동안은 멈추고 다시 보이면 바로 갱신 */
   refreshMs?: number;
+  /** 요청 옵션(예: 관리 토큰 머리글) — 부를 때마다 지금 값을 쓴다. 토큰은 주소에 넣지 않는다 */
+  init?: RequestInit;
 }
 
 /** 간단한 조회 훅 — url 이 null 이면 호출하지 않는다. 숫자를 주면 그 주기로 다시 부른다(= { refreshMs }).
@@ -17,7 +19,7 @@ export function useApi<T>(url: string | null, opts?: number | ApiOptions<T>) {
   options.current = o;
 
   useEffect(() => {
-    const q = createQuery<T>((u) => getJson<T>(u), setState, browserEnv(), () => options.current);
+    const q = createQuery<T>((u) => getJson<T>(u, options.current.init), setState, browserEnv(), () => options.current);
     query.current = q;
     return () => { q.dispose(); query.current = null; };
   }, []);
