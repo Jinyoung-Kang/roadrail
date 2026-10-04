@@ -1,6 +1,7 @@
 package com.roadrail.trip.app;
 
 import com.roadrail.env.app.HolidayService;
+import com.roadrail.rail.app.RailNetworkService;
 import com.roadrail.rail.app.RailService;
 import com.roadrail.rail.app.TimetableService;
 import com.roadrail.shared.Futures;
@@ -15,7 +16,6 @@ import com.roadrail.rail.model.RailDtos;
 import com.roadrail.trip.model.TripDtos.Place;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
 import java.time.*;
@@ -33,7 +33,7 @@ public class RailJourneyService {
     private static final Logger log = LoggerFactory.getLogger(RailJourneyService.class);
     static final double RADIUS_KM = 30, KAKAO_RADIUS_KM = 9.5, WALK_KM = 1.0;
     static final int CANDIDATES = 6, BOARDING_BUFFER_MIN = 5, TRANSFER_MIN = 10;
-    private final JdbcClient jdbc;
+    private final RailNetworkService network;
     private final RailService rail;
     private final KakaoMobilityClient kakao;
     private final TagoSubwayClient tago;
@@ -48,12 +48,12 @@ public class RailJourneyService {
     private volatile Map<String, List<double[]>> links = Map.of();
     private volatile long linksLoadedAt = 0;
 
-    public RailJourneyService(JdbcClient jdbc, RailService rail, KakaoMobilityClient kakao, TagoSubwayClient tago,
+    public RailJourneyService(RailNetworkService network, RailService rail, KakaoMobilityClient kakao, TagoSubwayClient tago,
                               TimetableService timetable, HolidayService holidays, ExecutorService exec) {
         this.exec = exec;
         this.timetable = timetable;
         this.holidays = holidays;
-        this.jdbc = jdbc;
+        this.network = network;
         this.rail = rail;
         this.kakao = kakao;
         this.tago = tago;
@@ -71,9 +71,7 @@ public class RailJourneyService {
     /** 하루 시간표 — 날짜마다 한 번만 읽는다. Memo 라 DB 조회가 맵 잠금 밖에서 돈다(가상 스레드 고정 없음 · ARC-02) */
     Day day(LocalDate refDate) {
         return dayCache.get(refDate, d -> {
-            List<RailRouter.Stop> stops = jdbc.sql("SELECT trn_no, run_seq, stn_cd, arr_at, dep_at FROM rail.day_stops(:d)")
-                    .param("d", d).query((rs, i) -> new RailRouter.Stop(rs.getString(1), rs.getInt(2), rs.getString(3),
-                            epoch(rs.getObject(4, OffsetDateTime.class)), epoch(rs.getObject(5, OffsetDateTime.class)))).list();
+            List<RailRouter.Stop> stops = network.dayStops(d);
             Map<String, List<RailRouter.Stop>> byTrip = new HashMap<>();
             for (var st : stops) byTrip.computeIfAbsent(st.trip(), k -> new ArrayList<>()).add(st);
             Map<String, List<String>> seq = new HashMap<>();
@@ -86,21 +84,10 @@ public class RailJourneyService {
 
     Map<String, List<double[]>> links() {
         if (System.currentTimeMillis() - linksLoadedAt > (links.isEmpty() ? 30_000 : 600_000)) {
-            Map<String, List<double[]>> m = new HashMap<>();
-            jdbc.sql("SELECT dep_stn_cd, arr_stn_cd, path::text FROM ref.rail_link").query(rs -> {
-                m.put(rs.getString(1) + ">" + rs.getString(2), parsePath(rs.getString(3)));
-            });
-            links = m;
+            links = network.trackLinks();
             linksLoadedAt = System.currentTimeMillis();
         }
         return links;
-    }
-
-    static List<double[]> parsePath(String json) {
-        List<double[]> out = new ArrayList<>();
-        var mt = java.util.regex.Pattern.compile("\\[\\s*([-0-9.]+)\\s*,\\s*([-0-9.]+)\\s*\\]").matcher(json);
-        while (mt.find()) out.add(new double[]{Double.parseDouble(mt.group(1)), Double.parseDouble(mt.group(2))});
-        return out;
     }
 
     /**
@@ -134,8 +121,6 @@ public class RailJourneyService {
         }
         return new TrackPath(out, onTrack);
     }
-
-    private static Long epoch(OffsetDateTime t) { return t == null ? null : t.toEpochSecond(); }
 
     /**
      * CSA 연결의 열차 id = 열차 번호 @ 기준일 + 목표일 차이(0 오늘 · 1 내일). 오늘 · 내일이 같은 기준일로 풀리면(같은 요일 자료가 없어
@@ -311,21 +296,6 @@ public class RailJourneyService {
         return new Plan(List.of(), null, null, 0, 0, BOARDING_BUFFER_MIN, TRANSFER_MIN, note, List.of(), List.of(), false);
     }
 
-    /** 구간의 기준일 실제 시간표 (운행계획 EXACT · TAGO TT) */
-    record Planned(OffsetDateTime dep, OffsetDateTime arr, String grade) {}
-
-    Planned planned(String from, String to, String trn, LocalDate ref) {
-        return jdbc.sql("""
-                SELECT est_plan_dep_at, est_plan_arr_at, grade, dep_basis, arr_basis FROM rail.od_trips(:a, :b, :r, :r)
-                WHERE trn_no = :t LIMIT 1""")
-                .param("a", from).param("b", to).param("r", ref).param("t", trn)
-                .query((rs, i) -> {
-                    boolean real = List.of("EXACT", "TT").contains(rs.getString(4)) && List.of("EXACT", "TT").contains(rs.getString(5));
-                    return new Planned(real ? rs.getObject(1, OffsetDateTime.class) : null,
-                            real ? rs.getObject(2, OffsetDateTime.class) : null, rs.getString(3));
-                }).optional().orElse(new Planned(null, null, null));
-    }
-
     /**
      * CSA 는 하루 시간표(day_stops — 중간역 계획 시각은 보간)로 경로를 찾는다. 화면에 내는 구간 시각은
      * 기준일 **실제 시간표**(코레일 운행계획 · TAGO 역별 계획 시각)로 바꾸고, 그 시각으로 승차 여유 · 최소 환승을 다시 확인한다.
@@ -335,13 +305,13 @@ public class RailJourneyService {
                               OffsetDateTime depart, LocalDate refDate, boolean withStats, long deadline, AtomicBoolean late) {
         List<Leg> legs = new ArrayList<>();
         // 구간별 기준일 시간표 (역 쌍 · 날짜당 TAGO 1건, 받은 뒤에는 DB) — 병렬로
-        List<CompletableFuture<Planned>> plans = new ArrayList<>();
+        List<CompletableFuture<RailNetworkService.PlannedLeg>> plans = new ArrayList<>();
         for (var l : j.legs()) {
             String trn = trainNo(l.trip());
             LocalDate legRef = refDate(l.trip());
             plans.add(CompletableFuture.supplyAsync(() -> {
                 timetable.ensure(l.from(), l.to(), List.of(legRef), Duration.ofMillis(1500));
-                return planned(l.from(), l.to(), trn, legRef);
+                return network.plannedLeg(l.from(), l.to(), trn, legRef);
             }, exec));
             // 30일 통계용 시간표는 뒤에서 받아 둔다 (다음 조회부터 보간 대신 실제 비교)
             if (withStats) timetable.ensure(l.from(), l.to(), timetable.runDates(l.from(), l.to(), refDate.minusDays(29), refDate), Duration.ZERO);
@@ -363,7 +333,7 @@ public class RailJourneyService {
             var s = st == null ? null : st.get(trn);
             OffsetDateTime dep = OffsetDateTime.ofInstant(Instant.ofEpochSecond(l.dep()), Times.KST);
             OffsetDateTime arr = OffsetDateTime.ofInstant(Instant.ofEpochSecond(l.arr()), Times.KST);
-            Planned pl = Futures.join(plans.get(i), Futures.left(deadline));
+            RailNetworkService.PlannedLeg pl = Futures.join(plans.get(i), Futures.left(deadline));
             if (!plans.get(i).isDone() || !stats.get(i).isDone()) late.set(true);  // 늦음 ≠ 없음
             boolean real = pl != null && pl.dep() != null;
             if (real) {  // 기준일 → 목표일: CSA 가 옮긴 날짜 수만큼
@@ -397,14 +367,12 @@ public class RailJourneyService {
     private final Memo<String, double[]> coordCache = new Memo<>(4096);
 
     double[] coords(String code) {
-        double[] c = coordCache.get(code, k -> jdbc.sql("SELECT lat, lon FROM ref.station WHERE stn_cd = :c AND lat IS NOT NULL")
-                .param("c", k).query((rs, i) -> new double[]{rs.getDouble(1), rs.getDouble(2)}).optional().orElse(new double[0]));
+        double[] c = coordCache.get(code, k -> network.findStationCoords(k).orElse(new double[0]));
         return c.length == 2 ? c : null;
     }
 
     private String name(String code, Map<String, String> names) {
-        return names.computeIfAbsent(code, c -> jdbc.sql("SELECT stn_nm FROM ref.station WHERE stn_cd = :c").param("c", c)
-                .query(String.class).optional().orElse(c));
+        return names.computeIfAbsent(code, c -> network.findStationName(c).orElse(c));
     }
 
     /** 두 지점 직선거리 (km) */

@@ -1,13 +1,13 @@
 package com.roadrail.trip.app;
 
 import com.roadrail.env.app.HolidayService;
+import com.roadrail.rail.app.RailNetworkService;
 import com.roadrail.rail.app.RailService;
 import com.roadrail.rail.app.TimetableService;
 import com.roadrail.domain.RailRouter;
 import com.roadrail.external.KakaoMobilityClient;
 import com.roadrail.external.TagoSubwayClient;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -30,7 +30,7 @@ class RailJourneyTimetableTest {
         // 같은 요일 자료가 없으면 두 날 모두 가장 최근 운행일로 풀린다(RailService.referenceDate 의 대체)
         when(rail.referenceDate(any())).thenReturn(Optional.of(Map.entry(ref, "최근 운행일")));
         try (var exec = Executors.newVirtualThreadPerTaskExecutor()) {
-            var svc = spy(new RailJourneyService(mock(JdbcClient.class), rail, mock(KakaoMobilityClient.class),
+            var svc = spy(new RailJourneyService(mock(RailNetworkService.class), rail, mock(KakaoMobilityClient.class),
                     mock(TagoSubwayClient.class), mock(TimetableService.class), mock(HolidayService.class), exec));
             doReturn(List.of(new RailRouter.Connection("101", "A", "B", 36_000, 39_600))).when(svc).connectionsFor(ref);
             var conns = svc.timetable(LocalDate.of(2026, 10, 4), new ArrayList<>(), new ArrayList<>());
@@ -56,7 +56,7 @@ class RailJourneyTimetableTest {
             return true;
         }).when(tt).ensure(any(), any(), any(), any());
         try (var exec = Executors.newVirtualThreadPerTaskExecutor()) {
-            var svc = spy(new RailJourneyService(mock(JdbcClient.class), rail, mock(KakaoMobilityClient.class),
+            var svc = spy(new RailJourneyService(mock(RailNetworkService.class), rail, mock(KakaoMobilityClient.class),
                     mock(TagoSubwayClient.class), tt, mock(HolidayService.class), exec));
             long base = ref.atStartOfDay(com.roadrail.shared.Times.KST).toEpochSecond();
             doReturn(List.of(new RailRouter.Connection("101", "A", "B", base + 10 * 3600, base + 11 * 3600))).when(svc).connectionsFor(ref);

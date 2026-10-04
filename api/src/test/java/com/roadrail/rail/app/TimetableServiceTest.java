@@ -1,10 +1,10 @@
 package com.roadrail.rail.app;
 
+import com.roadrail.rail.data.RailRepository;
+import com.roadrail.rail.data.TimetableRepository;
 import com.roadrail.shared.Times;
 import com.roadrail.external.TagoTrainClient;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.simple.JdbcClient;
-import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
 import java.time.LocalDate;
@@ -15,7 +15,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /** 시간표 받기 — 공개 요청 하나가 기간(최대 366일)의 운행일마다 TAGO 를 부르지 않게 (RVW-03) */
@@ -23,13 +22,12 @@ class TimetableServiceTest {
 
     @Test
     void oneRequestSchedulesAtMostAMonthOfMissingDates() throws Exception {
-        JdbcClient jdbc = mock(JdbcClient.class, RETURNS_DEEP_STUBS);
-        when(jdbc.sql(anyString()).param(anyString(), any()).param(anyString(), any()).param(anyString(), any())
-                .query(LocalDate.class).list()).thenReturn(List.of());   // 받아 둔 날짜 없음
+        TimetableRepository repo = mock(TimetableRepository.class);
+        when(repo.fetchedDates(any(), any(), any())).thenReturn(List.of());   // 받아 둔 날짜 없음
         TagoTrainClient tago = mock(TagoTrainClient.class);
         when(tago.enabled()).thenReturn(true);
         ExecutorService exec = Executors.newSingleThreadExecutor();
-        var svc = new TimetableService(jdbc, tago, mock(ObjectMapper.class), exec);
+        var svc = new TimetableService(repo, mock(RailRepository.class), tago, exec);
         LocalDate today = Times.now().toLocalDate();
         List<LocalDate> year = IntStream.rangeClosed(1, 102).mapToObj(today::minusDays).toList();   // 실측: 오송→부산 366일 = 운행일 102
 
