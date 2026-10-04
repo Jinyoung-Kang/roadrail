@@ -132,6 +132,19 @@ async def schedule_jobs(sched: AsyncIOScheduler) -> int:
     return n
 
 
+# 정해진 시각에만 도는 정리 작업 — 이보다 오래 성공하지 못했으면(노트북이 잠들어 건너뜀) 기동 때 한 번
+CLEANUP_DUE = {"maintenance": dt.timedelta(days=32), "retention": dt.timedelta(days=1)}
+
+
+async def missed_cleanup() -> list[str]:
+    """마지막 성공이 오래된 정리 작업 — 파티션 생성(매달)부터."""
+    rows = await db.fetch("""SELECT job_name, max(started_at) AS last FROM ops.job_run
+                             WHERE status = 'OK' AND job_name = ANY(%s) GROUP BY 1""", (list(CLEANUP_DUE),))
+    last = {r["job_name"]: r["last"] for r in rows}
+    now = now_kst()
+    return [job for job, every in CLEANUP_DUE.items() if last.get(job) is None or now - last[job] > every]
+
+
 async def startup_kick() -> None:
     """빈 DB 에서 첫 화면이 채워지도록 기동 직후 한 번씩 실행 (FR-702)."""
     await run_job("toll_unit_sync", "STARTUP")
@@ -156,6 +169,8 @@ async def startup_kick() -> None:
         spawn(run_job("rail_geometry", "STARTUP"))  # 선로 경로가 없으면 한 번 (OSM, 수 분)
     await run_job("baseline_daily", "STARTUP")
     await run_job("backtest_daily", "STARTUP")
+    for job in await missed_cleanup():
+        await run_job(job, "STARTUP")
 
 
 async def main() -> None:
