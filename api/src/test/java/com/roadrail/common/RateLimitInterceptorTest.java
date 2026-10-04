@@ -30,6 +30,17 @@ class RateLimitInterceptorTest {
     }
 
     @Test
+    void pathsWithoutAControllerAreBucketedByTheirDecodedPath() {
+        // 리뷰: 컨트롤러가 없는 /api/v1/admin/<아무거나> 는 정적 자원 처리기가 '/**' 로 받아 버킷이 없었다 —
+        // 관리 토큰 검사(경로 기준)는 그대로 돌아 틀리면 401 · 맞으면 404 로 한도 없는 대입 창구가 됐다
+        var r = new MockHttpServletRequest("POST", "/api/v1/admin/%78");
+        r.setAttribute(org.springframework.web.servlet.HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/**");
+        assertThat(RateLimitInterceptor.bucket(RateLimitInterceptor.matchedPath(r))).isEqualTo("admin");
+        var m = new MockHttpServletRequest("POST", "/api/v1;x=1/admin/x");
+        assertThat(RateLimitInterceptor.bucket(RateLimitInterceptor.matchedPath(m))).isEqualTo("admin");
+    }
+
+    @Test
     void trustsOnlyTheRightmostHopFromAConfiguredProxy() throws Exception {
         var web = java.util.Set.of(java.net.InetAddress.getByName("172.18.0.5"));
         // 설정한 프록시(Next.js)가 붙인 맨 오른쪽 값 = 실제 접속 주소. 클라이언트가 넣은 왼쪽 값은 무시

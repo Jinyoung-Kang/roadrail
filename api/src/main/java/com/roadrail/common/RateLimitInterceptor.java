@@ -10,6 +10,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.HandlerMapping;
+import org.springframework.web.util.UrlPathHelper;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -88,10 +89,14 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         return true;
     }
 
-    /** 핸들러 매핑이 고른 패턴(디코딩 · 매트릭스 변수 제거 뒤) — 매핑이 없으면 원본 URI */
+    /**
+     * 핸들러 매핑이 고른 패턴(디코딩 · 매트릭스 변수 제거 뒤). 컨트롤러가 없는 경로는 정적 자원 처리기가 '/**' 로 받으므로
+     * 디코딩한 실제 경로로 — 모르는 관리 경로도 관리 한도에서 센다(토큰 검사는 경로 기준이라 401/404 로 대입 창구가 된다)
+     */
     static String matchedPath(HttpServletRequest req) {
         Object pattern = req.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
-        return pattern != null ? pattern.toString() : req.getRequestURI();
+        String p = pattern == null ? null : pattern.toString();
+        return p != null && p.startsWith("/api/") ? p : UrlPathHelper.defaultInstance.getLookupPathForRequest(req);
     }
 
     static String bucket(String path) {

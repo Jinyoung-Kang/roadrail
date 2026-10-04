@@ -429,6 +429,16 @@ class ApiIT extends IntegrationTest {
     }
 
     @Test
+    void unknownAdminPathsAreRateLimitedToo() throws Exception {
+        // 리뷰: 컨트롤러가 없는 관리 경로는 한도 밖이라 토큰을 무제한 대입할 수 있었다(틀리면 401 · 맞으면 404)
+        for (String path : List.of("/api/v1/admin/x", "/api/v1/admin/%78")) {
+            mvc.perform(post(java.net.URI.create(path)).header("X-Admin-Token", "wrong-SECRET123").header("X-Forwarded-For", "192.0.2.45"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(header().exists("X-RateLimit-Limit"));
+        }
+    }
+
+    @Test
     void rateLimitCountsEncodedAndMatrixParameterPathsToo() throws Exception {
         // RVW-04: 버킷을 디코딩 전 URI 로 골라 같은 핸들러로 가는 /places/%73earch · /places;x=1/search 는 한도 밖이었다
         for (String path : List.of("/api/v1/places/%73earch", "/api/v1/places;x=1/search")) {
