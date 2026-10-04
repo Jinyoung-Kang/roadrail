@@ -29,3 +29,4 @@
 | [025](025-layered-architecture.md) | 계층 구조 — 기능 단위 패키지(web → app → data) · 화면과 로직 분리 · Node 24 · Python 3.13 |
 | [026](026-qa-2026-10-release.md) | 출시 기준 QA — DB 소켓 읽기 제한 · 수집기 풀 연결 확인 · 조회 상한 · 겹치는 백필 409 · 프록시 오류 규약 · 라디오 그룹 키보드 · 정보 글자 대비 |
 | [027](027-db-backup-restore.md) | DB 백업 · 복원 — pg_dump 사용자 지정 형식 · 별도 DB 리허설 · 이름 바꿔 끼우기 |
+| [028](028-public-hardening-redis8.md) | 공개 배포 보호 — 수집 상태 오류 상세는 관리 토큰 뒤로 · API 문서 기본 끔 · Redis 비밀번호 · Redis 8 |

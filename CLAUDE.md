@@ -7,9 +7,9 @@
 | 서비스 | 위치 | 언어 · 포트 |
 |---|---|---|
 | collector | `collector/roadrail` (core · providers · pipeline · scheduler) | Python 3.13 · asyncio — 주기 수집 · 분석 |
-| api | `api/src/main/java/com/roadrail` (기능 corridor · trip · rail · env · ops × web → app → data + model · shared · domain · external) | Java 21 · Spring Boot 4 — `127.0.0.1:8300` (`/docs` Swagger) |
+| api | `api/src/main/java/com/roadrail` (기능 corridor · trip · rail · env · ops × web → app → data + model · shared · domain · external) | Java 21 · Spring Boot 4 — `127.0.0.1:8300` (`/docs` Swagger — `SWAGGER_ENABLED=true` 일 때만) |
 | web | `web` (pages · components · lib/api · lib/hooks · lib 순수 함수 · e2e) | Next.js 16 · Node 24 · TypeScript 7 · Tailwind 4 · React 18 — `127.0.0.1:3300` (`/api/v1` 프록시) |
-| db · redis | `db/migrations` (Flyway) | PostgreSQL 16 `127.0.0.1:5462` · Redis 7 `127.0.0.1:6409` |
+| db · redis | `db/migrations` (Flyway) | PostgreSQL 16 `127.0.0.1:5462` · Redis 8 `127.0.0.1:6409` (비밀번호 `REDIS_PASSWORD`) |
 
 수집기(Python)와 API(Java)는 같은 Redis 키 · Lua 스크립트로 공급자별 일일 호출 예산을 함께 지킨다 — 새 외부 호출은 반드시 이 예산을 거친다.
 
@@ -28,7 +28,7 @@ CI 필수 검사는 `ci passed` 하나(collector · api · web · gitleaks 전�
 
 ## 규칙 (지킬 것)
 
-- **비밀키는 `.env` 에만.** 커밋 · 로그 · 출력에 값을 남기지 않는다(로그는 마스킹). 테스트의 가짜 키는 `SECRET123` 꼴 — 비밀처럼 보이는 문자열은 gitleaks 에 걸린다.
+- **비밀키는 `.env` 에만.** (`ADMIN_TOKEN` · `REDIS_PASSWORD` 는 `make env` 가 만든다) 커밋 · 로그 · 출력에 값을 남기지 않는다(로그는 마스킹). 테스트의 가짜 키는 `SECRET123` 꼴 — 비밀처럼 보이는 문자열은 gitleaks 에 걸린다.
 - **적용된 Flyway 마이그레이션은 고치지 않는다.** 바꿀 일은 새 `V{n}__*.sql` (최신 V18). 상수 기본값 열 추가처럼 표를 다시 쓰지 않는 변경을 우선.
 - **데이터 원칙** — 화면 값은 공식 API 값 · 그 값으로 계산한 통계 · 명시한 예측만. 모르는 값은 짐작해 채우지 않고 비운다([docs/DATA-PROVENANCE.md](docs/DATA-PROVENANCE.md)).
 - 계층(ADR-025): API 는 SQL 을 `<기능>/data` 에만, 서비스는 다른 기능의 `app` 만 부른다(`ArchitectureTest`). 웹 화면은 그리기만 — 주소는 `lib/api/client`, 상태 · 부수효과는 `lib/hooks`, 규칙 · 변환은 순수 함수(`node:test`).

@@ -82,12 +82,14 @@ open http://localhost:3300
 | `NEXT_PUBLIC_KAKAO_JS_KEY` | 카카오 JavaScript 키 (플랫폼 Web 도메인에 `http://localhost:3300`) | 지도. 없으면 SVG 노선도로 대체 |
 | `ADMIN_TOKEN` | `make up` 이 자동 생성 | 관리 API (`X-Admin-Token`) |
 | `POSTGRES_PASSWORD` | 선택 (기본 `roadrail`, 포트는 127.0.0.1 에만) | DB 비밀번호 — 공개 환경에 둘 때 바꾸기 (기존 볼륨이면 `ALTER ROLE` 도 함께) |
+| `REDIS_PASSWORD` | `make up` 이 자동 생성 | Redis 비밀번호(requirepass) — 비어 있으면 Redis 가 뜨지 않음. 영문 · 숫자만 |
+| `SWAGGER_ENABLED` | 선택 (기본 끔) | `true` 면 API 문서(`/docs` · `/v3/api-docs`)와 메뉴의 링크를 켬 — 바꾸면 api · web 을 다시 빌드 |
 | `RATE_LIMIT_*` | 선택 | IP 별 분당 요청 한도 (기본 trip 40 · route 20 · search 120 · rail 120 · admin 20, 0 = 끔) |
 
 | 주소 | 내용 |
 |---|---|
 | http://localhost:3300 | 화면: 판단(출발지 → 도착지) · 도로 분석(전국 · 길별 고속도로 실측) · 철도 분석(모든 역 쌍) · 예측 성능 · 수집 상태 |
-| http://localhost:8300/docs | API 문서 (springdoc Swagger UI) |
+| http://localhost:8300/docs | API 문서 (springdoc Swagger UI) — `SWAGGER_ENABLED=true` 일 때만 |
 
 그 밖의 명령: `make ps` · `make logs` · `make collect-once JOB=road_travel_time` · `make rail-backfill FROM=… TO=…` · `make reclassify` · `make test` · `make e2e` · `make psql` · `make reset`
 
@@ -120,7 +122,7 @@ flowchart TB
     ana["기준선 · 정시성 · 백테스트"]
   end
   pg[("PostgreSQL 16 :5462<br/>ref · ts(월 파티션·BRIN) · rail · env · ana · ops")]
-  rd[("Redis 7 :6409<br/>예산 카운터 · 작업 잠금 · 명령 스트림 · 판단 카드 캐시")]
+  rd[("Redis 8 :6409<br/>예산 카운터 · 작업 잠금 · 명령 스트림 · 판단 카드 캐시")]
   ext["한국도로공사 · 코레일 · 기상청 · 에어코리아 · 카카오"]
 
   pages -- "/api/v1 (Next rewrites, 같은 출처)" --> q
@@ -163,7 +165,7 @@ sequenceDiagram
 | 수집 · 분석 | Python 3.13 · asyncio · httpx · APScheduler · psycopg 3 · pandas | 공급자 어댑터 8종 · 작업 17개 · CLI (`roadrail …`) |
 | API | Java 21 · **Spring Boot 4.1.1** · JdbcClient · Flyway · Spring Data Redis · springdoc | 3.4 는 OSS 지원 종료 → 4.1 ([ADR-007](docs/adr/007-polyglot-stack.md)). 가상 스레드 |
 | 화면 | Next.js 16 (Pages Router) · React 18 · TypeScript · Tailwind · Recharts 3 · 카카오 지도 | 테슬라 톤 라이트 모드. 차트 팔레트는 CVD 검증(ΔE 9.2) |
-| 저장 | PostgreSQL 16 (월 파티션 · BRIN · SQL 함수 `rail.od_trips`) · Redis 7 | 6 스키마 · 24 테이블 |
+| 저장 | PostgreSQL 16 (월 파티션 · BRIN · SQL 함수 `rail.od_trips`) · Redis 8 (비밀번호) | 6 스키마 · 24 테이블 |
 | 테스트 | pytest · JUnit 5 · Testcontainers · MockMvc · Playwright | 아래 7장 |
 | 운영 | Docker Compose · Makefile · GitHub Actions | 모든 포트 127.0.0.1 바인딩 |
 | 도입하지 않음 | Kafka/CDC · ClickHouse/BigQuery · Kubernetes | 이유와 도입 조건: [ADR-011](docs/adr/011-out-of-scope-infra.md) |
@@ -228,7 +230,7 @@ sequenceDiagram
 - **'OO발 OO행'** — 운행계획의 시발·종착역.
 - **다음 열차** — 앞으로의 시간표는 코레일 API(U-6)에도 TAGO 에도 없어(미래 날짜 0건 실측), 목표일과 같은 요일의 가장 최근 운행일 **실제 시간표**를 쓰고 기준일을 표시합니다 — 남겨 둔 추정 중 하나([DATA-PROVENANCE](docs/DATA-PROVENANCE.md)).
 
-## 5. API (http://localhost:8300/api/v1 · 문서 `/docs`)
+## 5. API (http://localhost:8300/api/v1 · 문서 `/docs` — `SWAGGER_ENABLED=true` 일 때)
 
 | # | 메서드 · 경로 | 설명 |
 |---|---|---|
@@ -242,7 +244,8 @@ sequenceDiagram
 | 8 | `GET /rail/punctuality?corridorId&from&to&dir&groupBy=train\|dow\|hour&thresholdMin` | 정시율 집계 · 지연 분포 · 전국 비교 |
 | 9 | `GET /corridors/{id}/env?hours` | 지점별 시간별 예보 · 대기질 |
 | 10 | `GET /incidents?corridorId&since` | 돌발 문자 안내 (길 매칭 M-v1 — 도로공사 문자만) |
-| 11 | `GET /ops/collect-status` | 작업별 상태 · 24h 완전성 · 예산 · 공개 지연 · 오류 · `failures`(오류 실행의 전체 내용: 작업 메모 · 실패한 외부 호출 · 스택 트레이스, 키 마스킹) |
+| 11 | `GET /ops/collect-status` | 작업별 상태 · 24h 완전성 · 예산 · 공개 지연 · 오류 · `failures` — 공개 응답은 오류 상세(실패 메시지 · 스택 트레이스 · 외부 호출 주소 · 오류 문구)를 비움(`detailed: false`) |
+| 11a | `GET /admin/collect-status` | 위와 같되 오류 상세 포함(`detailed: true`, 키는 마스킹) — `X-Admin-Token` 필수 |
 | 12 | `POST /admin/jobs/{job}/run` | 즉시 실행 202 · 실행 중 409 |
 | 13 | `POST /admin/backfill` | 기간 재수집 202 (예상 호출 수 먼저 계산) · 기간 400 · 예산 429 · 실행 중 409 |
 | 14 | `GET /places/search?q` | 출발지·도착지 검색 — 행정구역 · 기차역 · 장소 (전국) |
@@ -268,8 +271,8 @@ sequenceDiagram
 | 계약 (pytest) | 공급자 5종 실제 응답 fixture 파서 · 문자 안내 좌표(altitude = 경도, 범위 밖 · 좌표 없음은 버림) · 특일 정보(한 건 · 0건 형식 포함) · UTIC 돌발 XML(시각 형식 · 범위 밖 좌표 · 모르는 유형 · 도로명 앞뒤 기호) · 톨게이트 범위 밖 좌표는 없음으로 | 13 |
 | 통합 (pytest + PostgreSQL · Redis) | 예산 동시성 · 멱등 수집 · 꼬리 커서 · 결측→백필 · seed 멱등 · 철도 일 계산 · SQL `od_trips` ↔ Python 계약 · **시간표(TT)가 보간보다 우선** · 호출 로그 키 마스킹 · 시간 초과가 오류 상세에 남는지 · 재시작 뒤 RUNNING·잠금·예약 정리 · 취소된 작업은 '중단'으로 기록 · 선로 작업 28일 안이면 건너뜀 · 공휴일 동기화 멱등 · 꼬리 위치는 저장 뒤에만 · 자정을 넘겨도 읽은 날짜 키에 · 시작 전 실패도 잠금 해제 · 남의 잠금은 지우지 않음 · 명령 스트림 대기가 소켓 읽기 제한에 끊기지 않음 · 연결 풀 상한을 넘는 동시 요청은 기다림 · UTIC 돌발 멱등 upsert · HTTPS · 키 마스킹 · 키 오류 응답(HTTP 200 + JSON)은 기관 코드로 · 키 없으면 호출 안 함 · **원천이 날짜를 넘기면 꼬리 1쪽부터 · 원천이 전날을 주는 동안은 어제 결측을 채우고 넘어간 뒤에만 만료 · 전체를 다시 받아도 빈 슬롯은 '원천 표본 없음'** · Redis 를 비워도 그날 예산 복원 · 자정을 넘긴 예약은 예약한 날에 · 리다이렉트 안 따라감 · 응답 크기 상한 · 작업 메시지 마스킹 · 호출마다 시각 · 같은 값은 다시 쓰지 않음 · 백테스트 교체는 한 트랜잭션 · UTIC 루트 요소 확인 · 값 영역 CHECK(V17) · '원천 표본 없음'은 두 번째 재조회부터 · 받는 사이 원천이 넘어가면 어제는 만료 · 자정 경합에도 예산 동기화는 한 날짜로 · 보존 기간 정리(90일, 안내 중인 돌발은 남김) · 기동 때 밀린 정리 · **DB 가 다시 시작돼도 끊긴 연결을 내주지 않음(QA-10) · DB 가 응답을 멈추면 조회가 상한 안에 포기(QA-11)** | 55 |
 | 단위 (JUnit) | 판단 규칙 · 예측 골든(Python 과 같은 파일) · 기상청 격자 · 행정구역→에어코리아 시도 · **CSA 환승 경로** · 도로 구분 · 경로 요약 · 돌발 좌표↔경로 거리 · TAGO 시각 해석·검증된 역명 별칭 · 요청 한도(버킷 · 믿는 프록시의 맨 오른쪽 주소만) · 공휴일 경고 · SingleFlight · Memo(즉시 완료 · 실패 비고착 · Error 뒤 재로드 · 잠금 밖 로더) · 실행기 종료 상한 · 과부하 503 · TAGO 지하철 오류 응답 · 잘못된 행 · **경로 좌표 줄이기 · 구간별 소통**(DP 중요도 · 경계 공유 · 400점 상한) · 카카오 응답 해석 · 기상청 초단기 발표 시각 · 날씨 합치기(초단기 · 실황 · 직전 발표) · 강수형태 경고 · UTIC 겹침 제거 · 도심 돌발은 경로 위(0.5km)만 · 요청 한도 버킷은 매칭된 경로 패턴 · 시간표 받기 상한(요청당 31일 · 시간당 600) · 늦은 보조 조회는 pending · 길 판단 카드 캐시 조건 · 경로 분석 카카오 호출 줄이기 · 열차 id 에 기준일 · 비동기 작업에 traceId · 컨트롤러 없는 관리 경로도 한도 · 늦은 구간 시간표는 pending · 형식 모를 카카오 응답은 캐시 안 함 · **의존 방향(계층 · SQL 은 data 에만 · 기능 순환 없음 · 규칙 자체 시험, ADR-025)** · 프록시가 새 주소로 다시 떠도 몇 초 안에 믿음 | 102 |
-| API 통합 (JUnit + Testcontainers) | 판단 카드 · 캐시 · 오류 규약(415 · 406 · ERROR 로그 없음) · 관리 API 401/202/409/400/429 · 수집 상태(오류 상세 · MGET 위치) · 헬스 · 임의 역 쌍(OO발 OO행 · 추정 차종 없음 · 가나다순 · 검색 정렬) · 출발지→도착지(선로 경로 · 캐시 키) · 공휴일(요일별 H · 경고 · 지하철 생략) · 요청 한도 429 · 역 코드 형식 400 · 좌표 NaN 400 · 외부 예산 회계(Lua 한 번) · 캐시 쇄도 방지 · 길 돌발 목록은 도로공사 문자만 · 경로 돌발 전부 최근 순(출처별 거리 · 겹침 · 끝난 돌발 제외) · 인코딩한 경로도 같은 한도 · 모든 응답에 프레임 금지 헤더 · 저장된 단기예보의 '지금'(시각별 최근 발표) · 좌표 없는 돌발도 최근 순 · 완전성은 '원천 표본 없음'을 분모에서 뺌 · 모르는 관리 경로도 한도 · **QA: 길 예측 빈 `horizons` 항목 400 · 겹치는 기간 백필 409 · 동시 백필은 하나만 · DB 가 응답을 멈추면 15초 안에 503** | 29 |
-| E2E (Playwright) | 판단 · ⇄ 교환 · 전국 검색 · 검색 칸 빈 목록 · 서비스 소개 · 판단 근거 돌발 목록 · 카드(도착 예정·시간 구성·OSM 출처) · 도로 분석 · 지도 잠금 · 선택 목록 잘림 · 고속도로 실측 · 철도 역 검색 · 가나다순 · 차종은 TAGO 배지로만 · 수집 상태 오류 복사 · 모바일 메뉴 · 보안 헤더 · 콘솔 오류 없음 · X-Forwarded-For 위조 무시 · 지도 라벨 HTML 주입 차단 · 프록시 경로 검증 · 자동차 경로 구간별 소통(경로 전체를 빈틈없이 · 길이 합 · 범례) · UTIC 돌발(경로 위만 · 경고 건수 = 전체 · 출처 표시) · 프록시 메서드 허용 목록 · API 문서 프레임 금지 · 다른 날 열어도 하이드레이션 오류 없음 · 검색어를 바꾼 직후 Enter · 검색 오류 표시 · 고른 값은 입력값 · `aria-activedescendant` · 고른 뒤 이어서 입력 · 목록을 눌러도 검색어 유지 · 메뉴 드로어 초점 · Esc · SDK 가 늦어도 지도 조작 상태 유지 | 29 |
+| API 통합 (JUnit + Testcontainers) | 판단 카드 · 캐시 · 오류 규약(415 · 406 · ERROR 로그 없음) · 관리 API 401/202/409/400/429 · 수집 상태(오류 상세 · MGET 위치) · 헬스 · 임의 역 쌍(OO발 OO행 · 추정 차종 없음 · 가나다순 · 검색 정렬) · 출발지→도착지(선로 경로 · 캐시 키) · 공휴일(요일별 H · 경고 · 지하철 생략) · 요청 한도 429 · 역 코드 형식 400 · 좌표 NaN 400 · 외부 예산 회계(Lua 한 번) · 캐시 쇄도 방지 · 길 돌발 목록은 도로공사 문자만 · 경로 돌발 전부 최근 순(출처별 거리 · 겹침 · 끝난 돌발 제외) · 인코딩한 경로도 같은 한도 · 모든 응답에 프레임 금지 헤더 · 저장된 단기예보의 '지금'(시각별 최근 발표) · 좌표 없는 돌발도 최근 순 · 완전성은 '원천 표본 없음'을 분모에서 뺌 · 모르는 관리 경로도 한도 · **QA: 길 예측 빈 `horizons` 항목 400 · 겹치는 기간 백필 409 · 동시 백필은 하나만 · DB 가 응답을 멈추면 15초 안에 503** · **공개 수집 상태는 오류 상세를 비움 · 관리 경로는 토큰 없으면 401 · API 문서 기본 꺼짐** | 30 |
+| E2E (Playwright) | 판단 · ⇄ 교환 · 전국 검색 · 검색 칸 빈 목록 · 서비스 소개 · 판단 근거 돌발 목록 · 카드(도착 예정·시간 구성·OSM 출처) · 도로 분석 · 지도 잠금 · 선택 목록 잘림 · 고속도로 실측 · 철도 역 검색 · 가나다순 · 차종은 TAGO 배지로만 · 수집 상태(공개 응답은 오류 상세 없음 · 관리 토큰으로 상세와 복사) · 모바일 메뉴 · 보안 헤더 · 콘솔 오류 없음 · X-Forwarded-For 위조 무시 · 지도 라벨 HTML 주입 차단 · 프록시 경로 검증 · 자동차 경로 구간별 소통(경로 전체를 빈틈없이 · 길이 합 · 범례) · UTIC 돌발(경로 위만 · 경고 건수 = 전체 · 출처 표시) · 프록시 메서드 허용 목록 · API 문서 프레임 금지 · 다른 날 열어도 하이드레이션 오류 없음 · 검색어를 바꾼 직후 Enter · 검색 오류 표시 · 고른 값은 입력값 · `aria-activedescendant` · 고른 뒤 이어서 입력 · 목록을 눌러도 검색어 유지 · 메뉴 드로어 초점 · Esc · SDK 가 늦어도 지도 조작 상태 유지 | 29 |
 | E2E QA 점검 (Playwright, 수동) | [QA 보고서](docs/qa/2026-10-04-qa-report.md)의 재현 시험 — 작은 글자 대비 4.5:1 · 320px 리플로 · 라디오 그룹 화살표 키 · CLS < 0.1(4화면 × 데스크톱 · 모바일, 홈은 판단 문구가 길 때도) · 아주 긴 주소는 414 JSON. 화면 순회 `qa-crawl`(8화면 × 2폭, 16) · 입력 매트릭스 `qa/api_matrix.py` · 부하 `qa/load.k6.js` 는 점검 스크립트 | 14 |
 | 단위 (node:test, 웹) | React 밖 순수 함수 — 조회 상태 기계(이전 주소 결과 숨김 · 최신 주소 reload · '받는 중' 재시도 상한 · 숨긴 탭 멈춤) · 지도 다시 그리기 서명 · 맞춤 범위 · 검색 목록 규칙 · 지도 SDK 로더(시간 초과 뒤 재사용) · 장소 URL(이름의 '~') · KST 기간 · API 클라이언트(주소 · 오류 · 관리 명령) · 수집 상태 요약 · 철도 막대 · 판단 응답 매칭 · 시간 막대 축 | 35 |
 
@@ -325,7 +328,7 @@ sequenceDiagram
 - 도로 기준선은 공휴일을 빼고 계산합니다. 수집을 추석 연휴(09-24)에 시작해, 평일 자료가 쌓이는 09-27 전까지는 기준선이 비어 있고(예측은 지속 모델만) 화면에 그 이유를 표시합니다.
 - 서울특별시 버스 노선정보 API 는 쓰지 않았습니다 — 노선 · 정류소 · 첫차/막차만 있어 정류소별 도착 시각이 없고, 기차역에 서는 노선을 찾으려면 서울 전 노선을 긁어야 하며, 서울에 한정돼 도시 간 판단에 반영할 수 없습니다.
 - 요청 한도는 접속 주소별입니다. 같은 공유기 · 프록시 뒤의 사용자는 한도를 나눠 씁니다. 앞에 다른 프록시(nginx 등)를 두면 그 프록시가 `X-Forwarded-For` 를 덮어쓰게 설정해야 합니다.
-- **공개 배포 체크리스트** — 지금은 모든 포트가 127.0.0.1 에만 열린 로컬 서비스라 다음을 열어 두었습니다: Redis 비밀번호 · `maxmemory`(검색어가 캐시 키가 됨), Swagger 공개(`springdoc.*.enabled`), 수집 상태의 오류 상세(스택 트레이스 · 외부 호출 파라미터 — 키는 마스킹). 공개 배포 전에는 Redis `requirepass` · `maxmemory`, Swagger 끄기, `/ops/collect-status` 의 상세를 관리 토큰 뒤로 옮겨야 합니다 ([ADR-018](docs/adr/018-security-hardening.md)). HTTPS 로 공개할 때는 웹 이미지를 `PUBLIC_HTTPS=1` 로 빌드해 CSP 에서 http 지도 출처를 빼고 `upgrade-insecure-requests` · HSTS 를 켜고, API 앞에 다른 프록시를 두면 그 주소를 `TRUSTED_PROXIES`(쉼표 구분, 기본 `web`)에 적어야 요청 한도가 실제 접속 주소로 셉니다 ([ADR-024](docs/adr/024-review-2026-10-reliability.md)).
+- **공개 배포 체크리스트** — 수집 상태의 오류 상세는 관리 토큰 뒤로(공개 응답은 비움), API 문서는 기본으로 끔(`SWAGGER_ENABLED`), Redis 는 비밀번호를 걸었습니다 ([ADR-028](docs/adr/028-public-hardening-redis8.md)). 남은 것: Redis `maxmemory` — 예산 · 잠금 키도 만료가 있어 그대로 걸면 메모리가 찰 때 캐시와 함께 밀려날 수 있어, 캐시 키를 나누거나 정책을 정한 뒤에 겁니다(ADR-028). HTTPS 로 공개할 때는 웹 이미지를 `PUBLIC_HTTPS=1` 로 빌드해 CSP 에서 http 지도 출처를 빼고 `upgrade-insecure-requests` · HSTS 를 켜고, API 앞에 다른 프록시를 두면 그 주소를 `TRUSTED_PROXIES`(쉼표 구분, 기본 `web`)에 적어야 요청 한도가 실제 접속 주소로 셉니다 ([ADR-024](docs/adr/024-review-2026-10-reliability.md)).
 - 도로공사 호출 한도는 공식 수치가 없어 보수적 예산(2만/일)으로 운영합니다 (U-3).
 - 같은 돌발이 도로공사 문자와 경찰청 UTIC 에 함께 있어도 문자에 좌표가 없으면 비교할 수 없어 두 건으로 보일 수 있습니다. UTIC 응답은 지금 진행 중인 목록뿐이라 끝난 돌발은 마지막으로 본 시각까지만 남습니다.
 
