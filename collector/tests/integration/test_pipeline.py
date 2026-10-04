@@ -12,6 +12,7 @@ from roadrail.core import db, rds
 from roadrail.core.timeutil import KST, now_kst
 from roadrail.pipeline import rail, road
 from roadrail.pipeline.seed import apply_seed
+from roadrail.providers import ex
 from roadrail.providers.base import JobContext, ProviderError
 from roadrail.providers.kma import latlon_to_grid
 from roadrail.scheduler.quota import QuotaBudget, QuotaExhausted
@@ -115,8 +116,7 @@ async def test_tail_cursor_fetches_only_from_last_seen_page(seeded):
     calls.clear()
     await road.collect_travel_time(ctx_with(fake_ex(today, calls=calls)))
     assert first == len(calls) == 3  # 구간당 1페이지
-    tail = await rds.client().get(rds.tail_key("101", "103", today))
-    assert int(tail) == 5
+    assert await rds.client().get(rds.tail_key("101", "103")) == f"{today}:5"
 
 
 async def test_tail_cursor_advances_only_for_saved_rows(seeded):
@@ -131,28 +131,56 @@ async def test_tail_cursor_advances_only_for_saved_rows(seeded):
              await db.fetch("SELECT DISTINCT start_unit_code, end_unit_code FROM ts.road_travel_time")}
     assert len(saved) == 2  # 호출 예산 2건 = 받은 두 구간
     for seg in (("101", "103"), ("103", "528"), ("528", "101")):
-        tail = await rds.client().get(rds.tail_key(*seg, today))
+        tail = await rds.client().get(rds.tail_key(*seg))
         assert (tail is not None) == (seg in saved), seg  # 저장 안 된 구간은 다음 수집이 처음부터
 
 
-async def test_tail_cursor_is_saved_under_the_day_it_was_read(seeded, monkeypatch):
-    # 수집이 자정을 넘기면 D일에 읽은 꼬리 위치를 D+1 키에 쓰면 안 된다 — 다음 날 수집이 3페이지부터 시작해
-    # 00시~15시 슬롯을 건너뛴다(셀프 리뷰로 찾은 회귀: 읽기 · 쓰기가 now_kst 를 따로 불렀다)
+async def test_tail_cursor_carries_the_day_of_the_data_not_the_wall_clock(seeded, monkeypatch):
+    # 자정을 넘긴 수집이 D일 데이터를 읽으면 커서도 D일 것이어야 한다 — 벽시계(D+1)로 기억하면 원천이 D+1 로 넘어간 뒤
+    # D 의 행 수만큼 건너뛴 쪽을 요청해 새 날 슬롯을 놓친다(H1 · 예전 회귀: 읽기 · 쓰기가 now_kst 를 따로 불렀다)
     real_today = now_kst()
     day = real_today.strftime("%Y%m%d")
-    before = real_today.replace(hour=23, minute=59, second=50, microsecond=0)
-    after = before + dt.timedelta(seconds=20)          # 다음 날 00:00:10
-    calls = {"n": 0}
-
-    def clock():
-        calls["n"] += 1
-        return before if calls["n"] <= 3 else after     # 구간 3개를 읽는 동안은 D일, 그 뒤는 D+1
-
-    monkeypatch.setattr(road, "now_kst", clock)
+    after_midnight = real_today.replace(hour=0, minute=0, second=10, microsecond=0) + dt.timedelta(days=1)
+    monkeypatch.setattr(road, "now_kst", lambda: after_midnight)
     await road.collect_travel_time(ctx_with(fake_ex(day)))
     for seg in (("101", "103"), ("103", "528"), ("528", "101")):
-        assert await rds.client().get(rds.tail_key(*seg, day)) == "5", seg
-        assert await rds.client().get(rds.tail_key(*seg, after.strftime("%Y%m%d"))) is None, seg
+        assert await rds.client().get(rds.tail_key(*seg)) == f"{day}:5", seg
+
+
+def fake_ex_source(state: dict):
+    """원천이 '지금 주는 날'(state["day"])과 그날 1종 5분 행 수(state["slots"])를 바꿀 수 있는 가짜 realUnitTrtm.
+    실제 API 처럼 1종 → 다음 차종 순으로 99행씩 쪽을 나누고, 마지막 쪽 뒤를 요청하면 빈 목록을 준다."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        q = request.url.params
+        s, e, page = q["iStartUnitCode"], q["iEndUnitCode"], int(q["pageNo"])
+        state["calls"].append((s, e, page))
+        items = [{"startUnitCode": s, "endUnitCode": e, "stdDate": state["day"], "stdTime": f"{m // 60:02d}:{m % 60:02d}",
+                  "timeAvg": "10.0", "timeMin": "8.0", "timeMax": "12.0", "efcvTrfl": "50", "tcsCarTypeCode": "1"}
+                 for m in range(0, state["slots"] * 5, 5)]
+        items.append({"startUnitCode": s, "endUnitCode": e, "stdDate": state["day"], "stdTime": "00:00",
+                      "timeAvg": "20", "tcsCarTypeCode": "2"})
+        pages = -(-len(items) // ex.PAGE)
+        chunk = items[(page - 1) * ex.PAGE: page * ex.PAGE]
+        return httpx.Response(200, json={"count": len(chunk), "pageNo": page, "pageSize": pages,
+                                         "realUnitTrtmVO": chunk, "code": "SUCCESS"})
+    return handler
+
+
+async def test_tail_cursor_restarts_when_the_source_switches_to_the_new_day(seeded, monkeypatch):
+    # H1: 도로공사 API 는 자정 뒤 약 01:30 까지 전날(D)을 계속 준다. 그 사이 받은 D 의 행 수를 D+1 의 커서로 기억하면,
+    # 원천이 D+1 로 넘어간 뒤 3쪽부터 요청해 D+1 아침 슬롯을 하나도 받지 못했다
+    # (실측 9/25: 101→103 구간이 00:12 부터 3쪽 · 01:31~10:01 4쪽을 요청 — 00~07시 슬롯은 10시 백필로야 저장).
+    d1 = now_kst().replace(hour=0, minute=0, second=0, microsecond=0)
+    d = d1 - dt.timedelta(days=1)
+    state = {"day": d.strftime("%Y%m%d"), "slots": 280, "calls": []}
+    clock = {"now": d1 + dt.timedelta(minutes=10)}
+    monkeypatch.setattr(road, "now_kst", lambda: clock["now"])
+    await road.collect_travel_time(ctx_with(fake_ex_source(state)))     # D+1 00:10 — 원천은 아직 D (3쪽)
+    state.update(day=d1.strftime("%Y%m%d"), slots=20, calls=[])
+    clock["now"] = d1 + dt.timedelta(hours=2)
+    await road.collect_travel_time(ctx_with(fake_ex_source(state)))     # D+1 02:00 — 원천이 D+1 로 넘어감 (1쪽)
+    n = (await db.fetchone("SELECT count(*) AS n FROM ts.road_travel_time WHERE slot_ts >= %s", (d1,)))["n"]
+    assert n == 3 * 20, state["calls"]
 
 
 async def test_missing_slot_is_recorded_then_backfilled(seeded):

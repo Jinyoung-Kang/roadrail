@@ -74,6 +74,15 @@ def parse_travel_page(body: dict, car_type: str = CAR_TYPE) -> tuple[list[Travel
     return out, n_type, page_size, more
 
 
+def page_day(body: dict) -> str | None:
+    """응답 쪽의 데이터 날짜(stdDate, YYYYMMDD) — 원천은 자정을 넘겨도 한동안 전날을 준다. 빈 쪽이면 None."""
+    for it in body.get("realUnitTrtmVO") or []:
+        d = (it.get("stdDate") or "").strip()
+        if d:
+            return d
+    return None
+
+
 async def travel_page(ctx: JobContext, start: str, end: str, page: int) -> dict:
     return await ctx.get_json("EX", "trtm/realUnitTrtm", f"{BASE}/trtm/realUnitTrtm", dict(
         key=_key(), type="json", iStartUnitCode=start, iEndUnitCode=end, numOfRows=PAGE, pageNo=page))

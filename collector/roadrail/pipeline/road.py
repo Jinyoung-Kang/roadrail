@@ -1,7 +1,7 @@
 """도로 수집 파이프라인 (FR-201~203, FR-405).
 
-영업소 간 통행시간 API 는 오늘 하루치를 차종 → 시각 순으로 정렬해 99행씩 준다.
-그래서 구간마다 '지금까지 본 1종 행 수'(Redis ex:tail:*) 를 기억해 **꼬리 페이지만** 다시 받는다.
+영업소 간 통행시간 API 는 하루치를 차종 → 시각 순으로 정렬해 99행씩 준다(자정 뒤 약 01:30 까지는 전날을 계속 준다).
+그래서 구간마다 '그 데이터 날짜에 지금까지 본 1종 행 수'(Redis ex:tail:*) 를 기억해 **꼬리 페이지만** 다시 받는다.
 (보통 구간당 1회 호출. 기획서 가정인 '5분 슬롯 × 호출 1회' 대신 '10분마다 꼬리 1~2페이지'.)
 받은 슬롯 범위만 길 합산을 다시 계산하므로 늦게 공개된 값도 자연스럽게 반영된다(멱등 UPSERT).
 """
@@ -12,6 +12,7 @@ import datetime as dt
 import logging
 import re
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 
 from ..analytics.road_quality import Segment, aggregate_corridor, classify, despike
 from ..core import db, rds
@@ -57,18 +58,54 @@ def unique_segments(chains: dict[tuple[str, str], list[Segment]]) -> dict[tuple[
     return {s.key: s for segs in chains.values() for s in segs}
 
 
-async def fetch_segment(ctx: JobContext, seg: Segment, full: bool) -> tuple[list[tuple], str, int]:
-    """꼬리(또는 전체) 페이지를 받아 (저장할 행, 꼬리 키, 새 꼬리 위치)를 돌려준다.
-    꼬리 위치는 여기서 기록하지 않는다 — 행을 저장한 뒤에만 옮겨야 실패한 수집의 슬롯을 다음 수집이 건너뛰지 않는다.
-    키는 읽은 날짜의 것을 그대로 돌려준다 — 수집이 자정을 넘겨도 D일 위치가 D+1 키에 들어가지 않게."""
+@dataclass(frozen=True)
+class TailCursor:
+    """구간의 꼬리 위치 — 원천 데이터의 날짜(stdDate)와 그날 본 1종 행 수.
+    날짜는 벽시계가 아니라 받은 데이터에서 읽는다: 원천은 자정 뒤 한동안 전날을 주기 때문에, 벽시계 날짜로 기억하면
+    전날의 행 수가 새 날의 커서가 되어 원천이 새 날로 넘어간 뒤 빈 꼬리 쪽만 요청했다(H1)."""
+    day: str
+    seen: int
+
+    @property
+    def page(self) -> int:
+        return self.seen // ex.PAGE + 1
+
+    def dump(self) -> str:
+        return f"{self.day}:{self.seen}"
+
+
+def parse_cursor(raw: str | None) -> TailCursor | None:
+    """저장 값 'YYYYMMDD:행수' → 커서. 형식이 다르면 없는 것으로 본다 — 처음부터 받는다."""
+    day, sep, seen = (raw or "").partition(":")
+    if sep and len(day) == 8 and day.isdigit() and seen.isdigit():
+        return TailCursor(day, int(seen))
+    return None
+
+
+def tail_is_stale(cur: TailCursor, page: int, page_day: str | None, page_size: int) -> bool:
+    """꼬리 쪽(2쪽 이상)을 요청했는데 그 쪽이 커서와 다른 날의 것이거나 비었으면 — 원천이 날짜를 넘겨 목록이 줄었다."""
+    return page > 1 and (page_day != cur.day or page > page_size)
+
+
+async def fetch_segment(ctx: JobContext, seg: Segment, full: bool) -> tuple[list[tuple], str, TailCursor | None]:
+    """꼬리(또는 전체) 페이지를 받아 (저장할 행, 꼬리 키, 새 꼬리 커서)를 돌려준다.
+    커서는 여기서 기록하지 않는다 — 행을 저장한 뒤에만 옮겨야 실패한 수집의 슬롯을 다음 수집이 건너뛰지 않는다."""
     s = settings()
-    key = rds.tail_key(seg.start, seg.end, now_kst().strftime("%Y%m%d"))
-    seen = 0 if full else int(await rds.client().get(key) or 0)
-    page = seen // ex.PAGE + 1
+    key = rds.tail_key(seg.start, seg.end)
+    cur = None if full else parse_cursor(await rds.client().get(key))
+    page = cur.page if cur else 1
+    day, seen = (cur.day, cur.seen) if cur else (None, 0)
     out: list[tuple] = []
     while True:
         body = await ex.travel_page(ctx, seg.start, seg.end, page)
         rows, n_type, page_size, more = ex.parse_travel_page(body)
+        page_day = ex.page_day(body)
+        if cur is not None and tail_is_stale(cur, page, page_day, page_size):
+            cur, page, day, seen = None, 1, None, 0   # 새 날을 1쪽부터
+            continue
+        cur = None  # 꼬리 판정은 첫 요청에서만
+        if page_day and page_day != day:
+            day, seen = page_day, (page - 1) * ex.PAGE
         for t in rows:
             q = classify(seg.distance_km, t.avg_sec, t.vehicles, t.min_sec, hard_min_speed=s.q_hard_min_speed_kmh,
                          max_speed=s.q_max_speed_kmh, free_min_speed=s.q_free_min_speed_kmh, mix_ratio=s.q_mix_ratio)
@@ -78,7 +115,7 @@ async def fetch_segment(ctx: JobContext, seg: Segment, full: bool) -> tuple[list
         if not more:
             break
         page += 1
-    return out, key, seen
+    return out, key, TailCursor(day, seen) if day else None
 
 
 async def collect_travel_time(ctx: JobContext, full: bool = False, only: set[tuple[str, str]] | None = None) -> int:
@@ -88,7 +125,7 @@ async def collect_travel_time(ctx: JobContext, full: bool = False, only: set[tup
         segs = {k: v for k, v in segs.items() if k in only}
     results = await asyncio.gather(*(fetch_segment(ctx, seg, full) for seg in segs.values()), return_exceptions=True)
     rows: list[tuple] = []
-    tails: dict[str, int] = {}
+    tails: dict[str, TailCursor] = {}
     failed, unexpected = 0, None
     for seg, res in zip(segs.values(), results, strict=True):
         if isinstance(res, BaseException):
@@ -97,16 +134,17 @@ async def collect_travel_time(ctx: JobContext, full: bool = False, only: set[tup
             if not isinstance(res, ProviderError):
                 unexpected = unexpected or res  # 받은 구간을 저장한 뒤에 다시 던진다
             continue
-        seg_rows, key, seen = res
+        seg_rows, key, cursor = res
         rows.extend(seg_rows)
-        tails[key] = seen
+        if cursor is not None:
+            tails[key] = cursor
     await db.executemany(SQL_UPSERT_TT, rows)
     ctx.rows += len(rows)
     # 저장이 끝난 뒤에만 꼬리 위치를 옮긴다 (BUG-05)
     if tails:
         async with rds.client().pipeline(transaction=False) as pipe:
-            for key, seen in tails.items():
-                pipe.set(key, seen, ex=172800)
+            for key, cursor in tails.items():
+                pipe.set(key, cursor.dump(), ex=172800)
             await pipe.execute()
     if failed:
         ctx.notes.append(f"PARTIAL: 구간 {failed}/{len(segs)} 실패")

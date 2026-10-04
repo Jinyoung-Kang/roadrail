@@ -136,7 +136,7 @@ sequenceDiagram
   S->>C: road_travel_time
   C->>R: EVAL reserve(EX, 구간수×1.3) — 부족하면 SKIPPED_QUOTA
   loop 구간 106개 (동시성 4)
-    C->>R: GET ex:tail:{구간}:{오늘} (지금까지 본 1종 행 수)
+    C->>R: GET ex:tail:{구간} (원천 데이터 날짜 · 그날 본 1종 행 수)
     C->>EX: 꼬리 페이지 1장 (99행)
     C->>C: 품질 Q-v2 (정차 혼입 판정)
   end
