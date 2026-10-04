@@ -159,6 +159,19 @@ test("지도: 기본은 잠김 — 스크롤해도 배율이 바뀌지 않고 �
   await expect(page.getByRole("button", { name: "지도 조작 끄기" })).toBeVisible();
 });
 
+test("지도: SDK 가 늦게 와도 먼저 누른 '지도 조작하기'가 풀리지 않는다 (재기동 직후 E2E 에서 발견)", async ({ page }) => {
+  // 지도를 만들 때 잠금 상태를 무조건 '잠김'으로 되돌려, SDK 를 받는 사이 누른 버튼이 저절로 꺼졌다
+  await page.route("**/dapi.kakao.com/**", async (r) => { await new Promise((ok) => setTimeout(ok, 2500)); await r.continue(); });
+  await page.goto("/");
+  const btn = page.getByRole("button", { name: "지도 조작하기 (이동 · 확대)" });
+  await expect(btn).toBeVisible({ timeout: 15_000 });
+  await btn.click();
+  await expect(page.getByRole("button", { name: "지도 조작 끄기" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => !!(window as any).kakao?.maps?.Map), { timeout: 15_000 }).toBe(true);
+  await page.waitForTimeout(500);
+  await expect(page.getByRole("button", { name: "지도 조작 끄기" })).toBeVisible();
+});
+
 test("선택 목록: 맨 아래 항목까지 잘리지 않는다", async ({ page }) => {
   await page.goto("/rail?dep=3900023&arr=3900073");
   await page.getByRole("combobox", { name: "도착역" }).click();

@@ -70,8 +70,10 @@ export default function RouteMap({ layers, interactive = false, className = "", 
   const [failed, setFailed] = useState<string | null>(null);
   // 탐색용 지도는 기본으로 잠가 둔다 — 페이지를 스크롤할 때 휠이 지도 배율을 바꾸지 않게 (+/− 버튼은 항상 동작)
   const [unlocked, setUnlocked] = useState(false);
+  const unlockedRef = useRef(false);   // 지도를 만들 때 지금 상태를 그대로 적용 (SDK 를 받는 사이 누른 버튼을 되돌리지 않게)
   const lock = (on: boolean) => {
     setUnlocked(!on);
+    unlockedRef.current = !on;
     const m = mapRef.current;
     if (m) { m.setDraggable(!on); m.setZoomable(!on); }
   };
@@ -98,10 +100,10 @@ export default function RouteMap({ layers, interactive = false, className = "", 
         center: new kakao.maps.LatLng(36.5, 127.8), level: 10,
         draggable: false, scrollwheel: false, disableDoubleClickZoom: true,
       });
-      map.setZoomable(false);
+      map.setZoomable(unlockedRef.current);
+      map.setDraggable(unlockedRef.current);
       if (interactive) map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
       mapRef.current = map;
-      setUnlocked(false);
       setFailed(null);
       setReady(true);
     }).catch((e) => !cancelled && setFailed(e.message));
