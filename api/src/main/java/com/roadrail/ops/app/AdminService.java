@@ -4,10 +4,10 @@ import com.roadrail.shared.ApiException;
 import com.roadrail.shared.ErrorCode;
 import com.roadrail.shared.Times;
 import com.roadrail.shared.Ids;
+import com.roadrail.ops.data.OpsRepository;
 import com.roadrail.ops.model.OpsDtos.*;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -24,19 +24,18 @@ public class AdminService {
     public static final String STREAM = "rr:commands";
     public static final int RAIL_EARLIEST_DAYS = 92;
     public static final int RAIL_CALLS_PER_DAY = 3;
-    private final JdbcClient jdbc;
+    private final OpsRepository repo;
     private final StringRedisTemplate redis;
     private final OpsService ops;
 
-    public AdminService(JdbcClient jdbc, StringRedisTemplate redis, OpsService ops) {
-        this.jdbc = jdbc;
+    public AdminService(OpsRepository repo, StringRedisTemplate redis, OpsService ops) {
+        this.repo = repo;
         this.redis = redis;
         this.ops = ops;
     }
 
     public Accepted runJob(String job) {
-        boolean known = jdbc.sql("SELECT EXISTS (SELECT 1 FROM ops.collect_job WHERE job_name = :j)").param("j", job)
-                .query(Boolean.class).single();
+        boolean known = repo.jobExists(job);
         if (!known) throw new ApiException(ErrorCode.NOT_FOUND, "작업 '" + job + "' 이 없습니다.");
         ensureNotRunning(job);
         String id = Ids.ulid();
@@ -73,10 +72,7 @@ public class AdminService {
         }
         ensureNotRunning("rail_backfill");
         String id = Ids.ulid();
-        jdbc.sql("""
-                INSERT INTO ops.backfill (backfill_id, provider, job_name, from_date, to_date, planned_calls)
-                VALUES (:id, 'KORAIL', 'rail_daily', :f, :t, :p)""")
-                .param("id", id).param("f", from).param("t", to).param("p", planned).update();
+        repo.insertBackfill(id, from, to, planned);
         redis.opsForStream().add(StreamRecords.string(Map.of("type", "backfill", "backfillId", id)).withStreamKey(STREAM));
         return new BackfillAccepted(id, planned, true, remaining, from.toString(), to.toString());
     }
