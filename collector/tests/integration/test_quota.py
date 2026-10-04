@@ -81,3 +81,23 @@ async def test_quota_snapshot_never_goes_down_within_a_day():
     row = await db.fetchone("SELECT used FROM ops.quota_budget WHERE provider = 'KMA'")
     assert row["used"] == 43 and (await jobs.budget().snapshot("KMA"))["used"] == 43
     jobs._budget = None
+
+
+async def test_allowance_books_everything_on_the_day_it_was_reserved():
+    # L3: 예약이 자정을 넘기면 환불 · 추가 예약 · 호출 기록이 다음 날 카운터로 가서, 전날 예약은 영영 환불되지 않고
+    # 다음 날의 다른 작업 예약을 깎았다
+    import datetime as dt
+
+    from roadrail.core.timeutil import KST
+    clock = {"now": dt.datetime(2026, 10, 3, 23, 59, 50, tzinfo=KST)}
+    budget = QuotaBudget(rds.client(), lambda p: 100, clock=lambda: clock["now"])
+    a = await budget.allowance("EX", 10)
+    await a.take()
+    await a.take()
+    clock["now"] = dt.datetime(2026, 10, 4, 0, 0, 5, tzinfo=KST)
+    assert await budget.reserve("EX", 5)                  # 다음 날 다른 작업의 예약
+    await a.take()
+    await a.close()
+    r = rds.client()
+    assert int(await r.get("quota:EX:20261003")) == 3     # 전날: 예약 10 중 쓴 3만 남김
+    assert int(await r.get("quota:EX:20261004")) == 5     # 다음 날: 다른 작업의 예약 그대로

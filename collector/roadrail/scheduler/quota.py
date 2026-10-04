@@ -67,25 +67,25 @@ class QuotaBudget:
     def _day(self) -> str:
         return self.clock().strftime("%Y%m%d")
 
-    def _k(self, provider: str) -> str:
-        return f"quota:{provider}:{self._day()}"
+    def _k(self, provider: str, day: str | None = None) -> str:
+        return f"quota:{provider}:{day or self._day()}"
 
-    def _ku(self, provider: str) -> str:
-        return f"quota:used:{provider}:{self._day()}"
+    def _ku(self, provider: str, day: str | None = None) -> str:
+        return f"quota:used:{provider}:{day or self._day()}"
 
-    async def reserve(self, provider: str, n: int) -> bool:
+    async def reserve(self, provider: str, n: int, day: str | None = None) -> bool:
         if n <= 0:
             return True
-        v = await self._reserve(keys=[self._k(provider)], args=[n, self.limit_of(provider)])
+        v = await self._reserve(keys=[self._k(provider, day)], args=[n, self.limit_of(provider)])
         return int(v) >= 0
 
-    async def refund(self, provider: str, n: int) -> None:
+    async def refund(self, provider: str, n: int, day: str | None = None) -> None:
         if n > 0:
-            await self._refund(keys=[self._k(provider)], args=[n])
+            await self._refund(keys=[self._k(provider, day)], args=[n])
 
-    async def consume(self, provider: str, n: int = 1) -> None:
+    async def consume(self, provider: str, n: int = 1, day: str | None = None) -> None:
         """이미 예약된 몫에서 실제 호출 n 건을 기록."""
-        key = self._ku(provider)
+        key = self._ku(provider, day)
         await self.r.incrby(key, n)
         await self.r.expire(key, 172800)
 
@@ -104,30 +104,33 @@ class QuotaBudget:
                 "used": used, "reserved": max(reserved_total - used, 0), "remaining": max(limit - reserved_total, 0)}
 
     async def allowance(self, provider: str, estimate: int) -> Allowance:
-        if not await self.reserve(provider, estimate):
+        day = self._day()
+        if not await self.reserve(provider, estimate, day):
             snap = await self.snapshot(provider)
             raise QuotaExhausted(provider, estimate, snap["remaining"])
-        return Allowance(self, provider, estimate)
+        return Allowance(self, provider, estimate, day)
 
 
 class Allowance:
-    """작업 하나가 가진 예약분. take() 로 1건씩 차감, close() 로 남은 몫 환불."""
+    """작업 하나가 가진 예약분. take() 로 1건씩 차감, close() 로 남은 몫 환불.
+    예약한 날(day)에 모두 기록한다 — 작업이 자정을 넘겨도 환불 · 추가 예약이 다음 날 카운터로 가지 않게(L3).
+    (예전에는 전날 예약이 영영 환불되지 않고, 다음 날 다른 작업의 예약을 깎았다)"""
 
-    def __init__(self, budget: QuotaBudget, provider: str, reserved: int):
-        self.budget, self.provider = budget, provider
+    def __init__(self, budget: QuotaBudget, provider: str, reserved: int, day: str):
+        self.budget, self.provider, self.day = budget, provider, day
         self.left = reserved
         self.used = 0
 
     async def take(self) -> None:
         if self.left <= 0:
-            if not await self.budget.reserve(self.provider, 1):
+            if not await self.budget.reserve(self.provider, 1, self.day):
                 snap = await self.budget.snapshot(self.provider)
                 raise QuotaExhausted(self.provider, 1, snap["remaining"])
             self.left += 1
         self.left -= 1
         self.used += 1
-        await self.budget.consume(self.provider)
+        await self.budget.consume(self.provider, 1, self.day)
 
     async def close(self) -> None:
-        await self.budget.refund(self.provider, self.left)
+        await self.budget.refund(self.provider, self.left, self.day)
         self.left = 0
