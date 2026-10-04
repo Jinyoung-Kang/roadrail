@@ -83,6 +83,7 @@ JOBS: dict[str, JobSpec] = {
     "baseline_daily": JobSpec(analysis.baseline_daily, _const({})),
     "backtest_daily": JobSpec(analysis.backtest_daily, _const({}), lock_ttl=3600),
     "maintenance": JobSpec(analysis.maintenance, _const({})),
+    "retention": JobSpec(analysis.retention, _const({})),
     # 관리 API 백필 전용 (스케줄 없음)
     "rail_backfill": JobSpec(rail.rail_backfill, _const({}), lock_ttl=7200),
 }

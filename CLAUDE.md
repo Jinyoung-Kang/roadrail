@@ -28,7 +28,7 @@ CI 필수 검사는 `ci passed` 하나(collector · api · web · gitleaks 전�
 ## 규칙 (지킬 것)
 
 - **비밀키는 `.env` 에만.** 커밋 · 로그 · 출력에 값을 남기지 않는다(로그는 마스킹). 테스트의 가짜 키는 `SECRET123` 꼴 — 비밀처럼 보이는 문자열은 gitleaks 에 걸린다.
-- **적용된 Flyway 마이그레이션은 고치지 않는다.** 바꿀 일은 새 `V{n}__*.sql` (최신 V17). 상수 기본값 열 추가처럼 표를 다시 쓰지 않는 변경을 우선.
+- **적용된 Flyway 마이그레이션은 고치지 않는다.** 바꿀 일은 새 `V{n}__*.sql` (최신 V18). 상수 기본값 열 추가처럼 표를 다시 쓰지 않는 변경을 우선.
 - **데이터 원칙** — 화면 값은 공식 API 값 · 그 값으로 계산한 통계 · 명시한 예측만. 모르는 값은 짐작해 채우지 않고 비운다([docs/DATA-PROVENANCE.md](docs/DATA-PROVENANCE.md)).
 - 계층(ADR-025): API 는 SQL 을 `<기능>/data` 에만, 서비스는 다른 기능의 `app` 만 부른다(`ArchitectureTest`). 웹 화면은 그리기만 — 주소는 `lib/api/client`, 상태 · 부수효과는 `lib/hooks`, 규칙 · 변환은 순수 함수(`node:test`).
 - 새 공급자: `providers/<name>.py` + `base.py` 의 `CONCURRENCY` · `TIMEOUT` · 예산(`config.py` · `application.yml` · `OpsService.PROVIDERS`) + 실제 응답 fixture 계약 테스트 + 키 없으면 호출 없이 건너뛰기.

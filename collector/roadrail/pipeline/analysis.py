@@ -80,6 +80,23 @@ async def ensure_partitions(months_ahead: int = 2) -> int:
     return n
 
 
+# 보존 기간 — 사용자 결정(2026-10-04, ADR-024): 계속 쌓이는 기록은 90일. (표, 기준 시각 열) — 돌발은 마지막으로 본 시각(안내가 끝난 지 90일)
+RETENTION_DAYS = 90
+RETENTION = [("ts.road_incident", "last_seen_at", "돌발"), ("ops.slot_gap", "slot_ts", "결측"), ("env.air_quality", "data_time", "대기질"),
+             ("ana.kakao_eta", "requested_at", "카카오 ETA"), ("ops.api_call", "called_at", "호출 로그"),
+             ("ops.job_run", "started_at", "실행 이력")]
+
+
+async def retention(ctx: JobContext) -> int:
+    """보존 기간이 지난 행 삭제 (매일 — 노트북이 잠들어 건너뛰면 기동 때 한 번)."""
+    counts = []
+    for table, col, label in RETENTION:
+        n = await db.execute(f"DELETE FROM {table} WHERE {col} < now() - make_interval(days => %s)", (RETENTION_DAYS,))
+        counts.append(f"{label} {n}")
+    ctx.note(f"{RETENTION_DAYS}일 보존 — 삭제: " + " · ".join(counts))
+    return 0
+
+
 async def maintenance(ctx: JobContext) -> int:
     created = await ensure_partitions()
     deleted = await db.execute("DELETE FROM ops.api_call WHERE called_at < now() - interval '90 days'")
