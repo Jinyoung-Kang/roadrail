@@ -107,8 +107,9 @@ class JobContext:
         return await self._get(provider, endpoint, url, params, headers, retries, parse)
 
     async def get_xml(self, provider: str, endpoint: str, url: str, params: dict,
-                      headers: dict | None = None, retries: int = 2) -> ET.Element:
-        """XML 응답(경찰청 UTIC). 표준 라이브러리 expat 은 외부 엔티티를 따라가지 않고, 엔티티 폭주는 expat ≥ 2.4 가 막는다."""
+                      headers: dict | None = None, retries: int = 2, root: str | None = None) -> ET.Element:
+        """XML 응답(경찰청 UTIC). 표준 라이브러리 expat 은 외부 엔티티를 따라가지 않고, 엔티티 폭주는 expat ≥ 2.4 가 막는다.
+        root 를 주면 루트 요소가 그 이름일 때만 성공 — 점검 안내 같은 다른 문서를 '0건'으로 읽지 않게(L10)."""
         def parse(text: str, status: int) -> tuple[ET.Element, str | None]:
             if status != 200:
                 raise ProviderError(provider, endpoint, f"HTTP {status}: " + mask_text(text[:200]), status)
@@ -126,9 +127,13 @@ class JobContext:
                     raise ProviderError(provider, endpoint,
                                         mask_text(f"오류 응답 {code}: {str(e.get('resultMsg') or '')[:200]}"), status, code)
             try:
-                return ET.fromstring(text), None
+                doc = ET.fromstring(text)
             except ET.ParseError as e:
                 raise ProviderError(provider, endpoint, "XML 아님: " + mask_text(text[:200]), status) from e
+            if root is not None and doc.tag != root:
+                raise ProviderError(provider, endpoint, f"예상한 문서가 아님 (루트 <{doc.tag[:40]}>): " + mask_text(text[:200]),
+                                    status)
+            return doc, None
         return await self._get(provider, endpoint, url, params, headers, retries, parse)
 
     async def _get(self, provider: str, endpoint: str, url: str, params: dict, headers: dict | None, retries: int,

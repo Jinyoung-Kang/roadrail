@@ -505,6 +505,23 @@ async def test_utic_without_key_makes_no_call(monkeypatch):
     assert await road.collect_utic_incidents(ctx_with(handler)) == 0
 
 
+async def test_utic_page_that_is_not_the_incident_list_is_an_error_not_zero_incidents(monkeypatch):
+    # L10: 점검 안내 같은 다른 XML/HTML 문서도 파싱만 되면 '돌발 0건' 성공으로 기록됐다 — 진행 중 돌발이 모두 '끝남'으로 보인다
+    from roadrail.core.config import settings
+    monkeypatch.setattr(settings(), "utic_api_key", "SECRET456")
+    pages = iter(['<?xml version="1.0"?><html><body><p>서비스 점검 중</p></body></html>', '<?xml version="1.0"?><result></result>'])
+
+    def handler(request):
+        return httpx.Response(200, text=next(pages), headers={"content-type": "text/xml;charset=utf-8"})
+
+    ctx = ctx_with(handler)
+    with pytest.raises(ProviderError) as e:
+        await road.collect_utic_incidents(ctx)
+    assert "<html>" in e.value.detail
+    assert ctx.api_calls[-1][8] is not None                                 # 호출 기록에도 실패로 남는다
+    assert await road.collect_utic_incidents(ctx) == 0                      # 진짜 빈 목록은 0건 성공
+
+
 async def test_job_message_is_masked_like_the_detail(seeded, monkeypatch):
     # L4: 오류 상세(detail)는 마스킹했지만 작업 메시지(job_run.message · collect_job.last_message)는 원문 그대로였다
     from roadrail.core.config import settings
