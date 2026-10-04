@@ -39,6 +39,45 @@ test("판단 화면: 검색 칸은 처음엔 비어 있고 입력한 단어로�
   for (const name of await page.getByRole("listbox").getByRole("option").allInnerTexts()) expect(name).toContain("수원");
 });
 
+test("검색: 검색어를 바꾸고 바로 Enter 해도 이전 검색어의 결과를 고르지 않는다 (WEB-04)", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("대전역");
+  const to = page.getByRole("combobox", { name: "도착지" });
+  await to.fill("전주");
+  await expect(page.getByRole("option", { name: /전주시/ }).first()).toBeVisible({ timeout: 10_000 });
+  await to.fill("수원");
+  await to.press("Enter");                                       // 수원 결과가 오기 전
+  await page.waitForTimeout(300);
+  await expect(page.getByRole("heading", { level: 1 })).not.toContainText("전주");
+  await expect(page.getByRole("option").first()).toContainText("수원", { timeout: 10_000 });
+  await to.press("Enter");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("수원");
+});
+
+test("검색: 서버 오류 · 한도 초과를 '결과 없음'이 아니라 오류로 알린다 (WEB-04)", async ({ page }) => {
+  await page.route("**/api/v1/places/search**", (r) => r.fulfill({ status: 429, contentType: "application/json",
+    body: JSON.stringify({ code: "RATE_LIMITED", message: "요청이 너무 많습니다" }) }));
+  await page.goto("/");
+  await page.getByRole("combobox", { name: "도착지" }).fill("전주");
+  await expect(page.getByRole("listbox")).toContainText("검색하지 못했습니다", { timeout: 10_000 });
+  await expect(page.getByText("검색 결과가 없습니다")).toHaveCount(0);
+});
+
+test("검색: 고른 장소는 입력값으로 보이고, 화살표로 고르는 항목을 스크린리더에 알린다 (WEB-13)", async ({ page }) => {
+  await page.goto("/");
+  const from = page.getByRole("combobox", { name: "출발지" });
+  await expect(from).toHaveValue("서울역");                        // placeholder(대비 3.3:1)가 아니라 값
+  await from.fill("수원");
+  await expect(page.getByRole("option").first()).toBeVisible({ timeout: 10_000 });
+  await from.press("ArrowDown");
+  const active = await from.getAttribute("aria-activedescendant");
+  expect(active).toBeTruthy();
+  await expect(page.locator(`[id="${active}"]`)).toHaveAttribute("aria-selected", "true");
+  await from.press("Escape");
+  await from.blur();
+  await expect(from).toHaveValue("서울역");
+});
+
 test("메인: 서비스 소개 — 한 문장 정의 · 3단계 · 다른 메뉴", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("link", { name: /소개/ }).click();
