@@ -187,7 +187,7 @@ ops/       web(Admin · Health · 수집 상태) · app(OpsService · AdminServi
 | SQL 위치 | 서비스 12개 · 컨트롤러 1개에 68문장 | 저장소 8개에만(중복 3문장은 하나로) — `ArchitectureTest` 가 지킴 |
 | 웹 | 화면이 주소 · 상태 · 부수효과 · 변환을 함께, `Tiles.tsx` 439줄 | `lib/api/client` · `lib/hooks/*` · 순수 함수(`lib/trip · rail · ops …`) · `components/trip/*` · `components/ops/*` |
 | 런타임 | Node 22 · Python 3.11 | Node 24 LTS · Python 3.13 |
-| 테스트 | API 122 · 수집기 123 · 웹 단위 24 · E2E 29 | API 126 · 수집기 123 · 웹 단위 35 · E2E 29 |
+| 테스트 | API 122 · 수집기 123 · 웹 단위 24 · E2E 29 | API 125 · 수집기 123 · 웹 단위 35 · E2E 29 |
 | 첫 로드 JS(`/`) · API p50 | 111.0KB · 수집 상태 35.3 · 정시율 3.8ms | 111.5KB · 38.6 · 5.6ms (캐시 상태 차이 수준 — 회귀 없음) |
 
 철도 · 길 저장소 분리는 별도 에이전트 두 개가 각자 작업 트리에서 맡고(파일이 겹치지 않게 나눔), SQL 문자열이 옮기기 전과 같은지
