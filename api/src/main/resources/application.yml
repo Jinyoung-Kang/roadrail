@@ -24,6 +24,11 @@ spring:
       # 가상 스레드는 동시 요청 수에 상한이 없다 — 풀이 차면 기본 30초를 기다린 뒤 500 이 되던 것을 3초 뒤 503(Retry-After)으로
       connection-timeout: 3000
       connection-init-sql: SET TIME ZONE 'Asia/Seoul'
+      # DB 가 응답을 멈추면(일시 정지 · 네트워크 단절) 소켓 읽기가 끝없이 기다렸다 — 15초 넘게 응답이 없으면 오류로 끊는다(QA-02).
+      # 가장 무거운 조회도 1초 안쪽(실측 0.3초)이라 여유가 크다. 끊긴 연결은 풀에서 버려진다
+      data-source-properties:
+        socketTimeout: 15
+        tcpKeepAlive: true
   flyway:
     locations: filesystem:../db/migrations
     schemas: ops
