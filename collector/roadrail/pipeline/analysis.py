@@ -33,8 +33,7 @@ async def baseline_daily(ctx: JobContext) -> int:
     df = await load_series(since)
     hol = await holidays.holiday_days(since.date())
     bl = await asyncio.to_thread(compute_baseline, df, hol)  # 수 초 걸리는 pandas 계산 — 이벤트 루프를 막지 않게(L9)
-    p = await db.pool()
-    async with p.connection() as conn, conn.transaction(), conn.cursor() as cur:
+    async with db.transaction() as cur:
         await cur.execute("DELETE FROM ana.road_baseline")
         await cur.executemany("""
             INSERT INTO ana.road_baseline (corridor_id, direction, dow, slot_idx, p50_sec, p90_sec, n, window_from, window_to)
@@ -55,9 +54,8 @@ async def backtest_daily(ctx: JobContext) -> int:
     hol = await holidays.holiday_days(since.date())  # 운영과 같은 기준선(공휴일 제외)
     # 백테스트는 pandas 로 십여 초 걸린다(실측 14.2초) — 그동안 다른 수집 작업이 멈추지 않게 스레드에서(L9)
     rows, start, end = await asyncio.to_thread(run_backtest, df, today + dt.timedelta(days=1), tau, holidays=hol)
-    p = await db.pool()
     # 오늘 결과 교체는 한 트랜잭션 — 삽입이 실패하면 이전 결과가 남는다(L9)
-    async with p.connection() as conn, conn.transaction(), conn.cursor() as cur:
+    async with db.transaction() as cur:
         await cur.execute("DELETE FROM ana.forecast_eval WHERE eval_date = %s", (today,))
         await cur.executemany("""
             INSERT INTO ana.forecast_eval (eval_date, model, corridor_id, direction, horizon_min, mae_sec, mape, n,
