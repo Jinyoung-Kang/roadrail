@@ -9,7 +9,7 @@ dependencies = [
   "redis==8.1.0",
   "APScheduler==3.11.3",
   "pandas==3.0.6",
-  "numpy==2.4.6",
+  "numpy==2.5.3",
   "PyYAML==6.0.3",
   "pydantic-settings==2.15.0",
 ]
@@ -18,7 +18,7 @@ dependencies = [
 dev = [
   "pytest==9.1.1",       # 8.4.2 는 PYSEC-2026-1845 (pip-audit)
   "pytest-asyncio==1.4.0",
-  "ruff==0.16.9",
+  "ruff==0.16.10",
   "pip-audit==2.10.1",
 ]
 
