@@ -311,7 +311,7 @@ async def test_api_call_log_masks_key(seeded, monkeypatch):
     today = now_kst().strftime("%Y%m%d")
     ctx = ctx_with(fake_ex(today))
     await road.collect_travel_time(ctx, full=True)
-    assert ctx.api_calls and all("SECRET123" not in json.dumps(c, ensure_ascii=False) for c in ctx.api_calls)
+    assert ctx.api_calls and all("SECRET123" not in json.dumps(c, ensure_ascii=False, default=str) for c in ctx.api_calls)
     assert all('"key": "***"' in c[3] for c in ctx.api_calls)
 
 
@@ -581,3 +581,22 @@ async def test_volume_keeps_the_first_collected_at_when_seen_again(seeded, fixtu
     await road.collect_volume(ctx_with(handler))
     again = await db.fetchone("SELECT min(collected_at) AS a, max(collected_at) AS b FROM ts.road_volume")
     assert again == first
+
+
+async def test_api_call_log_keeps_each_call_time(seeded, monkeypatch):
+    # L2: 호출 기록을 작업 끝에 한꺼번에 넣어 called_at 이 모두 같은 시각(끝난 시각)이었다
+    import asyncio
+
+    from roadrail.scheduler import jobs
+    monkeypatch.setattr(jobs, "http", lambda: httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json={"response": {"header": {"resultCode": "00"}, "body": {}}}))))
+
+    async def body(ctx):
+        await ctx.get_json("KMA", "a", "https://apis.data.go.kr/a", {})
+        await asyncio.sleep(0.3)
+        await ctx.get_json("KMA", "b", "https://apis.data.go.kr/b", {})
+    monkeypatch.setitem(jobs.JOBS, "maintenance", jobs.JobSpec(body, jobs._const({"KMA": 2})))
+    assert await jobs.run_job("maintenance", "ADMIN") == "OK"
+    rows = await db.fetch("SELECT endpoint, called_at FROM ops.api_call WHERE job_name = 'maintenance' ORDER BY endpoint")
+    assert [r["endpoint"] for r in rows] == ["a", "b"]
+    assert (rows[1]["called_at"] - rows[0]["called_at"]).total_seconds() >= 0.25

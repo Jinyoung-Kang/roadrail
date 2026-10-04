@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 
 from ..core.log import log, mask_params, mask_text
+from ..core.timeutil import now_kst
 from ..scheduler.quota import Allowance, QuotaBudget
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,7 @@ class JobContext:
                 if attempt > 0:  # 재시도도 실제 호출이므로 예산에서 차감
                     await self._take(provider)
                 t0 = time.perf_counter()
+                called_at = now_kst()  # 호출 기록은 작업 끝에 한꺼번에 넣으므로 시각은 여기서 잡는다(L2)
                 status, code, err, rows = None, None, None, None
                 try:
                     status, text = await self._fetch_text(provider, endpoint, url, params, headers)
@@ -163,7 +165,7 @@ class JobContext:
                     self.calls += 1
                     self.api_calls.append((
                         self.job_name, provider, endpoint, json.dumps(mask_params(params), ensure_ascii=False),
-                        status, code, int((time.perf_counter() - t0) * 1000), rows, err,
+                        status, code, int((time.perf_counter() - t0) * 1000), rows, err, called_at,
                     ))
                     attempt += 1
         raise ProviderError(provider, endpoint, str(last_err))

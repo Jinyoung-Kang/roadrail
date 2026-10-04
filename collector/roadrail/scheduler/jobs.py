@@ -162,7 +162,7 @@ async def _run_locked(name: str, trigger: str, spec: JobSpec, estimates: dict[st
         ms = int((time.perf_counter() - t0) * 1000)
         await db.executemany("""
             INSERT INTO ops.api_call (job_name, provider, endpoint, params_masked, http_status, result_code,
-                                      latency_ms, rows, error) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                                      latency_ms, rows, error, called_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             ctx.api_calls)
         await db.execute("""UPDATE ops.job_run SET finished_at = now(), status = %s, calls = %s, rows = %s, message = %s,
                               detail = %s WHERE run_id = %s""", (status, ctx.calls, ctx.rows, message, detail, run["run_id"]))
