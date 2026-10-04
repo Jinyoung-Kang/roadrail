@@ -91,7 +91,8 @@ public class CorridorController {
     public RoadDtos.Forecast forecast(@PathVariable String id, @RequestParam String dir,
                                       @RequestParam(defaultValue = "60,120,180") List<Integer> horizons) {
         corridors.require(id);
-        if (horizons.isEmpty() || horizons.size() > 12 || horizons.stream().anyMatch(h -> h < 0 || h > 720)) {
+        // 빈 항목(",,," · "60,,120")은 목록에 null 로 들어온다 — 범위 검사 전에 걸러 400 으로 (QA-01)
+        if (horizons.isEmpty() || horizons.size() > 12 || horizons.stream().anyMatch(h -> h == null || h < 0 || h > 720)) {
             throw ApiException.invalid("horizons 는 0~720 분, 최대 12개입니다.");
         }
         return road.forecast(id, CorridorService.dir(dir), horizons);
