@@ -95,6 +95,8 @@ def parse_units(body: dict) -> list[dict]:
             lat, lon = float(u["yValue"]), float(u["xValue"])
         except (TypeError, ValueError, KeyError):
             lat = lon = None
+        if lat is None or lon is None or not (33 <= lat <= 39 and 124 <= lon <= 132):
+            lat = lon = None  # 대한민국 밖 · 뒤바뀐 좌표는 좌표 없음 — 짐작하지 않고, 한 건이 동기화 전체를 실패시키지 않게(V17)
         out.append(dict(unit_code=u["unitCode"].strip(), unit_name=u["unitName"].strip(),
                         route_no=(u.get("routeNo") or "").strip() or None,
                         route_name=(u.get("routeName") or "").strip() or None, lat=lat, lon=lon))

@@ -31,6 +31,16 @@ def test_ex_units(fixtures_dir):
     assert any(u["lat"] and 33 < u["lat"] < 39 and 124 < u["lon"] < 132 for u in units)
 
 
+def test_ex_units_out_of_range_coordinates_become_unknown():
+    # 리뷰: V17 경위도 CHECK 뒤로 범위 밖 좌표 한 건이 톨게이트 동기화 전체를 CheckViolation 으로 실패시킬 수 있었다
+    # → 문자 안내 · UTIC 처럼 대한민국 범위 밖은 좌표 없음(짐작하지 않음)
+    body = {"list": [{"unitCode": "101 ", "unitName": "서울", "yValue": "127.1", "xValue": "37.5"},
+                     {"unitCode": "102", "unitName": "부산", "yValue": "0", "xValue": "0"},
+                     {"unitCode": "103", "unitName": "대전", "yValue": "36.35", "xValue": "127.38"}]}
+    units = {u["unit_code"]: (u["lat"], u["lon"]) for u in ex.parse_units(body)}
+    assert units == {"101": (None, None), "102": (None, None), "103": (36.35, 127.38)}
+
+
 def test_ex_traffic_all(fixtures_dir):
     rows = ex.parse_traffic_all(load(fixtures_dir, "ex", "traffic_all"))
     assert rows and all(r["slot_ts"].minute % 15 == 0 for r in rows)
