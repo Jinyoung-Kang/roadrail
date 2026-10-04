@@ -43,8 +43,13 @@ tasks.test {
     useJUnitPlatform()
     jvmArgs("-Duser.timezone=Asia/Seoul", "-Dfile.encoding=UTF-8")
     // 언어 간 계약: collector 와 같은 골든 케이스 파일을 읽는다
-    systemProperty("fixtures.dir", rootProject.projectDir.resolve("../fixtures").canonicalPath)
-    systemProperty("migrations.dir", rootProject.projectDir.resolve("../db/migrations").canonicalPath)
+    val fixtures = rootProject.projectDir.resolve("../fixtures")
+    val migrations = rootProject.projectDir.resolve("../db/migrations")
+    systemProperty("fixtures.dir", fixtures.canonicalPath)
+    systemProperty("migrations.dir", migrations.canonicalPath)
+    // 경로만 넘기면 Gradle 이 입력으로 보지 않아, 마이그레이션 · fixture 만 바뀌면 테스트를 '최신'으로 건너뛰었다
+    inputs.dir(fixtures).withPropertyName("fixtures").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(migrations).withPropertyName("migrations").withPathSensitivity(PathSensitivity.RELATIVE)
     testLogging {
         events("failed", "skipped")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
