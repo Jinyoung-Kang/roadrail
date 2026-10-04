@@ -50,6 +50,11 @@ export function ymd(d: Date): string {
   return `${k.getFullYear()}-${String(k.getMonth() + 1).padStart(2, "0")}-${String(k.getDate()).padStart(2, "0")}`;
 }
 
+/** 어제까지 days 일 (KST 날짜) — 운행 정보는 하루가 지나야 확정된다. 지금 시각에 따라 달라지므로 미리 그린 HTML 에 넣지 않는다 */
+export function daysUntilYesterday(now: Date, days: number): { from: string; to: string } {
+  return { from: ymd(new Date(now.getTime() - days * 86400_000)), to: ymd(new Date(now.getTime() - 86400_000)) };
+}
+
 export const DOW = ["", "월", "화", "수", "목", "금", "토", "일"];
 /** 요일별 집계 키 → 이름. 'H' = 공휴일(한국천문연구원 특일 정보) */
 export const dowLabel = (key: string) => (key === "H" ? "공휴일" : DOW[Number(key)] ?? key);

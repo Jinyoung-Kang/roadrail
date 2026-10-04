@@ -133,6 +133,18 @@ test("철도 분석: 임의 역 쌍 — 역 검색으로 바꾼다", async ({ pa
   await expect(page.getByRole("heading", { name: "정시율 랭킹" })).toBeVisible();
 });
 
+test("철도 분석: 빌드한 날이 아닌 날 열어도 하이드레이션 오류 없이 그날 기준 기간 (WEB-01)", async ({ page }) => {
+  // 정적으로 미리 그린 /rail 에 빌드한 날의 기간이 박혀 있어, 다른 날 열면 React 가 하이드레이션 불일치로 전체를 다시 그렸다
+  const errors: string[] = [];
+  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
+  page.on("pageerror", (e) => errors.push(e.message.slice(0, 200)));
+  await page.clock.setFixedTime(new Date(Date.now() + 40 * 86400_000));
+  await page.goto("/rail?dep=3900023&arr=3900073", { waitUntil: "networkidle" });
+  const to = await page.evaluate(() => new Date(Date.now() - 86400_000).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }));
+  await expect(page.getByText(new RegExp(`정시성 · \\d{4}-\\d{2}-\\d{2} ~ ${to}`))).toBeVisible();
+  expect(errors.filter((e) => /hydrat|Minified React error #(418|423|425)/i.test(e))).toEqual([]);
+});
+
 test("철도 분석: 역 선택 목록은 가나다순 · 차종은 TAGO 시간표 값만 · OO발 OO행", async ({ page }) => {
   await page.goto("/rail?dep=3900023&arr=3900114");
   await page.getByRole("combobox", { name: "출발역" }).click();

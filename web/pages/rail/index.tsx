@@ -6,7 +6,7 @@ import { SimpleBars } from "@/components/LazyCharts";
 import { C } from "@/lib/palette";
 import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Select, Spec, SpecStrip, TrainName } from "@/components/ui";
 import { qs, useApi } from "@/lib/api";
-import { DASH, dowLabel, durMin, hm, num, pct, ymd } from "@/lib/format";
+import { DASH, daysUntilYesterday, dowLabel, durMin, hm, num, pct } from "@/lib/format";
 import type { Punctuality, Station, Trains } from "@/lib/types";
 
 const PERIODS = [{ value: 30, label: "최근 30일" }, { value: 90, label: "최근 90일" }];
@@ -27,9 +27,9 @@ export default function RailPage() {
 
   // 비어 있을 때는 운행 중인 모든 역을 가나다순으로 (목록 안에서 스크롤)
   const allStations = useApi<Station[]>("/api/v1/stations?limit=400&sort=name");
-  const to = ymd(new Date(Date.now() - 86400_000));
-  const from = ymd(new Date(Date.now() - days * 86400_000));
-  const base = router.isReady && dep !== arr ? { dep, arr, from, to, thresholdMin: thr } : null;
+  // 기간은 여는 날 기준 — 정적으로 미리 그린 HTML(빌드한 날)과 달라 하이드레이션이 깨지지 않게 라우터 준비 뒤에만 (WEB-01)
+  const period = router.isReady ? daysUntilYesterday(new Date(), days) : null;
+  const base = period && dep !== arr ? { dep, arr, ...period, thresholdMin: thr } : null;
   const byTrain = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "train" })}` : null);
   const byDow = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "dow" })}` : null);
   const byHour = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "hour" })}` : null);
@@ -58,7 +58,7 @@ export default function RailPage() {
   return (
     <Layout title={`${depName ?? ""}→${arrName ?? ""} 철도 분석`}>
       <PageHero eyebrow="철도 분석 · 전국 모든 역 쌍 (직통)" title={depName && arrName ? `${depName}역 → ${arrName}역` : " "}
-                sub={<>코레일 운행계획 × 운행정보로 계산한 정시성 · {from} ~ {to}</>}>
+                sub={<>코레일 운행계획 × 운행정보로 계산한 정시성{period && ` · ${period.from} ~ ${period.to}`}</>}>
         <div className="flex flex-col items-center justify-center gap-2 sm:flex-row">
           {stationPicker("출발역", depName, "dep")}
           <button className="chip h-11 w-11 shrink-0 text-base" aria-label="출발역과 도착역 바꾸기" onClick={() => go({ dep: arr, arr: dep })}>⇄</button>
