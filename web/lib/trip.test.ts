@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ACCESS_OPTIONS, DEPART_OPTIONS, forPlaces } from "./trip.ts";
+import { ACCESS_OPTIONS, barMax, DEPART_OPTIONS, forPlaces } from "./trip.ts";
 
 test("응답은 지금 고른 두 곳의 것일 때만", () => {
   const data = { from: { name: "서울역" }, to: { name: "대전역" }, v: 1 };
@@ -13,4 +13,9 @@ test("응답은 지금 고른 두 곳의 것일 때만", () => {
 test("출발 시점 · 역까지 시간 선택지", () => {
   assert.deepEqual(DEPART_OPTIONS.map((o) => o.label), ["지금", "+30분", "+1시간", "+2시간", "+3시간"]);
   assert.deepEqual(ACCESS_OPTIONS.map((o) => o.value), ["auto", "10", "20", "30", "45"]);
+});
+
+test("두 카드의 시간 막대는 긴 쪽에 맞춘 같은 축 — 모르는 쪽은 0", () => {
+  assert.equal(barMax({ decision: { carTotalMin: 107, trainTotalMin: 95 } } as never), 107);
+  assert.equal(barMax({ decision: { carTotalMin: null, trainTotalMin: 95 } } as never), 95);
 });
