@@ -24,6 +24,10 @@ from ..providers.base import JobContext, ProviderError
 logger = logging.getLogger(__name__)
 
 JOB = "road_travel_time"
+# 공개 지연(약 3시간)에 여유를 둔 시간 — 이보다 오래된 슬롯이 전체를 다시 받아도 비면 원천에 표본이 없는 것(NO_SAMPLES)
+PUBLISH_MARGIN = dt.timedelta(hours=4)
+# 다시 받지 않는 결측 사유 — 원천이 그날을 더는 주지 않음 · 원천에 표본이 없음
+CLOSED_REASONS = ("SOURCE_EXPIRED", "NO_SAMPLES")
 
 SQL_UPSERT_TT = """
 INSERT INTO ts.road_travel_time (slot_ts, start_unit_code, end_unit_code, car_type, travel_sec, min_sec, max_sec,
@@ -239,37 +243,45 @@ async def source_day(ctx: JobContext, chains: dict[tuple[str, str], list[Segment
 async def backfill_gaps(ctx: JobContext) -> int:
     """열린 결측 → 해당 길 구간을 처음부터 다시 받아 재합산.
     원천은 자정 뒤 약 01:30 까지 전날을 주므로 어제 결측은 원천이 아직 어제를 주는 동안 다시 받고,
-    원천이 넘어간 것을 확인한 뒤에만 SOURCE_EXPIRED 로 닫는다(M2). 그보다 오래된 결측은 바로 닫는다."""
+    원천이 넘어간 것을 확인한 뒤에만 SOURCE_EXPIRED 로 닫는다(M2). 그보다 오래된 결측은 바로 닫는다.
+    공개 지연이 지난 슬롯이 전체를 다시 받아도 비면 NO_SAMPLES 로 두고 더 받지 않는다 — 새벽처럼 원천 표본이 원래 적은
+    슬롯을 2시간마다 6번씩 다시 받던 것(하루 약 900건, M3). 완전성 계산에서도 뺀다(API)."""
     today = now_kst().date()
     start = day_start(today)
     y_start = start - dt.timedelta(days=1)
     expire = """UPDATE ops.slot_gap SET reason = 'SOURCE_EXPIRED'
-                WHERE job_name = %s AND backfilled_at IS NULL AND slot_ts < %s AND reason <> 'SOURCE_EXPIRED'"""
-    await db.execute(expire, (JOB, y_start))
+                WHERE job_name = %s AND backfilled_at IS NULL AND slot_ts < %s AND reason <> ALL(%s)"""
+    await db.execute(expire, (JOB, y_start, list(CLOSED_REASONS)))
     chains = await load_chains()
     since = start
     yesterday_open = await db.fetchone("""SELECT 1 AS x FROM ops.slot_gap
-                                          WHERE job_name = %s AND backfilled_at IS NULL AND reason <> 'SOURCE_EXPIRED'
+                                          WHERE job_name = %s AND backfilled_at IS NULL AND reason <> ALL(%s)
                                             AND slot_ts >= %s AND slot_ts < %s AND attempts < 6 LIMIT 1""",
-                                       (JOB, y_start, start))
+                                       (JOB, list(CLOSED_REASONS), y_start, start))
     if yesterday_open:
         served = await source_day(ctx, chains)
         if served == y_start.strftime("%Y%m%d"):
             since = y_start                        # 원천이 아직 어제를 준다 — 어제 결측도 다시 받는다
         elif served is not None:
-            await db.execute(expire, (JOB, start))  # 원천이 넘어갔다 — 어제 결측은 이제 받을 수 없다
+            await db.execute(expire, (JOB, start, list(CLOSED_REASONS)))  # 원천이 넘어갔다 — 어제 결측은 이제 받을 수 없다
     open_gaps = await db.fetch("""SELECT DISTINCT series_key FROM ops.slot_gap
-                                  WHERE job_name = %s AND backfilled_at IS NULL AND reason <> 'SOURCE_EXPIRED'
-                                    AND slot_ts >= %s AND attempts < 6""", (JOB, since))
+                                  WHERE job_name = %s AND backfilled_at IS NULL AND reason <> ALL(%s)
+                                    AND slot_ts >= %s AND attempts < 6""", (JOB, list(CLOSED_REASONS), since))
     if not open_gaps:
         return 0
     keys = {tuple(g["series_key"].split(":")) for g in open_gaps}
     segs = {seg.key for k in keys if k in chains for seg in chains[k]}
     n = await collect_travel_time(ctx, full=True, only=segs)
-    await recompute_corridors({k: v for k, v in chains.items() if k in keys}, since, now_kst())
+    now = now_kst()
+    await recompute_corridors({k: v for k, v in chains.items() if k in keys}, since, now)
+    if not any(note.startswith("PARTIAL") for note in ctx.notes):   # 모든 구간을 다시 받았을 때만 '원천에 없음'으로 판단
+        await db.execute("""UPDATE ops.slot_gap SET reason = 'NO_SAMPLES'
+                            WHERE job_name = %s AND backfilled_at IS NULL AND reason IN ('LOW_COVERAGE', 'NO_DATA')
+                              AND series_key = ANY(%s) AND slot_ts >= %s AND slot_ts < %s""",
+                         (JOB, [g["series_key"] for g in open_gaps], since, now - PUBLISH_MARGIN))
     await db.execute("""UPDATE ops.slot_gap SET attempts = attempts + 1
-                        WHERE job_name = %s AND backfilled_at IS NULL AND reason <> 'SOURCE_EXPIRED' AND slot_ts >= %s""",
-                     (JOB, since))
+                        WHERE job_name = %s AND backfilled_at IS NULL AND reason <> ALL(%s) AND slot_ts >= %s""",
+                     (JOB, list(CLOSED_REASONS), since))
     return n
 
 

@@ -359,6 +359,32 @@ class ApiIT extends IntegrationTest {
     }
 
     @Test
+    void roadCompletenessLeavesOutSlotsTheSourceNeverHad() throws Exception {
+        // M3: 원천에 표본이 없는 슬롯(새벽 등, 전체를 다시 받아도 빔)까지 결측으로 세어 수집이 완벽한 날도 63~71% — 경고가 늘 켜졌다
+        OffsetDateTime day = OffsetDateTime.now(KST).withHour(0).withMinute(0).withSecond(0).withNano(0);
+        jdbc.execute("TRUNCATE ts.road_corridor_tt");
+        jdbc.update("DELETE FROM ops.slot_gap");
+        for (int m = 0; m < 60; m += 5) {
+            for (String dir : List.of("DN", "UP")) {
+                if (dir.equals("DN") && (m == 10 || m == 20)) {
+                    jdbc.update("INSERT INTO ops.slot_gap (job_name, series_key, slot_ts, reason) VALUES ('road_travel_time', ?, ?, 'NO_SAMPLES')",
+                            "SEL-DJN:DN", day.plusMinutes(m));
+                    continue;
+                }
+                jdbc.update("INSERT INTO ts.road_corridor_tt VALUES (?, 'SEL-DJN', ?, 7260, 10, 10, 'OK', now())", day.plusMinutes(m), dir);
+            }
+        }
+        try {
+            mvc.perform(get("/api/v1/ops/collect-status")).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.jobs[?(@.job == 'road_travel_time')].completeness24h").value(hasItem(1.0)))
+                    .andExpect(jsonPath("$.jobs[?(@.job == 'road_travel_time')].gaps24h").value(hasItem(0)))
+                    .andExpect(jsonPath("$.jobs[?(@.job == 'road_travel_time')].noSamples24h").value(hasItem(2)));
+        } finally {
+            jdbc.update("DELETE FROM ops.slot_gap");
+        }
+    }
+
+    @Test
     void routeIncidentsSortNewestFirstIncludingCorridorMatchedOnes() {
         // RVW-08: 좌표 없는 길 매칭 안내를 정렬 뒤에 붙여, 더 최근 것이어도 '최근 20건' 자르기에서 먼저 빠졌다
         jdbc.update("DELETE FROM ts.road_incident");

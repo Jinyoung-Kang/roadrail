@@ -135,7 +135,8 @@ export default function Ops() {
                       <span className="inline-flex items-center gap-2">
                         {j.completeness24h < 0.95 && <span className="text-serious" title="95% 미만">▲</span>}{pct(j.completeness24h, 1)}
                       </span>)}</td>
-                    <td className="td text-right">{j.gaps24h ?? DASH}</td>
+                    <td className="td text-right">{j.gaps24h ?? DASH}
+                      {j.noSamples24h ? <span className="block text-[11px] text-muted" title="원천에 표본이 없는 슬롯 — 전체를 다시 받아도 비어 있어 결측 · 완전성에서 뺌">원천 없음 {j.noSamples24h}</span> : null}</td>
                     <td className="td max-w-[280px] text-xs text-muted">
                       <div className="truncate whitespace-nowrap" title={j.lastMessage ?? ""}>{j.lastMessage ?? ""}</div>
                       {failed[j.job] && <a href={`#run-${failed[j.job]}`} className="font-medium text-accent hover:underline">

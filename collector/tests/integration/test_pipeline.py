@@ -543,3 +543,26 @@ async def test_oversized_response_is_cut_off(monkeypatch):
         return httpx.Response(200, json={"pad": "x" * 5000})
     with pytest.raises(ProviderError, match="너무 큼"):
         await ctx_with(handler).get_json("KMA", "x", "https://apis.data.go.kr/x", {})
+
+
+async def test_gap_that_survives_a_full_refetch_is_marked_no_samples_and_not_retried(seeded, monkeypatch):
+    # M3: 새벽엔 원천 표본이 원래 적어 길 슬롯이 '결측'으로 남는다. 다시 받아도 채울 수 없는데 2시간마다 6번씩 전체를
+    # 다시 받았다(실측 하루 약 900건). 공개 지연(약 3시간)이 지난 뒤 전체를 다시 받아도 비어 있으면 NO_SAMPLES 로 두고 그만 받는다.
+    d1 = now_kst().replace(hour=0, minute=0, second=0, microsecond=0)
+    clock = {"now": d1 + dt.timedelta(hours=1)}
+    monkeypatch.setattr(road, "now_kst", lambda: clock["now"])
+    state = {"day": d1.strftime("%Y%m%d"), "slots": 12, "calls": [], "drop": {"00:10"}}   # 00:00~00:55, 00:10 은 원천에 없음
+    await road.collect_travel_time(ctx_with(fake_ex_source(state)), full=True)
+    clock["now"] = d1 + dt.timedelta(hours=6, minutes=7)  # 06:07 백필 — 00:10 은 공개 지연이 한참 지났다
+    ctx = ctx_with(fake_ex_source(state))
+    ctx.job_name = "road_gap_backfill"
+    await road.backfill_gaps(ctx)
+    gap = await db.fetchone("SELECT reason, backfilled_at FROM ops.slot_gap WHERE series_key = 'TST:DN' AND slot_ts = %s",
+                            (d1 + dt.timedelta(minutes=10),))
+    assert gap["reason"] == "NO_SAMPLES" and gap["backfilled_at"] is None
+    state["calls"] = []
+    clock["now"] = d1 + dt.timedelta(hours=8, minutes=7)
+    ctx = ctx_with(fake_ex_source(state))
+    ctx.job_name = "road_gap_backfill"
+    await road.backfill_gaps(ctx)
+    assert state["calls"] == []                            # 다시 받지 않는다

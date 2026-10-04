@@ -29,11 +29,16 @@ public class OpsService {
     public Status status() {
         OffsetDateTime now = Times.now();
         Map<String, Double> completeness = completeness();
-        Map<String, Integer> gaps = new HashMap<>();
+        Map<String, Integer> gaps = new HashMap<>(), noSamples = new HashMap<>();
+        // 원천에 표본이 없는 슬롯(NO_SAMPLES — 전체를 다시 받아도 빔)은 수집 결측이 아니라 따로 센다(M3)
         jdbc.sql("""
-                SELECT job_name, count(*) FROM ops.slot_gap
+                SELECT job_name, count(*) FILTER (WHERE reason <> 'NO_SAMPLES'), count(*) FILTER (WHERE reason = 'NO_SAMPLES')
+                FROM ops.slot_gap
                 WHERE backfilled_at IS NULL AND slot_ts > now() - interval '24 hours' AND reason <> 'SOURCE_EXPIRED'
-                GROUP BY 1""").query(rs -> { gaps.put(rs.getString(1), rs.getInt(2)); });
+                GROUP BY 1""").query(rs -> {
+            gaps.put(rs.getString(1), rs.getInt(2));
+            noSamples.put(rs.getString(1), rs.getInt(3));
+        });
         List<String> names = jdbc.sql("SELECT job_name FROM ops.collect_job").query(String.class).list();
         Set<String> running = runningJobs(names);  // 잠금 확인을 작업마다 1번씩 → MGET 1번
         List<Job> jobs = jdbc.sql("""
@@ -47,7 +52,8 @@ public class OpsService {
                     return new Job(job, rs.getString(2), rs.getString(3), rs.getString(4), rs.getBoolean(5), last,
                             Times.kst(rs.getObject(7, OffsetDateTime.class)), (Integer) rs.getObject(8),
                             (Integer) rs.getObject(9), (Integer) rs.getObject(10), rs.getString(11), c,
-                            gaps.getOrDefault(job, c == null ? null : 0), running.contains(job), warn);
+                            gaps.getOrDefault(job, c == null ? null : 0), noSamples.getOrDefault(job, c == null ? null : 0),
+                            running.contains(job), warn);
                 }).list();
         List<Run> runs = jdbc.sql("""
                 SELECT run_id, job_name, trigger, started_at, finished_at, status, calls, rows, message
@@ -165,9 +171,12 @@ public class OpsService {
         jdbc.sql("""
                 WITH wm AS (SELECT max(slot_ts) AS t, min(slot_ts) AS f FROM ts.road_corridor_tt),
                      series AS (SELECT count(DISTINCT (corridor_id, direction)) AS n FROM ref.corridor_road),
-                     win AS (SELECT greatest(wm.t - interval '24 hours', date_trunc('day', wm.f)) AS s, wm.t FROM wm)
+                     win AS (SELECT greatest(wm.t - interval '24 hours', date_trunc('day', wm.f)) AS s, wm.t FROM wm),
+                     empty AS (SELECT count(*) AS n FROM ops.slot_gap, win
+                               WHERE job_name = 'road_travel_time' AND reason = 'NO_SAMPLES' AND backfilled_at IS NULL
+                                 AND slot_ts >= win.s AND slot_ts <= win.t)
                 SELECT count(*)::float / nullif((SELECT n FROM series)
-                         * (extract(epoch FROM (SELECT t - s FROM win)) / 300 + 1), 0)
+                         * (extract(epoch FROM (SELECT t - s FROM win)) / 300 + 1) - (SELECT n FROM empty), 0)
                 FROM ts.road_corridor_tt, win WHERE slot_ts >= win.s AND slot_ts <= win.t""")
                 .query(Double.class).optional().ifPresent(v -> m.put("road_travel_time", round3(Math.min(v, 1))));
         put(m, "road_volume_all", window("ts.road_volume", "slot_ts", 15, "count(DISTINCT slot_ts)"));
