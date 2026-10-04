@@ -1,5 +1,5 @@
 import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Layout from "@/components/Layout";
 import SearchPicker from "@/components/SearchPicker";
 import { SimpleBars } from "@/components/LazyCharts";
@@ -30,18 +30,20 @@ export default function RailPage() {
   // 기간은 여는 날 기준 — 정적으로 미리 그린 HTML(빌드한 날)과 달라 하이드레이션이 깨지지 않게 라우터 준비 뒤에만 (WEB-01)
   const period = router.isReady ? daysUntilYesterday(new Date(), days) : null;
   const base = period && dep !== arr ? { dep, arr, ...period, thresholdMin: thr } : null;
-  const byTrain = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "train" })}` : null);
-  const byDow = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "dow" })}` : null);
-  const byHour = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "hour" })}` : null);
+  // 처음 보는 역 쌍은 TAGO 시간표를 받는 동안 일부를 확인 불가로 둔다 → 4초 뒤 다시(최대 30번 = 2분, 서버도 시간당 상한)
+  const pending = { retryWhile: (d: Punctuality) => d.timetablePending, retryMs: 4000, maxRetries: 30 };
+  const byTrain = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "train" })}` : null, pending);
+  const byDow = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "dow" })}` : null, pending);
+  const byHour = useApi<Punctuality>(base ? `/api/v1/rail/od/punctuality?${qs({ ...base, groupBy: "hour" })}` : null, pending);
   const trains = useApi<Trains>(base ? `/api/v1/rail/od/trains?${qs({ dep, arr, date })}` : null);
-
-  // 처음 보는 역 쌍은 TAGO 시간표를 받는 동안 일부를 보간(⚠)으로 계산한다 → 받는 대로 다시 계산
   const ttPending = !!(byTrain.data?.timetablePending || byDow.data?.timetablePending || byHour.data?.timetablePending);
+  // 운행표도 같은 시간표를 쓴다 — 이 역 쌍의 시간표 받기가 끝나면 한 번 다시
+  const pair = `${dep}-${arr}`;
+  const pendingFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!ttPending) return;
-    const id = setTimeout(() => { byTrain.reload(); byDow.reload(); byHour.reload(); trains.reload(); }, 4000);
-    return () => clearTimeout(id);
-  }, [ttPending, byTrain.data, byDow.data, byHour.data]);  // eslint-disable-line react-hooks/exhaustive-deps
+    if (ttPending) pendingFor.current = pair;
+    else if (pendingFor.current === pair && byTrain.data) { pendingFor.current = null; trains.reload(); }
+  }, [ttPending, pair, byTrain.data, trains.reload]);
 
   const s = byTrain.data?.summary;
   const nat = byTrain.data?.nationwideExact;
