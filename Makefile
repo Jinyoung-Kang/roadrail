@@ -3,7 +3,7 @@ SHELL := /bin/bash
 COMPOSE := docker compose
 ADMIN_TOKEN = $(shell grep -E '^ADMIN_TOKEN=' .env 2>/dev/null | cut -d= -f2-)
 
-.PHONY: help env up down logs ps seed collect-once rail-backfill reclassify smoke test test-collector test-api e2e capture bench psql reset build
+.PHONY: help env up down logs ps seed collect-once rail-backfill reclassify smoke test test-collector test-api e2e capture bench psql backup restore-check restore reset build
 
 help: ## 명령 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[1m%-16s\033[0m %s\n", $$1, $$2}'
@@ -67,6 +67,15 @@ capture: ## README 스크린샷 갱신 → docs/images
 
 psql: ## DB 접속
 	$(COMPOSE) exec db psql -U roadrail
+
+backup: ## DB 백업 → backups/roadrail-<시각>.dump (확인 후 저장, 최근 KEEP=7 개 보관)
+	@tools/db_backup.sh
+
+restore-check: ## 백업을 별도 DB(roadrail_restore)에 복원해 표 · 행 수 확인: make restore-check FILE=backups/….dump
+	@tools/db_restore.sh "$(FILE)"
+
+restore: ## 백업으로 DB 교체 (확인 질문 · 교체 전 자동 백업 · api/collector 잠시 멈춤): make restore FILE=…
+	@tools/db_restore.sh "$(FILE)" --replace
 
 reset: ## 모든 데이터 삭제 후 재기동 (주의)
 	$(COMPOSE) down -v
