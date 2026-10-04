@@ -54,6 +54,10 @@ public class KakaoMobilityClient {
         this.quota = quota;
     }
 
+    public boolean enabled() {
+        return props.kakaoRestApiKey() != null && !props.kakaoRestApiKey().isBlank();
+    }
+
     public Optional<Eta> futureEta(double oLat, double oLon, double dLat, double dLon, OffsetDateTime departAt) {
         return futureEta(oLat, oLon, dLat, dLon, departAt, false);
     }

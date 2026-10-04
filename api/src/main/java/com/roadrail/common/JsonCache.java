@@ -33,6 +33,11 @@ public class JsonCache {
      * loader 안에서 같은 키로 get 을 다시 부르면 안 된다(자기 자신을 기다림).
      */
     public <T> Hit<T> get(String key, Duration ttl, Class<T> type, Supplier<T> loader) {
+        return get(key, ttl, type, loader, v -> true);
+    }
+
+    /** cacheable 이 거짓인 값(예: 외부 조회가 아직 안 끝난 결과)은 돌려주기만 하고 저장하지 않는다 */
+    public <T> Hit<T> get(String key, Duration ttl, Class<T> type, Supplier<T> loader, java.util.function.Predicate<T> cacheable) {
         try {
             String hit = redis.opsForValue().get(key);
             if (hit != null) return new Hit<>(mapper.readValue(hit, type), true);
@@ -43,7 +48,7 @@ public class JsonCache {
         try {
             Object value = loading.run(key, () -> {
                 T v = loader.get();
-                if (v != null) put(key, v, ttl);
+                if (v != null && cacheable.test(v)) put(key, v, ttl);
                 return v;
             }, Runnable::run).join();
             return new Hit<>(type.cast(value), false);
