@@ -130,13 +130,14 @@ public class EnvService {
             List<Incident> kept = withoutDuplicates(out);
             out.clear();
             out.addAll(kept);
-            out.sort(Comparator.comparing(Incident::sentAt).reversed());
         }
         if (corridorId != null) {
             jdbc.sql("SELECT " + INCIDENT_COLS + " FROM ts.road_incident WHERE " + ACTIVE
                             + " AND lat IS NULL AND :c = ANY(corridor_ids) ORDER BY sent_at DESC LIMIT 10")
                     .param("c", corridorId).query((rs, i) -> incident(rs)).list().forEach(out::add);
         }
+        // 합친 뒤 최근 순 — 좌표 없는 길 매칭 안내도 함께 정렬해야 '최근 20건' 자르기에서 먼저 빠지지 않는다(RVW-08)
+        out.sort(Comparator.comparing(Incident::sentAt).reversed());
         return out;
     }
 

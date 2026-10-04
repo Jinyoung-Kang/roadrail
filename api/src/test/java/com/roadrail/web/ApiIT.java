@@ -359,6 +359,22 @@ class ApiIT extends IntegrationTest {
     }
 
     @Test
+    void routeIncidentsSortNewestFirstIncludingCorridorMatchedOnes() {
+        // RVW-08: 좌표 없는 길 매칭 안내를 정렬 뒤에 붙여, 더 최근 것이어도 '최근 20건' 자르기에서 먼저 빠졌다
+        jdbc.update("DELETE FROM ts.road_incident");
+        jdbc.update("""
+                INSERT INTO ts.road_incident (msg_hash, sent_at, type_code, type_name, route_name, content, lat, lon, corridor_ids, source)
+                VALUES (repeat('a', 64), now() - interval '30 minutes', '1', '사고', '경부선', '좌표 있음 · 오래됨', 37.50, 126.97, '{}', 'EX'),
+                       (repeat('b', 64), now(), '1', '사고', '경부선', '좌표 없음 · 최신', NULL, NULL, '{SEL-DJN}', 'EX')""");
+        try {
+            var got = env.routeIncidents(List.of(new double[]{37.55, 126.97}, new double[]{37.45, 126.97}), "SEL-DJN");
+            assertThat(got).extracting(EnvDtos.Incident::content).containsExactly("좌표 없음 · 최신", "좌표 있음 · 오래됨");
+        } finally {
+            jdbc.update("DELETE FROM ts.road_incident");
+        }
+    }
+
+    @Test
     void storedForecastForNowComesFromTheLatestIssueThatHasThatHour() {
         // RVW-02: 단기예보 새 발표는 발표 +1시간부터 값이 있다(14시 발표 → 15시부터). 가장 최근 발표에서만 찾아
         // 발표 직후 한 시간(하루 약 6시간)은 '지금 출발' 날씨가 비었다 → 그 시각을 가진 가장 최근 발표에서 읽는다
