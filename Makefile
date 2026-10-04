@@ -77,6 +77,6 @@ restore-check: ## 백업을 별도 DB(roadrail_restore)에 복원해 표 · 행 
 restore: ## 백업으로 DB 교체 (확인 질문 · 교체 전 자동 백업 · api/collector 잠시 멈춤): make restore FILE=…
 	@tools/db_restore.sh "$(FILE)" --replace
 
-reset: ## 모든 데이터 삭제 후 재기동 (주의)
+reset: ## 모든 데이터 삭제 후 재기동 (주의 — 먼저 make backup)
 	$(COMPOSE) down -v
 	$(MAKE) up

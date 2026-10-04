@@ -91,6 +91,16 @@ open http://localhost:3300
 
 그 밖의 명령: `make ps` · `make logs` · `make collect-once JOB=road_travel_time` · `make rail-backfill FROM=… TO=…` · `make reclassify` · `make test` · `make e2e` · `make psql` · `make reset`
 
+**백업 · 복원** ([ADR-027](docs/adr/027-db-backup-restore.md)) — 백업은 `backups/`(저장소 밖)에 남습니다.
+
+| 명령 | 하는 일 |
+|---|---|
+| `make backup` | `pg_dump -Fc` → `backups/roadrail-<시각>.dump`. 읽을 수 있는지 확인한 뒤 저장하고 최근 7개만 남김(`KEEP=`) — 개발 DB 실측 3.6초 · 16MB |
+| `make restore-check FILE=backups/….dump` | 별도 DB(`roadrail_restore`)에 복원해 표마다 행 수를 지금 DB 와 나란히 보여 줌. 지금 DB 는 그대로 — 실측 6초 · 145만 행 |
+| `make restore FILE=backups/….dump` | 확인 질문 → 지금 DB 자동 백업(`backups/before-restore`) → 별도 DB 에 복원 → api · collector 를 잠시 멈추고 DB 를 바꿔 끼움 |
+
+매일 남기려면 크론 등에 `cd <저장소> && make backup` 을 걸어 두세요. `make reset`(볼륨 삭제) 전에는 `make backup` 을 먼저 하세요.
+
 ---
 
 ## 2. 아키텍처
