@@ -64,10 +64,20 @@ function FailureLog({ f, open }: { f: OpsFailure; open: boolean }) {
 
 export default function Ops() {
   const s = useApi<OpsStatus>("/api/v1/ops/collect-status", 30_000);
+  // 관리 토큰은 기본으로 메모리에만 — '이 탭에서 기억'을 켤 때만 sessionStorage (같은 출처 스크립트가 읽을 수 있으므로)
   const [token, setToken] = useState("");
+  const [remember, setRemember] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  useEffect(() => { try { setToken(sessionStorage.getItem("rr-admin") ?? ""); } catch { /* 저장소 없음 */ } }, []);
-  const saveToken = (v: string) => { setToken(v); try { sessionStorage.setItem("rr-admin", v); } catch { /* 무시 */ } };
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("rr-admin");
+      if (saved) { setToken(saved); setRemember(true); }
+    } catch { /* 저장소 없음 */ }
+  }, []);
+  const saveToken = (v: string, keep = remember) => {
+    setToken(v);
+    try { if (keep && v) sessionStorage.setItem("rr-admin", v); else sessionStorage.removeItem("rr-admin"); } catch { /* 무시 */ }
+  };
 
   async function run(job: string) {
     setMsg(null);
@@ -143,11 +153,17 @@ export default function Ops() {
           <label className="flex items-center gap-2">
             <span className="text-muted">관리 토큰</span>
             <input type="password" value={token} onChange={(e) => saveToken(e.target.value)} placeholder="X-Admin-Token (.env ADMIN_TOKEN)"
+                   autoComplete="off" spellCheck={false}
                    className="h-8 w-72 rounded-sm bg-cloud px-3 text-sm focus:outline-hidden focus:ring-2 focus:ring-accent" />
           </label>
+          <label className="flex items-center gap-1.5 text-xs text-muted">
+            <input type="checkbox" checked={remember} onChange={(e) => { setRemember(e.target.checked); saveToken(token, e.target.checked); }} />
+            이 탭에서 기억
+          </label>
+          {token && <button type="button" onClick={() => saveToken("", false)} className="text-xs text-muted hover:underline">지우기</button>}
           {msg && <span className="text-ink2" role="status">{msg}</span>}
         </div>
-        <Note>토큰은 이 브라우저 탭의 sessionStorage 에만 둡니다. 실행 요청은 Redis Stream(rr:commands) 을 거쳐 수집기가 처리하며, 실행 중이면 409 JOB_RUNNING 입니다.</Note>
+        <Note>토큰은 기본으로 이 화면의 메모리에만 두고, '이 탭에서 기억'을 켜면 이 탭의 sessionStorage 에 둡니다. 실행 요청은 Redis Stream(rr:commands) 을 거쳐 수집기가 처리하며, 실행 중이면 409 JOB_RUNNING 입니다.</Note>
       </Section>
 
       {d && (

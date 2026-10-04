@@ -208,6 +208,18 @@ test("보안: 프록시는 /api/v1 아래의 정상 경로만 넘긴다", async 
   expect((await request.get("/api/v1/corridors")).ok()).toBe(true);
 });
 
+test("보안: 프록시는 허용한 메서드만 넘기고, API 문서 경로도 다른 사이트에 끼워 넣을 수 없다", async ({ request }) => {
+  // WEB-09: TRACE 등은 API 까지 가지 않고 405 + Allow (예전: 502 '연결할 수 없습니다')
+  const r = await request.fetch("/api/v1/corridors", { method: "TRACE" });
+  expect(r.status()).toBe(405);
+  expect(r.headers()["allow"]).toContain("GET");
+  expect((await r.json()).code).toBe("METHOD_NOT_ALLOWED");
+  // WEB-10: Swagger UI 경로는 보안 헤더가 하나도 없어 다른 사이트가 프레임으로 넣을 수 있었다(클릭재킹)
+  const docs = await request.get("/swagger-ui/index.html");
+  expect(docs.headers()["x-frame-options"]).toBe("DENY");
+  expect(docs.headers()["x-content-type-options"]).toBe("nosniff");
+});
+
 test("자동차 경로: 구간별 소통이 경로 전체를 빈틈없이 덮고, 지도 범례는 느린 구간과 일치한다", async ({ page, request }) => {
   const q = "fromLat=37.5547&fromLon=126.9707&fromName=%EC%84%9C%EC%9A%B8%EC%97%AD&toLat=36.3326&toLon=127.4342&toName=%EB%8C%80%EC%A0%84%EC%97%AD&departIn=0";
   const d = await (await request.get(`/api/v1/road/route?${q}`)).json();
