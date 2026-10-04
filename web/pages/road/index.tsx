@@ -48,7 +48,7 @@ function TypeBar({ r }: { r: RouteSummary }) {
           </li>
         ))}
       </ul>
-      <p className="mt-1 text-[11px] text-faint">{TYPE_NOTE}</p>
+      <p className="mt-1 text-[11px] text-muted">{TYPE_NOTE}</p>
     </div>
   );
 }
@@ -88,7 +88,7 @@ export default function RoadIndex() {
   return (
     <Layout title={`${from?.name ?? ""}→${to?.name ?? ""} 도로 분석`}>
       <PageHero eyebrow="도로 분석 · 전국 어디든" title={from && to ? `${from.name} → ${to.name}` : " "}
-                sub={<>카카오 미래 운행 정보로 본 {hm(d?.departAt)} 출발 경로 · 직선 {num(d?.straightKm, 0)}km</>}>
+                sub={<>카카오 미래 운행 정보로 본 <br className="sm:hidden" />{hm(d?.departAt)} 출발 경로 · 직선 {num(d?.straightKm, 0)}km</>}>
         <div className="flex flex-col items-center justify-center gap-2 sm:flex-row">
           {picker("출발지", from, "from")}
           <button className="chip h-11 w-11 shrink-0 text-base" aria-label="출발지와 도착지 바꾸기"

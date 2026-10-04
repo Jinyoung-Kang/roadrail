@@ -72,7 +72,7 @@ export default function Home() {
           <h1 className="mt-2 text-[34px] sm:text-[48px] font-medium tracking-tight text-ink">
             {from?.name ?? " "} <span className="text-faint">→</span> {to?.name ?? " "}
           </h1>
-          <p className="mt-2 min-h-[24px] text-[15px] sm:text-[17px] text-ink2">
+          <p className="mt-2 min-h-[3em] sm:min-h-[1.5em] text-[15px] sm:text-[17px] text-ink2">
             {trip.loading && !t ? "판단 중…" : d?.summary ?? (trip.error ? "판단 카드를 불러오지 못했습니다" : "")}
             {d && <a href="#evidence" className="ml-2 underline underline-offset-4 text-ink">근거 보기</a>}
           </p>
@@ -97,7 +97,8 @@ export default function Home() {
           </SpecStrip>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 px-4 sm:flex-row sm:gap-6">
             <a href="#compare" className="btn-primary">자세히 보기</a>
-            {from && to && <Link href={`/road?from=${encodeURIComponent(encodePlace(from))}&to=${encodeURIComponent(encodePlace(to))}`} className="btn-secondary">경로 분석</Link>}
+            {from && to ? <Link href={`/road?from=${encodeURIComponent(encodePlace(from))}&to=${encodeURIComponent(encodePlace(to))}`} className="btn-secondary">경로 분석</Link>
+              : <span aria-hidden className="btn-secondary invisible">경로 분석</span>}
           </div>
         </div>
       </section>

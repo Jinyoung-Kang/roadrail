@@ -1,0 +1,72 @@
+# QA 스택 — 개발 스택과 분리된 DB · Redis · API · 웹. 외부 API 키 없음(호출 0), 관리 토큰은 시험용 값.
+#   장애 주입(DB · Redis 멈춤) · 부하 · 비정상 입력은 여기서만 한다. 개발 스택(3300 · 8300)은 건드리지 않는다.
+#   기동: docker compose -f qa/compose.qa.yml up -d   (이미지는 개발 스택이 빌드한 roadrail-api · roadrail-web 재사용)
+#   데이터: qa/restore_dev_dump.sh 로 개발 DB 를 pg_dump → 여기로 복원(백업 · 복원 가능성 확인을 겸함)
+name: roadrail-qa
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: roadrail
+      POSTGRES_PASSWORD: roadrail
+      POSTGRES_DB: roadrail
+      TZ: Asia/Seoul
+      PGTZ: Asia/Seoul
+    ports: ["127.0.0.1:5463:5432"]
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "timezone=Asia/Seoul", "-c", "log_min_duration_statement=200"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U roadrail -d roadrail"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports: ["127.0.0.1:6410:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  api:
+    image: roadrail-api:latest
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/roadrail
+      SPRING_DATASOURCE_USERNAME: roadrail
+      SPRING_DATASOURCE_PASSWORD: roadrail
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      SPRING_FLYWAY_LOCATIONS: filesystem:/app/db/migrations
+      ADMIN_TOKEN: ${QA_ADMIN_TOKEN:-qa-admin-SECRET123}
+      # 외부 API 키는 넣지 않는다 — 카카오 · 기상청 · TAGO 호출 없음
+      KAKAO_REST_API_KEY: ""
+      DATA_GO_KR_KEY: ""
+      # 요청 한도 — 기본은 운영과 같은 값, 부하 측정 때만 QA_RATE_LIMIT_* 로 올린다
+      RATE_LIMIT_ADMIN: ${QA_RATE_LIMIT_ADMIN:-20}
+      RATE_LIMIT_TRIP: ${QA_RATE_LIMIT_TRIP:-40}
+      RATE_LIMIT_ROUTE: ${QA_RATE_LIMIT_ROUTE:-20}
+      RATE_LIMIT_SEARCH: ${QA_RATE_LIMIT_SEARCH:-120}
+      RATE_LIMIT_RAIL: ${QA_RATE_LIMIT_RAIL:-120}
+      TZ: Asia/Seoul
+    ports: ["127.0.0.1:8301:8300"]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8300/actuator/health | grep -q UP"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 30s
+
+  web:
+    image: roadrail-web:latest
+    environment:
+      API_INTERNAL_URL: http://api:8300
+      TZ: Asia/Seoul
+    ports: ["127.0.0.1:3301:3300"]
+    depends_on:
+      api: { condition: service_healthy }

@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { DASH } from "@/lib/format";
 
 /** 테슬라 모델 페이지의 스펙 숫자 — 큰 숫자 + 작은 설명 */
@@ -46,7 +47,8 @@ export function PageHero({ eyebrow, title, sub, children }: { eyebrow?: string; 
     <div className="relative bg-linear-to-b from-[#eef1f4] to-white">
       <div className="mx-auto max-w-[1200px] px-4 sm:px-8 pt-16 sm:pt-20 pb-12 text-center">
         {eyebrow && <p className="eyebrow mb-3">{eyebrow}</p>}
-        <h1 className="text-[34px] sm:text-[44px] font-medium tracking-tight text-ink">{title}</h1>
+        {/* 제목이 아직 없으면(" ") 빈 줄 높이를 지킨다 — 공백만 든 h1 은 높이 0 이라 이름이 들어오며 아래가 밀렸다(QA-04) */}
+        <h1 className="text-[34px] sm:text-[44px] font-medium tracking-tight text-ink">{title.trim() ? title : "\u00a0"}</h1>
         {sub && <div className="mt-3 text-[15px] text-ink2">{sub}</div>}
         {children && <div className="mt-10">{children}</div>}
       </div>
@@ -57,10 +59,25 @@ export function PageHero({ eyebrow, title, sub, children }: { eyebrow?: string; 
 export function Segmented<T extends string | number>({ value, options, onChange, label }: {
   value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label: string;
 }) {
+  // ARIA 라디오 그룹: 탭 정지는 고른 항목 하나, 화살표 · Home · End 로 옮기며 고른다 (QA-08)
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const current = Math.max(0, options.findIndex((o) => o.value === value));
+  const move = (to: number) => {
+    const i = (to + options.length) % options.length;
+    onChange(options[i].value);
+    refs.current[i]?.focus();
+  };
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const next = { ArrowRight: current + 1, ArrowDown: current + 1, ArrowLeft: current - 1, ArrowUp: current - 1, Home: 0, End: options.length - 1 }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    move(next);
+  };
   return (
-    <div className="inline-flex items-center gap-1" role="radiogroup" aria-label={label}>
-      {options.map((o) => (
-        <button key={String(o.value)} role="radio" aria-checked={o.value === value}
+    <div className="inline-flex items-center gap-1" role="radiogroup" aria-label={label} onKeyDown={onKeyDown}>
+      {options.map((o, i) => (
+        <button key={String(o.value)} ref={(el) => { refs.current[i] = el; }} role="radio" aria-checked={o.value === value}
+                tabIndex={i === current ? 0 : -1}
                 className={`chip ${o.value === value ? "chip-on" : ""}`} onClick={() => onChange(o.value)}>
           {o.label}
         </button>
@@ -97,7 +114,7 @@ const STATUS: Record<string, { cls: string; icon: string; label: string }> = {
 
 /** 상태는 색 + 아이콘 + 글자 (색만으로 전달하지 않음) */
 export function StatusBadge({ status }: { status: string | null | undefined }) {
-  if (!status) return <span className="text-faint">{DASH}</span>;
+  if (!status) return <span className="text-muted">{DASH}</span>;
   const s = STATUS[status] ?? { cls: "text-muted", icon: "·", label: status };
   return (
     <span className="inline-flex items-center gap-1.5 text-[13px] font-medium">

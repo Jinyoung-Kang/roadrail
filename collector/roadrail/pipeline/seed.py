@@ -64,8 +64,7 @@ def load_seed(path: Path | None = None) -> dict:
 async def apply_seed(path: Path | None = None) -> int:
     doc = load_seed(path)
     changes = 0
-    p = await db.pool()
-    async with p.connection() as conn, conn.transaction(), conn.cursor() as cur:
+    async with db.transaction() as cur:
         async def run(sql, params):
             nonlocal changes
             await cur.execute(sql, params)

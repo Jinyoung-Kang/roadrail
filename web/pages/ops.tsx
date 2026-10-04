@@ -81,11 +81,11 @@ export default function Ops() {
           </div>
         )}
         <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
-          <label className="flex items-center gap-2">
-            <span className="text-muted">관리 토큰</span>
+          <label className="flex min-w-0 max-w-full items-center gap-2">
+            <span className="shrink-0 text-muted">관리 토큰</span>
             <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="X-Admin-Token (.env ADMIN_TOKEN)"
                    autoComplete="off" spellCheck={false}
-                   className="h-8 w-72 rounded-sm bg-cloud px-3 text-sm focus:outline-hidden focus:ring-2 focus:ring-accent" />
+                   className="h-8 w-72 min-w-0 max-w-full rounded-sm bg-cloud px-3 text-sm focus:outline-hidden focus:ring-2 focus:ring-accent" />
           </label>
           <label className="flex items-center gap-1.5 text-xs text-muted">
             <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />

@@ -8,7 +8,8 @@ export default function Layout({ title, overlay = false, children }: { title: st
         <title>{`${title} · RoadRail`}</title>
       </Head>
       <Nav overlay={overlay} />
-      <main className={overlay ? "" : "pt-14"}>{children}</main>
+      {/* 본문은 최소 한 화면 높이 — 결과가 늦게 들어와도 처음부터 보이던 꼬리말이 밀려 내려가지 않게(QA-04, CLS) */}
+      <main className={`min-h-svh ${overlay ? "" : "pt-14"}`}>{children}</main>
       <footer className="border-t border-line bg-white">
         <div className="mx-auto max-w-[1600px] px-4 sm:px-8 py-10 text-center text-xs text-muted space-y-2">
           <p>RoadRail © 2026 · 고속도로·열차 이동 판단 & 정시성 분석 · 참고 정보이며 교통 안내 서비스가 아닙니다.</p>

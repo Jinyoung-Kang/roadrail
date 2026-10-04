@@ -72,7 +72,9 @@ public class AdminService {
         }
         ensureNotRunning("rail_backfill");
         String id = Ids.ulid();
-        repo.insertBackfill(id, from, to, planned);
+        if (!repo.insertBackfillIfFree(id, from, to, planned)) {   // 같은(겹치는) 기간이 이미 대기 · 실행 중 — 다시 쌓지 않는다 (QA-05)
+            throw new ApiException(ErrorCode.JOB_RUNNING, "겹치는 기간의 백필이 이미 대기 · 실행 중입니다 (" + from + " ~ " + to + ").");
+        }
         redis.opsForStream().add(StreamRecords.string(Map.of("type", "backfill", "backfillId", id)).withStreamKey(STREAM));
         return new BackfillAccepted(id, planned, true, remaining, from.toString(), to.toString());
     }
