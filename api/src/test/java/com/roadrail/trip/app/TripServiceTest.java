@@ -1,5 +1,6 @@
 package com.roadrail.trip.app;
 
+import com.roadrail.corridor.app.CorridorService;
 import com.roadrail.corridor.app.RoadService;
 import com.roadrail.env.app.EnvService;
 import com.roadrail.env.app.HolidayService;
@@ -14,7 +15,6 @@ import com.roadrail.corridor.model.NowDtos;
 import com.roadrail.trip.model.TripDtos;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
@@ -30,7 +30,7 @@ class TripServiceTest {
     private final JsonCache cache = mock(JsonCache.class);
     private final RailJourneyService journeys = mock(RailJourneyService.class);
     private final KakaoMobilityClient mobility = mock(KakaoMobilityClient.class);
-    private final TripService svc = spy(new TripService(mock(JdbcClient.class, RETURNS_DEEP_STUBS), mock(AppProperties.class),
+    private final TripService svc = spy(new TripService(mock(CorridorService.class), mock(AppProperties.class),
             mock(RailService.class), mock(RoadService.class), mock(EnvService.class), mobility, mock(KakaoLocalClient.class),
             mock(KmaClient.class), mock(AirKoreaClient.class), cache, journeys, mock(HolidayService.class), exec));
     private final TripDtos.Place seoul = new TripDtos.Place("서울역", null, 37.5547, 126.9707, "STATION", null);

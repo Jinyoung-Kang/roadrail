@@ -1,5 +1,6 @@
 package com.roadrail.corridor.app;
 
+import com.roadrail.corridor.data.CorridorRepository;
 import com.roadrail.env.app.EnvService;
 import com.roadrail.env.app.HolidayService;
 import com.roadrail.rail.app.RailService;
@@ -13,7 +14,6 @@ import com.roadrail.env.model.EnvDtos;
 import com.roadrail.corridor.model.NowDtos.*;
 import com.roadrail.rail.model.RailDtos;
 import com.roadrail.corridor.model.RoadDtos.Latest;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -23,7 +23,7 @@ import java.util.*;
 /** 판단 카드 (FR-501~504) — 도로·철도·환경·돌발을 모아 R-DEC-01 로 요약. Redis 60초 캐시 (NFR-03). */
 @Service
 public class NowCardService {
-    private final JdbcClient jdbc;
+    private final CorridorRepository corridors;
     private final AppProperties props;
     private final RoadService road;
     private final RailService rail;
@@ -32,9 +32,9 @@ public class NowCardService {
     private final KakaoMobilityClient kakao;
     private final JsonCache cache;
 
-    public NowCardService(JdbcClient jdbc, AppProperties props, RoadService road, RailService rail, EnvService env,
+    public NowCardService(CorridorRepository corridors, AppProperties props, RoadService road, RailService rail, EnvService env,
                           KakaoMobilityClient kakao, JsonCache cache, HolidayService holidays) {
-        this.jdbc = jdbc;
+        this.corridors = corridors;
         this.props = props;
         this.road = road;
         this.rail = rail;
@@ -62,22 +62,13 @@ public class NowCardService {
     NowCard build(String cid, String dir, int departIn, int accessMin, int carAccessMin) {
         OffsetDateTime now = Times.now();
         OffsetDateTime depart = Times.alignTo5Min(now).plusMinutes(departIn);
-        String name = jdbc.sql("SELECT name FROM ref.corridor WHERE corridor_id = :c").param("c", cid).query(String.class).single();
+        String name = corridors.name(cid);
 
         // ---- 도로
-        var ends = jdbc.sql("""
-                SELECT (array_agg(us.unit_name ORDER BY r.seq))[1], (array_agg(ue.unit_name ORDER BY r.seq DESC))[1],
-                       (array_agg(us.lat ORDER BY r.seq))[1], (array_agg(us.lon ORDER BY r.seq))[1],
-                       (array_agg(ue.lat ORDER BY r.seq DESC))[1], (array_agg(ue.lon ORDER BY r.seq DESC))[1],
-                       sum(r.distance_km)::float
-                FROM ref.corridor_road r JOIN ref.toll_unit us ON us.unit_code = r.start_unit_code
-                JOIN ref.toll_unit ue ON ue.unit_code = r.end_unit_code
-                WHERE r.corridor_id = :c AND r.direction = :d""").param("c", cid).param("d", dir)
-                .query((rs, i) -> new Object[]{rs.getString(1), rs.getString(2), rs.getDouble(3), rs.getDouble(4),
-                        rs.getDouble(5), rs.getDouble(6), rs.getDouble(7)}).single();
+        var ends = corridors.roadEnds(cid, dir);
         Optional<Latest> latest = road.latest(cid, dir);
         Map<ForecastModels.Key, ForecastModels.Value> bl = road.baselineMap(cid, dir);
-        Kakao kk = kakao.futureEta((double) ends[2], (double) ends[3], (double) ends[4], (double) ends[5], depart)
+        Kakao kk = kakao.futureEta(ends.fromLat(), ends.fromLon(), ends.toLat(), ends.toLon(), depart)
                 .map(e -> new Kakao(e.durationSec(), e.distanceM(), e.departAt())).orElse(null);
         Road roadCard;
         String status = "OK";
@@ -97,23 +88,20 @@ public class NowCardService {
                     Math.round(l.observedSegs() * 100.0 / l.totalSegs()) / 100.0, depart, lead, pred, model,
                     List.of(new ForecastPoint("M0", f.m0()), new ForecastPoint("M1", f.m1()),
                             new ForecastPoint("persistence", f.persistence())),
-                    kk, (String) ends[0], (String) ends[1], Math.round((double) ends[6] * 10) / 10.0);
+                    kk, ends.fromName(), ends.toName(), Math.round(ends.distanceKm() * 10) / 10.0);
             car = new DecisionRule.Car(pred, model, pct, carAccessMin, "관측 " + Times.ago(l.slotTs(), now));
         } else {
             status = "STALE_DATA";
             roadCard = new Road(null, null, null, null, null, null, depart, 0, null, null, List.of(), kk,
-                    (String) ends[0], (String) ends[1], Math.round((double) ends[6] * 10) / 10.0);
+                    ends.fromName(), ends.toName(), Math.round(ends.distanceKm() * 10) / 10.0);
             if (kk != null) car = new DecisionRule.Car(kk.durationSec(), "카카오 미래 운행 정보", null, carAccessMin, "");
         }
 
         // ---- 철도
-        var names = jdbc.sql("""
-                SELECT sd.stn_nm, sa.stn_nm FROM ref.corridor_rail cr JOIN ref.station sd ON sd.stn_cd = cr.dep_stn_cd
-                JOIN ref.station sa ON sa.stn_cd = cr.arr_stn_cd WHERE cr.corridor_id = :c AND cr.direction = :d""")
-                .param("c", cid).param("d", dir).query((rs, i) -> new String[]{rs.getString(1), rs.getString(2)}).single();
+        var names = corridors.railStationNames(cid, dir);
         var pair = rail.pairOf(cid, dir);
         RailDtos.NextTrains next = rail.nextTrains(pair.dep(), pair.arr(), depart.plusMinutes(accessMin), 3);
-        Rail railCard = new Rail(names[0], names[1], next.referenceDate(), next.basis(), next.trains());
+        Rail railCard = new Rail(names.dep(), names.arr(), next.referenceDate(), next.basis(), next.trains());
         DecisionRule.Train train = null;
         if (!next.trains().isEmpty()) {
             var t = next.trains().getFirst();
@@ -125,22 +113,19 @@ public class NowCardService {
         // ---- 환경
         Map<String, PointEnv> envMap = new LinkedHashMap<>();
         OffsetDateTime weatherBase = null, airTime = null;
-        var pts = jdbc.sql("""
-                SELECT role, name, nx, ny, sido_name FROM ref.corridor_env_point WHERE corridor_id = :c""")
-                .param("c", cid).query((rs, i) -> new Object[]{rs.getString(1), rs.getString(2), rs.getInt(3),
-                        rs.getInt(4), rs.getString(5)}).list();
-        for (Object[] p : pts) {
+        var pts = corridors.envPoints(cid);
+        for (var p : pts) {
             // 상행(UP)은 도착 도시가 출발지 — 역할을 방향에 맞춰 바꾼다
-            String role = "DN".equals(dir) ? (String) p[0] : ("origin".equals(p[0]) ? "dest" : "origin");
-            Optional<EnvDtos.WeatherHour> w = env.at((int) p[2], (int) p[3], depart);
-            EnvDtos.Air a = env.air((String) p[4]);
-            envMap.put(role, new PointEnv((String) p[1], w.map(EnvDtos.WeatherHour::pop).orElse(null),
+            String role = "DN".equals(dir) ? p.role() : ("origin".equals(p.role()) ? "dest" : "origin");
+            Optional<EnvDtos.WeatherHour> w = env.at(p.nx(), p.ny(), depart);
+            EnvDtos.Air a = env.air(p.sido());
+            envMap.put(role, new PointEnv(p.name(), w.map(EnvDtos.WeatherHour::pop).orElse(null),
                     w.map(EnvDtos.WeatherHour::pty).orElse(null), w.map(EnvDtos.WeatherHour::tmp).orElse(null),
                     w.map(EnvDtos.WeatherHour::sky).orElse(null), a == null ? null : a.pm25(),
                     a == null ? null : a.pm25Grade(), a == null ? null : a.khaiGrade(), null, w.isPresent() ? "단기예보" : null));
             if (a != null && a.dataTime() != null) airTime = a.dataTime();
         }
-        weatherBase = jdbc.sql("SELECT max(base_at) FROM env.weather_fcst").query(OffsetDateTime.class).optional().orElse(null);
+        weatherBase = corridors.latestWeatherBase().orElse(null);
         var o = envMap.get("origin");
         var d = envMap.get("dest");
         DecisionRule.Env denv = new DecisionRule.Env(o == null ? null : o.pop(), d == null ? null : d.pop(),

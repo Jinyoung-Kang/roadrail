@@ -5,8 +5,8 @@ import com.roadrail.shared.ApiException;
 import com.roadrail.shared.Times;
 import com.roadrail.shared.AppProperties;
 import com.roadrail.domain.ForecastModels;
+import com.roadrail.corridor.data.RoadRepository;
 import com.roadrail.corridor.model.RoadDtos.*;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -15,42 +15,26 @@ import java.util.*;
 
 @Service
 public class RoadService {
-    private final JdbcClient jdbc;
+    private final RoadRepository repo;
     private final AppProperties props;
 
-    public RoadService(JdbcClient jdbc, AppProperties props) {
-        this.jdbc = jdbc;
+    public RoadService(RoadRepository repo, AppProperties props) {
+        this.repo = repo;
         this.props = props;
     }
 
     public Optional<Latest> latest(String cid, String dir) {
-        return jdbc.sql("""
-                SELECT slot_ts, travel_sec, quality, observed_segs, total_segs FROM ts.road_corridor_tt
-                WHERE corridor_id = :c AND direction = :d AND slot_ts > now() - interval '3 days'
-                ORDER BY slot_ts DESC LIMIT 1""").param("c", cid).param("d", dir)
-                .query((rs, i) -> new Latest(Times.kst(rs.getObject(1, OffsetDateTime.class)), rs.getInt(2),
-                        rs.getString(3), rs.getInt(4), rs.getInt(5))).optional();
+        return repo.latest(cid, dir);
     }
 
     public Map<ForecastModels.Key, ForecastModels.Value> baselineMap(String cid, String dir) {
-        Map<ForecastModels.Key, ForecastModels.Value> m = new HashMap<>();
-        jdbc.sql("SELECT dow, slot_idx, p50_sec, n FROM ana.road_baseline WHERE corridor_id = :c AND direction = :d")
-                .param("c", cid).param("d", dir).query(rs -> {
-                    m.put(new ForecastModels.Key(rs.getInt(1), rs.getInt(2)), new ForecastModels.Value(rs.getInt(3), rs.getInt(4)));
-                });
-        return m;
+        return repo.baselineMap(cid, dir);
     }
 
     public Baseline baseline(String cid, String dir) {
-        List<BaselineCell> cells = jdbc.sql("""
-                SELECT dow, slot_idx, p50_sec, p90_sec, n FROM ana.road_baseline
-                WHERE corridor_id = :c AND direction = :d ORDER BY dow, slot_idx""").param("c", cid).param("d", dir)
-                .query((rs, i) -> new BaselineCell(rs.getInt(1), rs.getInt(2), rs.getInt(3), rs.getInt(4), rs.getInt(5))).list();
-        var meta = jdbc.sql("""
-                SELECT min(window_from)::text, max(window_to)::text, max(computed_at) FROM ana.road_baseline
-                WHERE corridor_id = :c AND direction = :d""").param("c", cid).param("d", dir)
-                .query((rs, i) -> new Object[]{rs.getString(1), rs.getString(2), rs.getObject(3, OffsetDateTime.class)}).single();
-        return new Baseline(cid, dir, (String) meta[0], (String) meta[1], Times.kst((OffsetDateTime) meta[2]), cells,
+        List<BaselineCell> cells = repo.baselineCells(cid, dir);
+        var meta = repo.baselineMeta(cid, dir);
+        return new Baseline(cid, dir, meta.windowFrom(), meta.windowTo(), Times.kst(meta.computedAt()), cells,
                 "최근 8주 같은 요일·5분 슬롯의 통행시간 p50·p90. dow 0 = 전체 요일(표본 n<4 일 때 대체). 결측 슬롯은 셀 없음. "
                         + "공휴일(한국천문연구원 특일 정보)은 입력에서 뺍니다 — 명절 정체가 평소 기준선을 오염시키지 않게. "
                         + "공휴일 자료만 있으면 기준선은 비어 있습니다.");
@@ -61,38 +45,17 @@ public class RoadService {
         if (Duration.between(from, to).toDays() > 92) throw ApiException.invalid("조회 기간은 최대 92일입니다.");
         if (!"5m".equals(agg) && !"1h".equals(agg)) throw ApiException.invalid("agg 는 5m 또는 1h 입니다.");
         Map<ForecastModels.Key, ForecastModels.Value> bl = baselineMap(cid, dir);
-        String sql = "5m".equals(agg) ? """
-                SELECT slot_ts AS t, travel_sec AS v, quality, observed_segs::float / total_segs AS cov
-                FROM ts.road_corridor_tt WHERE corridor_id = :c AND direction = :d AND slot_ts >= :f AND slot_ts < :t
-                ORDER BY slot_ts""" : """
-                SELECT date_trunc('hour', slot_ts) AS t, round(avg(travel_sec))::int AS v,
-                       CASE WHEN bool_and(quality = 'OK') THEN 'OK' ELSE 'FILLED' END AS quality,
-                       count(*)::float / 12 AS cov
-                FROM ts.road_corridor_tt WHERE corridor_id = :c AND direction = :d AND slot_ts >= :f AND slot_ts < :t
-                GROUP BY 1 ORDER BY 1""";
-        List<SeriesPoint> pts = jdbc.sql(sql).param("c", cid).param("d", dir).param("f", from).param("t", to)
-                .query((rs, i) -> {
-                    OffsetDateTime t = Times.kst(rs.getObject("t", OffsetDateTime.class));
-                    Integer b = ForecastModels.m0(bl, t);
-                    return new SeriesPoint(t, rs.getInt("v"), b, rs.getString("quality"), Math.round(rs.getDouble("cov") * 100) / 100.0);
-                }).list();
+        List<SeriesPoint> pts = new ArrayList<>();
+        for (var r : repo.series(cid, dir, from, to, "5m".equals(agg))) {
+            Integer b = ForecastModels.m0(bl, r.t());
+            pts.add(new SeriesPoint(r.t(), r.travelSec(), b, r.quality(), Math.round(r.coverage() * 100) / 100.0));
+        }
         // 출발지 격자의 시간별 강수 (각 예보 시각에 대해 가장 최근 발표값) — FR-603 음영용
-        List<RainPoint> rain = jdbc.sql("""
-                WITH g AS (SELECT nx, ny FROM ref.corridor_env_point WHERE corridor_id = :c
-                           AND role = CASE WHEN :d = 'DN' THEN 'origin' ELSE 'dest' END)
-                SELECT DISTINCT ON (w.fcst_at) w.fcst_at,
-                       max(w.value) FILTER (WHERE w.category = 'POP') OVER (PARTITION BY w.fcst_at, w.base_at) AS pop,
-                       max(w.value) FILTER (WHERE w.category = 'PTY') OVER (PARTITION BY w.fcst_at, w.base_at) AS pty
-                FROM env.weather_fcst w JOIN g ON w.nx = g.nx AND w.ny = g.ny
-                WHERE w.fcst_at >= :f AND w.fcst_at < :t AND w.category IN ('POP', 'PTY')
-                ORDER BY w.fcst_at, w.base_at DESC""").param("c", cid).param("d", dir).param("f", from).param("t", to)
-                .query((rs, i) -> new RainPoint(Times.kst(rs.getObject(1, OffsetDateTime.class)),
-                        WeatherCodes.parseInt(rs.getString(2)), WeatherCodes.ptyName(rs.getString(3)))).list();
-        List<EtaPoint> eta = jdbc.sql("""
-                SELECT DISTINCT ON (depart_at) depart_at, duration_sec FROM ana.kakao_eta
-                WHERE corridor_id = :c AND direction = :d AND depart_at >= :f AND depart_at < :t
-                ORDER BY depart_at, requested_at DESC""").param("c", cid).param("d", dir).param("f", from).param("t", to)
-                .query((rs, i) -> new EtaPoint(Times.kst(rs.getObject(1, OffsetDateTime.class)), rs.getInt(2))).list();
+        List<RainPoint> rain = new ArrayList<>();
+        for (var r : repo.rain(cid, dir, from, to)) {
+            rain.add(new RainPoint(r.t(), WeatherCodes.parseInt(r.pop()), WeatherCodes.ptyName(r.pty())));
+        }
+        List<EtaPoint> eta = repo.kakaoEta(cid, dir, from, to);
         Map<String, Object> stats = new LinkedHashMap<>();
         stats.put("points", pts.size());
         stats.put("expectedPoints", "5m".equals(agg) ? Duration.between(from, to).toMinutes() / 5 : Duration.between(from, to).toHours());
@@ -124,18 +87,8 @@ public class RoadService {
     }
 
     public Backtest backtest(String cid, String dir) {
-        List<BacktestCell> cells = jdbc.sql("""
-                SELECT horizon_min, model, mae_sec::float, mape::float, n FROM ana.forecast_eval
-                WHERE corridor_id = :c AND direction = :d
-                  AND eval_date = (SELECT max(eval_date) FROM ana.forecast_eval WHERE corridor_id = :c AND direction = :d)
-                ORDER BY horizon_min, model""").param("c", cid).param("d", dir)
-                .query((rs, i) -> new BacktestCell(rs.getInt(1), rs.getString(2), (Double) rs.getObject(3),
-                        (Double) rs.getObject(4), rs.getInt(5))).list();
-        var meta = jdbc.sql("""
-                SELECT max(eval_date)::text, max(model_version), min(window_from), max(window_to) FROM ana.forecast_eval
-                WHERE corridor_id = :c AND direction = :d""").param("c", cid).param("d", dir)
-                .query((rs, i) -> new Object[]{rs.getString(1), rs.getString(2), rs.getObject(3, OffsetDateTime.class),
-                        rs.getObject(4, OffsetDateTime.class)}).single();
+        List<BacktestCell> cells = repo.backtestCells(cid, dir);
+        var meta = repo.backtestMeta(cid, dir);
         Map<String, Double> mae = new LinkedHashMap<>();
         for (String m : List.of("M0", "M1", "persistence")) {
             // horizon 전체 가중 평균 MAE (표본 수 가중)
@@ -143,8 +96,8 @@ public class RoadService {
             for (BacktestCell c : cells) if (c.model().equals(m) && c.maeSec() != null) { sum += c.maeSec() * c.n(); n += c.n(); }
             mae.put(m, n == 0 ? null : Math.round(sum / n * 10) / 10.0);
         }
-        String period = meta[2] == null ? "최근 28일" : String.format("%s ~ %s",
-                Times.kst((OffsetDateTime) meta[2]).toLocalDate(), Times.kst((OffsetDateTime) meta[3]).toLocalDate().minusDays(1));
-        return new Backtest(period, (String) meta[0], (String) meta[1], mae, cells);
+        String period = meta.windowFrom() == null ? "최근 28일" : String.format("%s ~ %s",
+                Times.kst(meta.windowFrom()).toLocalDate(), Times.kst(meta.windowTo()).toLocalDate().minusDays(1));
+        return new Backtest(period, meta.evalDate(), meta.modelVersion(), mae, cells);
     }
 }

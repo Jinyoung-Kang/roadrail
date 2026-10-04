@@ -1,5 +1,6 @@
 package com.roadrail.trip.app;
 
+import com.roadrail.corridor.app.CorridorService;
 import com.roadrail.corridor.app.RoadService;
 import com.roadrail.env.app.EnvService;
 import com.roadrail.env.app.HolidayService;
@@ -25,7 +26,6 @@ import com.roadrail.corridor.model.NowDtos;
 import com.roadrail.rail.model.RailDtos;
 import com.roadrail.corridor.model.RoadDtos.Latest;
 import com.roadrail.trip.model.TripDtos.*;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -52,7 +52,7 @@ public class TripService {
     /** 응답에 싣는 경로 돌발 목록의 상한 (최근 순) — 건수는 상한과 무관하게 전체를 경고 · incidentTotal 에 */
     static final int INCIDENT_LIST = 20;
     private final ExecutorService exec;
-    private final JdbcClient jdbc;
+    private final CorridorService corridors;
     private final AppProperties props;
     private final RailService rail;
     private final RoadService road;
@@ -65,11 +65,11 @@ public class TripService {
     private final RailJourneyService journeys;
     private final HolidayService holidays;
 
-    public TripService(JdbcClient jdbc, AppProperties props, RailService rail, RoadService road, EnvService env,
+    public TripService(CorridorService corridors, AppProperties props, RailService rail, RoadService road, EnvService env,
                        KakaoMobilityClient mobility, KakaoLocalClient local, KmaClient kma, AirKoreaClient air, JsonCache cache,
                        RailJourneyService journeys, HolidayService holidays, ExecutorService exec) {
         this.exec = exec;
-        this.jdbc = jdbc;
+        this.corridors = corridors;
         this.props = props;
         this.rail = rail;
         this.road = road;
@@ -220,21 +220,9 @@ public class TripService {
 
     /** 두 지점이 수집 중인 길의 끝(출발·도착 도시 역)과 각각 30km 안이면 그 길 · 방향 */
     public Observed observed(Place from, Place to, OffsetDateTime depart, OffsetDateTime now) {
-        var match = jdbc.sql("""
-                WITH p AS (
-                  SELECT o.corridor_id, o.lat AS olat, o.lon AS olon, d.lat AS dlat, d.lon AS dlon
-                  FROM ref.corridor_env_point o JOIN ref.corridor_env_point d
-                    ON d.corridor_id = o.corridor_id AND o.role = 'origin' AND d.role = 'dest'
-                  JOIN ref.corridor c ON c.corridor_id = o.corridor_id AND c.active)
-                SELECT corridor_id, dir FROM (
-                  SELECT corridor_id, 'DN' AS dir, greatest(ops.km(olat, olon, :fla, :flo), ops.km(dlat, dlon, :tla, :tlo)) AS m FROM p
-                  UNION ALL
-                  SELECT corridor_id, 'UP', greatest(ops.km(dlat, dlon, :fla, :flo), ops.km(olat, olon, :tla, :tlo)) FROM p) x
-                WHERE m <= 30 ORDER BY m LIMIT 1""")
-                .param("fla", from.lat()).param("flo", from.lon()).param("tla", to.lat()).param("tlo", to.lon())
-                .query((rs, i) -> new String[]{rs.getString(1), rs.getString(2)}).optional();
+        var match = corridors.matchByEnds(from.lat(), from.lon(), to.lat(), to.lon());
         if (match.isEmpty()) return null;
-        String cid = match.get()[0], dir = match.get()[1];
+        String cid = match.get().corridorId(), dir = match.get().direction();
         Optional<Latest> latest = road.latest(cid, dir);
         if (latest.isEmpty()) return null;
         Latest l = latest.get();
@@ -244,7 +232,7 @@ public class TripService {
         var f = ForecastModels.predictAll(bl, l.slotTs(), l.travelSec(), depart, props.forecastTauMin());
         String model = f.m1() != null ? "M1" : f.m0() != null ? "M0" : "persistence";
         Integer pred = f.m1() != null ? f.m1() : f.m0() != null ? f.m0() : Integer.valueOf(f.persistence());
-        String name = jdbc.sql("SELECT name FROM ref.corridor WHERE corridor_id = :c").param("c", cid).query(String.class).single();
+        String name = corridors.name(cid);
         return new Observed(cid, name, dir, l.travelSec(), cmp == null ? null : cmp.p50(), pct, l.slotTs(), pred, model,
                 (int) Duration.between(l.slotTs(), depart).toMinutes());
     }
