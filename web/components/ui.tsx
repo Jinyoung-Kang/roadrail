@@ -47,7 +47,8 @@ export function PageHero({ eyebrow, title, sub, children }: { eyebrow?: string; 
     <div className="relative bg-linear-to-b from-[#eef1f4] to-white">
       <div className="mx-auto max-w-[1200px] px-4 sm:px-8 pt-16 sm:pt-20 pb-12 text-center">
         {eyebrow && <p className="eyebrow mb-3">{eyebrow}</p>}
-        <h1 className="text-[34px] sm:text-[44px] font-medium tracking-tight text-ink">{title}</h1>
+        {/* 제목이 아직 없으면(" ") 빈 줄 높이를 지킨다 — 공백만 든 h1 은 높이 0 이라 이름이 들어오며 아래가 밀렸다(QA-04) */}
+        <h1 className="text-[34px] sm:text-[44px] font-medium tracking-tight text-ink">{title.trim() ? title : "\u00a0"}</h1>
         {sub && <div className="mt-3 text-[15px] text-ink2">{sub}</div>}
         {children && <div className="mt-10">{children}</div>}
       </div>

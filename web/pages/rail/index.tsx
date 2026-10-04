@@ -25,7 +25,7 @@ export default function RailPage() {
   return (
     <Layout title={`${depName ?? ""}→${arrName ?? ""} 철도 분석`}>
       <PageHero eyebrow="철도 분석 · 전국 모든 역 쌍 (직통)" title={depName && arrName ? `${depName}역 → ${arrName}역` : " "}
-                sub={<>코레일 운행계획 × 운행정보로 계산한 정시성{period && ` · ${period.from} ~ ${period.to}`}</>}>
+                sub={<>코레일 운행계획 × 운행정보로 계산한 정시성<br className="sm:hidden" />{period ? <span><span className="hidden sm:inline"> · </span>{period.from} ~ {period.to}</span> : "\u00a0"}</>}>
         <div className="flex flex-col items-center justify-center gap-2 sm:flex-row">
           {stationPicker("출발역", depName, "dep")}
           <button className="chip h-11 w-11 shrink-0 text-base" aria-label="출발역과 도착역 바꾸기" onClick={() => go({ dep: arr, arr: dep })}>⇄</button>
