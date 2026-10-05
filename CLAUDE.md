@@ -35,8 +35,11 @@ CI 필수 검사는 `ci passed` 하나(collector · api · web · gitleaks 전�
 - 새 공급자: `providers/<name>.py` + `base.py` 의 `CONCURRENCY` · `TIMEOUT` · 예산(`config.py` · `application.yml` · `OpsService.PROVIDERS`) + 실제 응답 fixture 계약 테스트 + 키 없으면 호출 없이 건너뛰기.
 - 실데이터로 찾은 결함은 `docs/VERIFICATION.md` 에 행을 더하고(발견 · 원인 · 조치 · 확인), 설계 결정은 ADR 로 남긴다. 테스트 수가 바뀌면 README 7장 표도 함께.
 
-## Git · PR
+## 전달 방식 (Git · PR)
 
-- `main` 에 직접 커밋하지 않는다 — 브랜치 → PR(한국어 본문) → `ci passed` 확인.
-- **병합은 사용자가 요청할 때만**, 검증한 커밋으로 고정: `gh pr merge <n> --merge --match-head-commit <sha> --delete-branch`. force-push 하지 않는다.
-- 커밋은 주제별로 나눈다(`feat(collector)` · `feat(api,web)` · `docs` …).
+- `main` 에 직접 커밋하지 않는다 — 브랜치(`feat/…` 등) → PR(한국어 제목·본문) → `ci passed` 확인.
+- **병합은 사용자가 요청할 때만**, 병합 커밋 방식으로 검증한 커밋에 고정: `gh pr merge <n> --merge --match-head-commit <sha> --delete-branch`. force-push 하지 않는다.
+- 커밋 메시지는 `type(scope): 요약`, **요약은 한국어**(예: `feat(ops): Redis 비밀번호(requirepass) — …`). 주제별로 나눈다(`feat(collector)` · `feat(api,web)` · `docs` …).
+## 포트폴리오
+
+- 원본은 저장소 밖 `../roadrail-portfolio/` — 최신 판 `portfolio_v4.html` → `node render_v4.mjs`(화면 캡처 `shots_v4.mjs`). 이전 판 파일은 지우지 않는다.
