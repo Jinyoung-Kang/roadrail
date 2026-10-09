@@ -31,3 +31,4 @@
 | [027](027-db-backup-restore.md) | DB 백업 · 복원 — pg_dump 사용자 지정 형식 · 별도 DB 리허설 · 이름 바꿔 끼우기 |
 | [028](028-public-hardening-redis8.md) | 공개 배포 보호 — 수집 상태 오류 상세는 관리 토큰 뒤로 · API 문서 기본 끔 · Redis 비밀번호 · Redis 8 |
 | [029](029-arrival-reliability.md) | 도착 시각 기준 판단 — 기차는 30일 실제 지연 빈도로 확률(보정 검사 통과) · 거꾸로 찾는 CSA · 자동차는 예측 시각만 |
+| [030](030-readable-copy.md) | 화면 글 — 문장마다 한 줄 · 어절 단위 줄바꿈 · 예측 성능의 쉬운 한글 용어 |
