@@ -3,7 +3,8 @@
 // API 문서(/docs 등)만 rewrites. rewrites 는 빌드 시점에 고정되므로 도커 빌드 인자 API_INTERNAL_URL 로 주소를 넣는다.
 const API = process.env.API_INTERNAL_URL || "http://localhost:8300";
 
-// 보안 헤더 — 화면에서 쓰는 외부 출처만 허용한다: 카카오 지도 SDK(dapi.kakao.com → 지도 스크립트·타일 *.daumcdn.net;
+// 보안 헤더 — 화면에서 쓰는 외부 출처만 허용한다: 카카오 지도 SDK(dapi.kakao.com → 지도 스크립트 t1.daumcdn.net · t1.kakaocdn.net,
+// 타일 *.daumcdn.net · *.kakaocdn.net — SDK 4.5.28 부터 본체 스크립트를 t1.kakaocdn.net 에서 받는다(실측 CSP 위반, 검증 기록 108);
 // SDK 는 페이지와 같은 스킴으로 받으므로 http 로 여는 로컬에서는 http://*.daumcdn.net 도 필요 — 실측 CSP 위반으로 확인),
 // Pretendard 글꼴(cdn.jsdelivr.net, SRI 고정). API 는 같은 출처(/api/v1 프록시)라 connect-src 'self'.
 // HTTPS 로 공개할 때는 빌드 인자 PUBLIC_HTTPS=1 — http 출처를 빼고 upgrade-insecure-requests · HSTS 를 더한다.
@@ -13,10 +14,10 @@ const HTTPS = process.env.PUBLIC_HTTPS === "1";
 const httpToo = (src) => (HTTPS ? src : `${src} ${src.replace("https://", "http://")}`);
 const CSP = [
   "default-src 'self'",
-  `script-src 'self' https://dapi.kakao.com ${httpToo("https://t1.daumcdn.net")}`,
+  `script-src 'self' https://dapi.kakao.com ${httpToo("https://t1.daumcdn.net")} ${httpToo("https://t1.kakaocdn.net")}`,
   "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
   "font-src 'self' data: https://cdn.jsdelivr.net",
-  `img-src 'self' data: blob: ${httpToo("https://*.daumcdn.net")} https://*.kakao.com https://*.kakaocdn.net`,
+  `img-src 'self' data: blob: ${httpToo("https://*.daumcdn.net")} https://*.kakao.com ${httpToo("https://*.kakaocdn.net")}`,
   "connect-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",
