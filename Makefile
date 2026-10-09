@@ -70,6 +70,9 @@ e2e: ## Playwright 스모크 (스택이 떠 있어야 함, 설치된 Chrome 사�
 bench: ## API 응답 시간 측정 (p50 · p95 · 최대, 표준 라이브러리만)
 	python3 tools/bench.py http://localhost:8300 15
 
+arrival-calibration: ## 도착 확률 보정 검사 — 날짜마다 그 전 30일로 예측해 실제와 비교 (DB 읽기만, ADR-029)
+	python3 tools/arrival_calibration.py
+
 capture: ## README 스크린샷 갱신 → docs/images
 	cd web && CAPTURE=1 E2E_CHANNEL=chrome npx playwright test capture
 
