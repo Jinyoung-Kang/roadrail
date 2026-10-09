@@ -1,5 +1,8 @@
 package com.roadrail.rail.data;
 
+import com.roadrail.domain.CompensationRule;
+
+import com.roadrail.rail.model.RailDtos.DelayBands;
 import com.roadrail.rail.model.RailDtos.Station;
 import com.roadrail.rail.model.RailDtos.StationNear;
 import com.roadrail.rail.model.RailDtos.Summary;
@@ -48,7 +51,13 @@ public class RailRepository {
      * buckets = 도착 지연 ≤0 · 1–5 · 6–10 · 11–20 · 21–30 · >30분 편수 (b0~b5)
      */
     public record PunctualityRow(String key, boolean total, int samples, int verified, Double onTimeRate, Double avgArrDelayMin,
-                                 Double p90ArrDelayMin, Double avgRideMin, String grade, List<Integer> buckets) {}
+                                 Double p90ArrDelayMin, Double avgRideMin, String grade, List<Integer> buckets, DelayBands delayBands) {}
+
+    /** 배상 기준 구간 집계 열(ge20 …)과 분모(verified)로 DelayBands */
+    static DelayBands bands(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new DelayBands(rs.getInt("verified"), rs.getInt("ge20"), rs.getInt("ge40"), rs.getInt("ge60"), rs.getInt("ge90"),
+                rs.getInt("ge120"));
+    }
 
     /** 정시성 묶음 키 — groupBy 값마다의 SQL 식 */
     public enum GroupKey {
@@ -181,14 +190,16 @@ public class RailRepository {
                        count(*) FILTER (WHERE arr_delay_min > 5 AND arr_delay_min <= 10) AS b2,
                        count(*) FILTER (WHERE arr_delay_min > 10 AND arr_delay_min <= 20) AS b3,
                        count(*) FILTER (WHERE arr_delay_min > 20 AND arr_delay_min <= 30) AS b4,
-                       count(*) FILTER (WHERE arr_delay_min > 30) AS b5
+                       count(*) FILTER (WHERE arr_delay_min > 30) AS b5,
+                       {bands}
                 FROM (SELECT o.*, {key} AS k FROM rail.od_trips_real(:a, :b, :f, :t) o) x
-                GROUP BY GROUPING SETS ((k), ())""".replace("{key}", key.expr))
+                GROUP BY GROUPING SETS ((k), ())""".replace("{key}", key.expr).replace("{bands}", CompensationRule.sqlCounts("arr_delay_min")))
                 .param("thr", thr).param("a", dep).param("b", arr).param("f", from).param("t", to)
                 .query((rs, i) -> new PunctualityRow(rs.getString("k"), rs.getInt("total") == 1, rs.getInt("samples"),
                         rs.getInt("verified"), Rows.round(rs, "rate", 3), Rows.round(rs, "avg_delay", 1), Rows.round(rs, "p90", 1),
                         Rows.round(rs, "ride", 1), rs.getString("grade"),
-                        List.of(rs.getInt("b0"), rs.getInt("b1"), rs.getInt("b2"), rs.getInt("b3"), rs.getInt("b4"), rs.getInt("b5"))))
+                        List.of(rs.getInt("b0"), rs.getInt("b1"), rs.getInt("b2"), rs.getInt("b3"), rs.getInt("b4"), rs.getInt("b5")),
+                        bands(rs)))
                 .list();
     }
 
@@ -209,12 +220,13 @@ public class RailRepository {
         return jdbc.sql("""
                 SELECT count(*) AS samples, count(arr_delay_min) AS verified,
                        avg(CASE WHEN arr_delay_min IS NULL THEN NULL WHEN arr_delay_min <= :thr THEN 1.0 ELSE 0.0 END) AS rate,
-                       avg(arr_delay_min) AS avg_delay, percentile_cont(0.9) WITHIN GROUP (ORDER BY arr_delay_min) AS p90
-                FROM rail.train_punctuality WHERE run_ymd BETWEEN :f AND :t""")
+                       avg(arr_delay_min) AS avg_delay, percentile_cont(0.9) WITHIN GROUP (ORDER BY arr_delay_min) AS p90,
+                       {bands}
+                FROM rail.train_punctuality WHERE run_ymd BETWEEN :f AND :t""".replace("{bands}", CompensationRule.sqlCounts("arr_delay_min")))
                 .param("thr", thr).param("f", from).param("t", to)
                 .query((rs, i) -> new Summary(rs.getInt("samples"), rs.getInt("verified"),
                         rs.getInt("samples") - rs.getInt("verified"), Rows.round(rs, "rate", 3), Rows.round(rs, "avg_delay", 1),
-                        Rows.round(rs, "p90", 1))).single();
+                        Rows.round(rs, "p90", 1), bands(rs))).single();
     }
 
     /** 좌표에서 radiusKm 안의 (latest 까지 최근 14일 운행이 있는) 역 — 가까운 순으로 limit 개 */

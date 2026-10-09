@@ -275,6 +275,44 @@ class ApiIT extends IntegrationTest {
     }
 
     @Test
+    void delayBandsCountRunsAtOrBeyondCompensationThresholds() throws Exception {
+        // AR-3 · A11 · A12: 배상 기준 시간(20·40·60·90·120분 '이상'). 계획 시각을 모르는 운행은 분자 · 분모 모두에서 빠진다
+        LocalDate base = LocalDate.now(KST).minusDays(20);
+        double[] delays = {0, 19, 20, 45, 61, 125};
+        for (int i = 0; i < delays.length; i++) insertRun(base.plusDays(i), "00300", delays[i], true);
+        insertRun(base.plusDays(6), "00301", 200, false);   // 정시성 원본 없음 → 확인 불가(NONE)
+        mvc.perform(get("/api/v1/rail/od/punctuality").param("dep", "S1").param("arr", "S2").param("groupBy", "train")
+                        .param("from", base.toString()).param("to", base.plusDays(6).toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.summary.samples").value(7))
+                .andExpect(jsonPath("$.summary.delayBands.verified").value(6))
+                .andExpect(jsonPath("$.summary.delayBands.ge20").value(4))
+                .andExpect(jsonPath("$.summary.delayBands.ge40").value(3))
+                .andExpect(jsonPath("$.summary.delayBands.ge60").value(2))
+                .andExpect(jsonPath("$.summary.delayBands.ge90").value(1))
+                .andExpect(jsonPath("$.summary.delayBands.ge120").value(1))
+                .andExpect(jsonPath("$.items[?(@.key == '00300')].delayBands.ge20").value(hasItem(4)))
+                .andExpect(jsonPath("$.items[?(@.key == '00301')].delayBands.verified").value(hasItem(0)))
+                .andExpect(jsonPath("$.nationwideExact.delayBands.ge60").value(2))
+                .andExpect(jsonPath("$.rules['DB-v1']").exists())
+                .andExpect(jsonPath("$.summary.onTimeRate").exists());   // 기존 필드는 그대로 (A13)
+    }
+
+    /** S1 10:00 → S2 11:00 계획 열차 한 편. exact 면 정시성 원본(계획 시각)도 넣어 '검증 운행'이 된다 */
+    private void insertRun(LocalDate day, String trn, double delayMin, boolean exact) {
+        OffsetDateTime dep = day.atTime(10, 0).atZone(KST).toOffsetDateTime();
+        OffsetDateTime arr = dep.plusMinutes(60).plusSeconds(Math.round(delayMin * 60));
+        jdbc.update("INSERT INTO rail.run_info (run_ymd, trn_no, run_seq, stn_cd, stn_nm, dep_at) VALUES (?, ?, 1, 'S1', '서울', ?)", day, trn, dep);
+        jdbc.update("INSERT INTO rail.run_info (run_ymd, trn_no, run_seq, stn_cd, stn_nm, arr_at) VALUES (?, ?, 2, 'S2', '대전', ?)", day, trn, arr);
+        if (!exact) return;
+        jdbc.update("""
+                INSERT INTO rail.train_punctuality (run_ymd, trn_no, dep_stn_cd, arr_stn_cd, plan_dep_at, plan_arr_at, act_dep_at,
+                  act_arr_at, dep_delay_min, arr_delay_min, on_time, status, calc_rule, threshold_min)
+                VALUES (?, ?, 'S1', 'S2', ?, ?, ?, ?, 0, ?, ?, 'OK', 'P-v1', 5)""",
+                day, trn, dep, dep.plusMinutes(60), dep, arr, delayMin, delayMin <= 5);
+    }
+
+    @Test
     void stationSearchOrdersExactThenPrefixThenTrains() throws Exception {
         // 역 검색 순서(검색 추천): 이름 정확 일치 → 앞부분 일치 → 최근 7일 정차 편수 → 이름. 캐시로 옮겨도 같아야 한다 (PERF-02)
         LocalDate ref = LocalDate.now(KST).minusDays(7);
