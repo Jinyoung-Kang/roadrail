@@ -82,6 +82,7 @@ JOBS: dict[str, JobSpec] = {
     "holiday_sync": JobSpec(holidays.sync_holidays, _const({"KASI": 3})),
     "baseline_daily": JobSpec(analysis.baseline_daily, _const({})),
     "backtest_daily": JobSpec(analysis.backtest_daily, _const({}), lock_ttl=3600),
+    "kakao_eta_eval": JobSpec(analysis.kakao_eta_eval, _const({})),
     "maintenance": JobSpec(analysis.maintenance, _const({})),
     "retention": JobSpec(analysis.retention, _const({})),
     # 관리 API 백필 전용 (스케줄 없음)

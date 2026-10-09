@@ -12,6 +12,10 @@
   2) 판단 검사: 신뢰 수준 c(80 · 90 · 95%)를 만족한다고 말한 경우(p ≥ c, 기록 15회 이상) 실제 적중률이 c - 5%p 이상인가.
      '모두 기한 안'(p = 1)은 따로 센다 — 화면은 이것을 100% 라고 하지 않는다.
 
+  C. 자동차(3단계, 결정 D1-A): 카카오 예측 ↔ 궤적 합 정답(ana.kakao_eta_eval)의 비율 R = 실제 ÷ 예측.
+     시간대(0–6 · 6–10 · 10–16 · 16–20 · 20–24시) × 공휴일 칸마다 앞 기간의 R 분위수 q_c 로 '예측 × q_c 안에 도착'을 말하고,
+     마지막 14일에서 실제 적중률을 잰다. 정답 기간이 28일 미만이거나 칸 표본이 50 미만이면 '보류'(화면에 자동차 확률을 내지 않음).
+
 한계: 환승 여정(구간 확률의 곱 · 독립 가정)은 여기서 재지 않는다. 운행 취소는 기록에 없다.
 표준 라이브러리만 쓴다. 표는 표준 출력(마크다운)으로.
 """
@@ -113,6 +117,56 @@ def report(title: str, r) -> bool:
     return ok
 
 
+CAR_BANDS = [(0, 6), (6, 10), (10, 16), (16, 20), (20, 24)]
+CAR_MIN_CELL, CAR_HOLDOUT_DAYS, CAR_MIN_SPAN_DAYS = 50, 14, 28
+
+
+def quantile(sorted_vals: list[float], q: float) -> float:
+    return sorted_vals[min(len(sorted_vals) - 1, max(0, int(-(-q * len(sorted_vals) // 1)) - 1))]
+
+
+def car_report() -> bool:
+    rows = psql("""SELECT (e.depart_at AT TIME ZONE 'Asia/Seoul')::date, extract(hour FROM e.depart_at AT TIME ZONE 'Asia/Seoul'),
+                          h.day IS NOT NULL OR extract(isodow FROM e.depart_at AT TIME ZONE 'Asia/Seoul') >= 6, e.actual_sec::float / e.kakao_sec
+                   FROM ana.kakao_eta_eval e LEFT JOIN ref.holiday h ON h.day = (e.depart_at AT TIME ZONE 'Asia/Seoul')::date""")
+    print("\n### C. 자동차 — 카카오 예측 ÷ 궤적 합 (결정 D1-A)\n")
+    if not rows:
+        print("정답 데이터가 아직 없습니다 (ana.kakao_eta_eval) — 보류.")
+        return False
+    data = [(date.fromisoformat(d), int(float(h)), w == "t", float(r)) for d, h, w, r in rows]
+    days = sorted({d for d, *_ in data})
+    ratios = sorted(r for *_, r in data)
+    span = (days[-1] - days[0]).days + 1
+    print(f"짝 {len(data):,}개 · {days[0]} ~ {days[-1]} ({span}일, 관측일 {len(days)}일) · R 중앙값 {quantile(ratios, 0.5):.3f} · "
+          f"p10 {quantile(ratios, 0.1):.3f} · p90 {quantile(ratios, 0.9):.3f}\n")
+    cut = days[-1] - timedelta(days=CAR_HOLDOUT_DAYS - 1)
+    cell = lambda h, wk: (next(i for i, (a, b) in enumerate(CAR_BANDS) if a <= h < b), wk)  # noqa: E731
+    train, test = defaultdict(list), defaultdict(list)
+    for d, h, wk, r in data:
+        (test if d >= cut else train)[cell(h, wk)].append(r)
+    print("| 칸 (시간대 · 주말/공휴일) | 앞 기간 표본 | 마지막 14일 표본 |\n|---|---:|---:|")
+    for k in sorted(set(train) | set(test)):
+        a, b = CAR_BANDS[k[0]]
+        print(f"| {a:02d}–{b:02d}시 · {'휴일' if k[1] else '평일'} | {len(train[k])} | {len(test[k])} |")
+    ready = [k for k in train if len(train[k]) >= CAR_MIN_CELL and test.get(k)]
+    if span < CAR_MIN_SPAN_DAYS or not ready:
+        print(f"\n보류 — 정답 기간 {span}일(필요 {CAR_MIN_SPAN_DAYS}일) · 표본 {CAR_MIN_CELL} 이상인 칸 {len(ready)}개. 자동차 확률은 내지 않습니다.")
+        return False
+    ok = True
+    print("\n| 신뢰 수준 | 평가 짝 | 실제 적중 | 기준(c − 5%p) | 판정 |\n|---|---:|---:|---:|---|")
+    for c in CONFIDENCES:
+        hits = n = 0
+        for k in ready:
+            q = quantile(sorted(train[k]), c)
+            n += len(test[k])
+            hits += sum(r <= q for r in test[k])
+        rate = hits / n
+        passed = abs(rate - c) <= TOLERANCE
+        ok &= passed
+        print(f"| {c:.0%} | {n:,} | {rate:.3f} | ±{TOLERANCE:.0%}p | {'통과' if passed else '미달'} |")
+    return ok
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--from", dest="start", type=date.fromisoformat, help="평가 시작일 (기본: 기록 첫날 + 30일)")
@@ -125,7 +179,9 @@ def main() -> int:
     print(f"## 도착 확률 보정 검사 — 평가 {start} ~ {end} (기록 {load_from} 부터, 규칙 AR-v1)")
     ok_a = report("A. 전국 종착역 도착", evaluate([r for r in load_terminal(load_from, end)]))
     ok_b = report("B. 주요 역 쌍 (" + " · ".join(p[2] for p in PAIRS) + ")", evaluate(load_pairs(load_from, end)))
-    print(f"\n결론: {'통과' if ok_a and ok_b else '미달'} (A {'통과' if ok_a else '미달'} · B {'통과' if ok_b else '미달'})")
+    print(f"\n결론(기차): {'통과' if ok_a and ok_b else '미달'} (A {'통과' if ok_a else '미달'} · B {'통과' if ok_b else '미달'})")
+    ok_c = car_report()
+    print(f"\n결론(자동차): {'통과 — 화면에 낼 수 있음' if ok_c else '보류 — 화면에 내지 않음'}")
     return 0
 
 

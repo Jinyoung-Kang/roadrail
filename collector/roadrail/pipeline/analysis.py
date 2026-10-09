@@ -9,11 +9,15 @@ import pandas as pd
 
 from ..analytics.backtest import DAYS, model_version, run_backtest
 from ..analytics.baseline import WEEKS, compute_baseline
+from ..analytics.road_quality import despike
+from ..analytics.trajectory import RULE as TRAJECTORY_RULE
+from ..analytics.trajectory import SegmentSeries, trajectory_sec
 from ..core import db
 from ..core.config import settings
-from ..core.timeutil import now_kst
+from ..core.timeutil import KST, now_kst
 from ..providers.base import JobContext
 from . import holidays
+from .road import load_chains
 
 logger = logging.getLogger(__name__)
 
@@ -101,3 +105,53 @@ async def maintenance(ctx: JobContext) -> int:
     old_runs = await db.execute("DELETE FROM ops.job_run WHERE started_at < now() - interval '90 days'")
     ctx.note(f"파티션 {created}개 생성 · 호출 로그 {deleted}건 · 실행 이력 {old_runs}건 삭제")
     return created
+
+
+# ---------------------------------------------------------------- 카카오 예측 정답 데이터 (ADR-029 3단계)
+
+EVAL_LOOKBACK = dt.timedelta(days=7)
+EVAL_SETTLE = dt.timedelta(hours=8)   # 공개 지연(약 3시간) + 긴 길 소요 — 이보다 최근 출발은 구간 값이 다 오지 않았다
+
+
+async def kakao_eta_eval(ctx: JobContext, lookback_days: int | None = None) -> int:
+    """ana.kakao_eta 의 출발 시각마다 고속도로 구간 값으로 궤적 합(T-v1)을 계산해 ana.kakao_eta_eval 에 둔다. 외부 호출 없음.
+    매일은 최근 7일만, 처음 한 번은 lookback_days 로 지난 예측 전체를 채운다(보존 90일 안)."""
+    now = now_kst()
+    todo = await db.fetch("""
+        SELECT k.depart_at, k.corridor_id, k.direction, k.requested_at, k.duration_sec
+        FROM ana.kakao_eta k
+        WHERE k.depart_at BETWEEN %s AND %s
+          AND NOT EXISTS (SELECT 1 FROM ana.kakao_eta_eval e WHERE (e.depart_at, e.corridor_id, e.direction, e.requested_at)
+                                                                = (k.depart_at, k.corridor_id, k.direction, k.requested_at))""",
+                          (now - (dt.timedelta(days=lookback_days) if lookback_days else EVAL_LOOKBACK), now - EVAL_SETTLE))
+    if not todo:
+        ctx.note("평가할 카카오 예측 없음")
+        return 0
+    chains = await load_chains()
+    keys = sorted({s.key for (cid, d), segs in chains.items() for s in segs})
+    lo = min(r["depart_at"] for r in todo) - dt.timedelta(minutes=45)
+    hi = max(r["depart_at"] for r in todo) + dt.timedelta(hours=8)
+    obs = await db.fetch("""
+        SELECT t.slot_ts, t.start_unit_code, t.end_unit_code, t.travel_sec, t.vehicles FROM ts.road_travel_time t
+        JOIN unnest(%s::varchar[], %s::varchar[]) AS k(s, e) ON t.start_unit_code = k.s AND t.end_unit_code = k.e
+        WHERE t.slot_ts BETWEEN %s AND %s AND t.car_type = '1' AND t.quality = 'OK'""",
+                         ([k[0] for k in keys], [k[1] for k in keys], lo, hi))
+    raw: dict[tuple[str, str], dict[dt.datetime, tuple[int, int | None]]] = {}
+    for o in obs:
+        raw.setdefault((o["start_unit_code"], o["end_unit_code"]), {})[o["slot_ts"].astimezone(KST)] = (o["travel_sec"], o["vehicles"])
+    series = {k: SegmentSeries(despike(v)[0]) for k, v in raw.items()}   # 길 합산과 같은 튀는 값 제거(H-v1)
+    empty = SegmentSeries({})
+    rows, missing = [], 0
+    for r in todo:
+        segs = chains.get((r["corridor_id"], r["direction"]))
+        actual = trajectory_sec([series.get(s.key, empty) for s in segs], r["depart_at"].astimezone(KST)) if segs else None
+        if actual is None:
+            missing += 1
+            continue
+        rows.append((r["depart_at"], r["corridor_id"], r["direction"], r["requested_at"], r["duration_sec"], actual, TRAJECTORY_RULE))
+    await db.executemany("""
+        INSERT INTO ana.kakao_eta_eval (depart_at, corridor_id, direction, requested_at, kakao_sec, actual_sec, rule)
+        VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING""", rows)
+    ctx.rows += len(rows)
+    ctx.note(f"카카오 예측 {len(todo)}건 중 정답 {len(rows)}건 (구간 값 부족 {missing}건 — 다음 실행에서 다시)")
+    return len(rows)

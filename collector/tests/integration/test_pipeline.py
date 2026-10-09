@@ -713,3 +713,25 @@ async def test_backtest_keeps_todays_results_when_the_insert_fails(seeded, monke
         await analysis.backtest_daily(ctx)
     rows = await db.fetch("SELECT direction, model_version FROM ana.forecast_eval WHERE eval_date = %s", (today,))
     assert [(r["direction"], r["model_version"]) for r in rows] == [("DN", "v-old")]
+
+
+async def test_kakao_eta_eval_pairs_prediction_with_trajectory_and_skips_incomplete(seeded):
+    # TST 하행 = 101→103(10분) → 103→528(5분). 12시간 전 출발 예측 2건: 하나는 구간 값이 다 있고, 하나는 둘째 구간이 비었다
+    from roadrail.pipeline import analysis
+    await db.execute("TRUNCATE ana.kakao_eta, ana.kakao_eta_eval")
+    t0 = (now_kst() - dt.timedelta(hours=12)).replace(minute=0, second=0, microsecond=0)
+    rows = []
+    for i in range(-12, 24):
+        ts = t0 + dt.timedelta(minutes=5 * i)
+        rows.append((ts, "101", "103", "1", 600, 500, 700, 10, "OK"))
+        if i < 6:   # 둘째 구간은 t0+30분 슬롯부터 없다
+            rows.append((ts, "103", "528", "1", 300, 250, 350, 10, "OK"))
+    await db.executemany(road.SQL_UPSERT_TT, rows)
+    await db.executemany("INSERT INTO ana.kakao_eta (requested_at, depart_at, corridor_id, direction, duration_sec, distance_m) "
+                         "VALUES (%s, %s, 'TST', 'DN', %s, 18000)",
+                         [(t0 - dt.timedelta(minutes=10), t0, 840), (t0 + dt.timedelta(minutes=50), t0 + dt.timedelta(hours=1), 840)])
+    ctx = JobContext(job_name="kakao_eta_eval", http=httpx.AsyncClient(), budget=None)
+    assert await analysis.kakao_eta_eval(ctx) == 1
+    got = await db.fetch("SELECT depart_at, kakao_sec, actual_sec, rule FROM ana.kakao_eta_eval")
+    assert [(g["depart_at"], g["kakao_sec"], g["actual_sec"], g["rule"]) for g in got] == [(t0, 840, 900, "T-v1")]
+    assert await analysis.kakao_eta_eval(ctx) == 0   # 이미 만든 짝은 다시 만들지 않는다 · 빈 구간은 다음에 다시
