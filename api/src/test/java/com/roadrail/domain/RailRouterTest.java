@@ -109,5 +109,49 @@ class RailRouterTest {
             assertThat(j.departure()).isGreaterThanOrEqualTo(ready);
         }
     }
-}
 
+    // ---- 거꾸로 찾기 (AR-2): 도착 기한까지 닿는 여정 중 집 출발이 가장 늦은 것
+
+    @Test
+    void latestFindsTransferJourneyThatStillMeetsTheDeadline() {
+        // 기한 08:40, 동대구에서 10분 — A(06:00) → 대전 환승 → B(08:30 도착) 가 딱 맞는다. 집 출발 = 06:00 − 10분
+        var j = RailRouter.latest(RailRouter.connections(STOPS), List.of(new Access("JJ", 600)),
+                List.of(new Dest("DG", 600)), t(8, 40), 600, 0, Long.MAX_VALUE).orElseThrow();
+        assertThat(j.legs()).extracting(Leg::trip).containsExactly("A", "B");
+        assertThat(j.finalArrival()).isLessThanOrEqualTo(t(8, 40));
+        assertThat(j.departure()).isEqualTo(t(6, 0));
+    }
+
+    @Test
+    void latestRespectsTransferTimeAndDeadline() {
+        var c = RailRouter.connections(STOPS);
+        var origins = List.of(new Access("JJ", 600));
+        // 기한 08:25: 환승 5분이면 B2(08:20) 로 닿고, 10분이면 B2 를 못 타고 B(08:30) 는 늦다
+        assertThat(RailRouter.latest(c, origins, List.of(new Dest("DG", 0)), t(8, 25), 300, 0, Long.MAX_VALUE))
+                .get().extracting(j -> j.legs().getLast().trip()).isEqualTo("B2");
+        assertThat(RailRouter.latest(c, origins, List.of(new Dest("DG", 0)), t(8, 25), 600, 0, Long.MAX_VALUE)).isEmpty();
+    }
+
+    @Test
+    void latestReconstructsThroughAnotherOriginStation() {
+        // A 까지 5분, B 까지 60분 — B 에서 바로 타면 09:25 에 나서야 하고, A 에서 T1 → B 환승이면 10:00 에 나서도 된다
+        var j = RailRouter.latest(RailRouter.connections(VIA_ORIGIN), List.of(new Access("A", 300), new Access("B", 3600)),
+                List.of(new Dest("D", 0)), t(11, 0), 600, 0, Long.MAX_VALUE).orElseThrow();
+        assertThat(j.originStn()).isEqualTo("A");
+        assertThat(j.legs()).extracting(Leg::trip).containsExactly("T1", "T2");
+    }
+
+    @Test
+    void latestSeveralListsLaterHomeDeparturesFirstWithinWindow() {
+        var direct = RailRouter.connections(List.of(
+                new Stop("X1", 1, "S", null, t(9, 0)), new Stop("X1", 2, "D", t(10, 0), null),
+                new Stop("X2", 1, "S", null, t(9, 30)), new Stop("X2", 2, "D", t(10, 30), null),
+                new Stop("X3", 1, "S", null, t(10, 0)), new Stop("X3", 2, "D", t(11, 0), null)));
+        var origins = List.of(new Access("S", 900));
+        var all = RailRouter.latestSeveral(direct, origins, List.of(new Dest("D", 600)), t(10, 45), 600, 0, 3);
+        assertThat(all).extracting(j -> j.legs().getFirst().trip()).containsExactly("X2", "X1");
+        // 집 출발이 08:50 보다 이르면 안 된다 → X1(08:45 출발) 은 빠진다
+        var late = RailRouter.latestSeveral(direct, origins, List.of(new Dest("D", 600)), t(10, 45), 600, t(8, 50), 3);
+        assertThat(late).extracting(j -> j.legs().getFirst().trip()).containsExactly("X2");
+    }
+}

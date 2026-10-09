@@ -1,11 +1,13 @@
 package com.roadrail.trip.web;
 
 import com.roadrail.shared.ApiException;
+import com.roadrail.trip.app.ArrivalService;
 import com.roadrail.trip.app.PlaceService;
 import com.roadrail.rail.app.RailService;
 import com.roadrail.trip.app.RoadRouteService;
 import com.roadrail.trip.app.TripService;
 import com.roadrail.rail.model.RailDtos;
+import com.roadrail.trip.model.ArrivalDtos;
 import com.roadrail.trip.model.TripDtos;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -17,7 +19,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import com.roadrail.shared.Times;
+
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 @RestController
@@ -29,8 +36,10 @@ public class TripController {
     private final PlaceService places;
     private final RailService rail;
     private final RoadRouteService roads;
+    private final ArrivalService arrivals;
 
-    public TripController(TripService trips, PlaceService places, RailService rail, RoadRouteService roads) {
+    public TripController(TripService trips, PlaceService places, RailService rail, RoadRouteService roads, ArrivalService arrivals) {
+        this.arrivals = arrivals;
         this.trips = trips;
         this.places = places;
         this.rail = rail;
@@ -80,6 +89,42 @@ public class TripController {
         var to = new TripDtos.Place(toName, null, toLat, toLon, toStation == null ? "PLACE" : "STATION", blank(toStation));
         var t = trips.trip(from, to, departIn, accessMin);
         return ResponseEntity.ok().header("X-Cache", t.cache()).body(t);
+    }
+
+    @GetMapping("/trip/arrival")
+    @Operation(summary = "도착 시각 기준 — 기한까지 도착하려면 늦어도 언제 떠나야 하나 (기차: 최근 30일 지연 빈도로 확률 · 자동차: 카카오 예측)")
+    public ResponseEntity<ArrivalDtos.Arrival> arrival(@RequestParam double fromLat, @RequestParam double fromLon,
+                                                       @RequestParam @Size(max = 60) String fromName,
+                                                       @RequestParam(required = false) @jakarta.validation.constraints.Pattern(regexp = STATION) String fromStation,
+                                                       @RequestParam double toLat, @RequestParam double toLon,
+                                                       @RequestParam @Size(max = 60) String toName,
+                                                       @RequestParam(required = false) @jakarta.validation.constraints.Pattern(regexp = STATION) String toStation,
+                                                       @RequestParam @Size(max = 16) String arriveBy,
+                                                       @RequestParam(defaultValue = "0.9") double confidence,
+                                                       @RequestParam(required = false) @Min(0) @Max(180) Integer accessMin) {
+        // 입력값 대신 허용 목록의 상수를 넘긴다 — 뒤의 계산 · 캐시 키에 사용자 숫자가 그대로 흘러가지 않게
+        double level = ArrivalService.CONFIDENCES.stream().filter(c -> Math.abs(c - confidence) < 1e-9).findFirst()
+                .orElseThrow(() -> ApiException.invalid("confidence 는 0.8 · 0.9 · 0.95 중 하나입니다."));
+        var by = arriveBy(arriveBy, Times.now());
+        var from = new TripDtos.Place(fromName, null, fromLat, fromLon, fromStation == null ? "PLACE" : "STATION", blank(fromStation));
+        var to = new TripDtos.Place(toName, null, toLat, toLon, toStation == null ? "PLACE" : "STATION", blank(toStation));
+        var a = arrivals.arrival(from, to, by, level, accessMin);
+        return ResponseEntity.ok().header("X-Cache", a.cache()).body(a);
+    }
+
+    /** 도착 기한 — yyyy-MM-ddTHH:mm (KST), 5분 단위로 내림. 지금 + 30분 ~ 지금 + 24시간 */
+    static OffsetDateTime arriveBy(String s, OffsetDateTime now) {
+        LocalDateTime t;
+        try {
+            t = LocalDateTime.parse(s);
+        } catch (DateTimeParseException e) {
+            throw ApiException.invalid("arriveBy 는 yyyy-MM-ddTHH:mm (한국 시각) 형식입니다.");
+        }
+        OffsetDateTime by = Times.alignTo5Min(t.atZone(Times.KST).toOffsetDateTime());
+        if (by.isBefore(now.plusMinutes(30)) || by.isAfter(now.plusHours(24))) {
+            throw ApiException.invalid("도착 시각은 지금부터 30분 뒤 ~ 24시간 안이어야 합니다.");
+        }
+        return by;
     }
 
     @GetMapping("/rail/od/punctuality")

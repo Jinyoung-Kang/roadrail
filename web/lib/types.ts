@@ -153,3 +153,13 @@ export interface ProfilePoint { departAt: string; offsetMin: number; durationSec
 export interface RouteAnalysis { from: Place; to: Place; straightKm: number; departAt: string; recommended: RouteSummary;
   avoidMotorway: RouteSummary; profile: ProfilePoint[]; bestDeparture: ProfilePoint | null;
   monitored: { corridorId: string; name: string; direction: Dir } | null; note: string }
+
+/** 도착 시각 기준 판단 (GET /trip/arrival) */
+export interface ArrivalOdds { percent: number | null; within: number | null; n: number; allObservedWithin: boolean; basis: string }
+export interface LegRisk { trnNo: string; kind: "TRANSFER" | "ARRIVAL"; allowanceMin: number; within: number; n: number }
+export interface ArrivalAlternative { latestDepart: string; arriveAt: string; transfers: number; odds: ArrivalOdds }
+export interface ArrivalTrain { latestDepart: string | null; meetsConfidence: boolean; odds: ArrivalOdds | null; journey: Journey | null;
+  legRisks: LegRisk[]; alternatives: ArrivalAlternative[]; referenceDate: string | null; note: string | null }
+export interface ArrivalCar { latestDepart: string | null; durationSec: number | null; feasible: boolean; calls: number; basis: string; note: string | null }
+export interface Arrival { from: Place; to: Place; arriveBy: string; confidence: number; asOf: string; train: ArrivalTrain; car: ArrivalCar;
+  summary: string; assumptions: string[]; pending: boolean; cache: string }

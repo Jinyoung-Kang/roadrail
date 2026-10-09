@@ -44,6 +44,9 @@ export const api = {
   trip: (from: Point, to: Point, departIn: number, accessMin?: string | number) => `${BASE}/trip?${qs({
     fromLat: from.lat, fromLon: from.lon, fromName: from.name, fromStation: from.stationCode,
     toLat: to.lat, toLon: to.lon, toName: to.name, toStation: to.stationCode, departIn, accessMin })}`,
+  arrival: (from: Point, to: Point, arriveBy: string, confidence: number, accessMin?: string | number) => `${BASE}/trip/arrival?${qs({
+    fromLat: from.lat, fromLon: from.lon, fromName: from.name, fromStation: from.stationCode,
+    toLat: to.lat, toLon: to.lon, toName: to.name, toStation: to.stationCode, arriveBy, confidence, accessMin })}`,
   roadRoute: (from: Point, to: Point, departIn: number) => `${BASE}/road/route?${qs({
     fromLat: from.lat, fromLon: from.lon, fromName: from.name, toLat: to.lat, toLon: to.lon, toName: to.name, departIn })}`,
   placesSearch: (term: string) => `${BASE}/places/search?${qs({ q: term })}`,

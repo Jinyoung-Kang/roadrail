@@ -139,6 +139,11 @@ public class RailService {
         return repo.trainStats(dep, arr, end.minusDays(29), end, trains, props.onTimeThresholdMin());
     }
 
+    /** 기준일까지 30일 열차별 도착 지연 목록 (판단 카드의 30일 통계와 같은 기간) */
+    public Map<String, List<Double>> delaySamples30d(String dep, String arr, LocalDate end, List<String> trains) {
+        return repo.delaySamples(dep, arr, end.minusDays(29), end, trains);
+    }
+
     public Trains trains(String dep, String arr, LocalDate date) {
         String cacheKey = "rail:trains:v2:%s:%s:%s".formatted(dep, arr, date == null ? "latest" : date);
         Trains hit = cache.peek(cacheKey, Trains.class);

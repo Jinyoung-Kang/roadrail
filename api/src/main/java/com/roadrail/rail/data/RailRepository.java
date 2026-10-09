@@ -38,6 +38,22 @@ public class RailRepository {
     /** 운행계획의 시발 · 종착역 이름 */
     public record TrainEnds(String trnNo, String originName, String terminusName) {}
 
+    /** 열차별 도착 지연(분) 목록 — 계획 시각을 확인한 운행만, 작은 값부터 (AR-1 도착 확률의 경험 분포) */
+    public Map<String, List<Double>> delaySamples(String dep, String arr, LocalDate from, LocalDate to, List<String> trains) {
+        Map<String, List<Double>> m = new HashMap<>();
+        if (trains.isEmpty()) return m;
+        jdbc.sql("""
+                SELECT trn_no, array_agg(arr_delay_min::float8 ORDER BY arr_delay_min) AS delays
+                FROM rail.od_trips_real(:a, :b, :f, :t) WHERE trn_no IN (:trains) AND arr_delay_min IS NOT NULL
+                GROUP BY trn_no""")
+                .param("a", dep).param("b", arr).param("f", from).param("t", to).param("trains", trains)
+                .query(rs -> {
+                    Double[] d = (Double[]) rs.getArray("delays").getArray();
+                    m.put(rs.getString("trn_no"), List.of(d));
+                });
+        return m;
+    }
+
     /** 날짜별 역 쌍 운행 수 · 계획 시각을 확인한 수 */
     public record DayCount(LocalDate day, int runs, int verified) {}
 

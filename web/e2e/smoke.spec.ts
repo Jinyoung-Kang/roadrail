@@ -143,6 +143,30 @@ test("판단 화면: 자동차·기차 카드 — 도착 예정 · 시간 구성
   await expect(page.getByText("선로 © OpenStreetMap contributors (ODbL)", { exact: true })).toBeAttached();
 });
 
+test("판단 화면: 도착 시각 기준 — 늦어도 떠날 시각 · 빈도 근거 · 주소 유지 · 키보드 전환 (AR-1 · AR-2)", async ({ page }) => {
+  await page.goto("/");
+  const mode = page.getByRole("radiogroup", { name: "판단 기준" });
+  await mode.getByRole("radio", { name: "도착 시각 기준" }).click();
+  await expect(page).toHaveURL(/by=arrive/);
+  await expect(page.getByRole("combobox", { name: "도착 시각" })).toBeVisible();
+  await expect(page.getByRole("radiogroup", { name: "신뢰 수준" }).getByRole("radio", { name: "90%" })).toHaveAttribute("aria-checked", "true");
+  // 결과: 두 카드 모두 '늦어도' — 기차는 기한 안 도착 근거(퍼센트 또는 빈도), 자동차는 확률을 내지 않는다고 밝힌다
+  await expect(page.getByText("기차 · 최근 30일 실제 지연으로 계산")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("확률 없음", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^(\d+%|\d+회 (모두 기한 안|중 \d+회)|빈도만|기록 없음)$/).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("100%", { exact: true })).toHaveCount(0);
+  // 신뢰 수준을 바꾸면 주소에 남고, 새로 고쳐도 같은 모드
+  await page.getByRole("radiogroup", { name: "신뢰 수준" }).getByRole("radio", { name: "95%" }).click();
+  await expect(page).toHaveURL(/c=95/);
+  await page.reload();
+  await expect(page.getByRole("radiogroup", { name: "판단 기준" }).getByRole("radio", { name: "도착 시각 기준" })).toHaveAttribute("aria-checked", "true");
+  // 키보드: 화살표로 출발 시각 기준으로 돌아간다
+  await page.getByRole("radiogroup", { name: "판단 기준" }).getByRole("radio", { name: "도착 시각 기준" }).focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page).toHaveURL(/by=depart/);
+  await expect(page.getByRole("radiogroup", { name: "출발 시점" })).toBeVisible();
+});
+
 test("도로 분석: 전국 어디든 — 출발 시각별 · 도로 구성", async ({ page }) => {
   await page.goto("/road?from=%EA%B0%95%EB%82%A8%EC%97%AD~37.49790~127.02760~&to=%EC%A0%84%EC%A3%BC%EC%8B%9C~35.82420~127.14800~");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(/강남역\s*→\s*전주시/);
