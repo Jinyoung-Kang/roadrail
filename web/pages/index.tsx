@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import About from "@/components/About";
 import Layout from "@/components/Layout";
 import RouteMap from "@/components/RouteMap";
 import SearchPicker from "@/components/SearchPicker";
 import TrafficLegend from "@/components/TrafficLegend";
+import { ArrivalAssumptions, ArrivalCards } from "@/components/trip/ArrivalCards";
 import { CarTile } from "@/components/trip/CarTile";
 import { EnvRow } from "@/components/trip/EnvRow";
 import { Evidence } from "@/components/trip/Evidence";
@@ -13,8 +14,10 @@ import { TrainTile } from "@/components/trip/TrainTile";
 import { ErrorBox, Loading, Section, Segmented, Select, Spec, SpecStrip } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import { useMapFocus } from "@/lib/hooks/useMapFocus";
+import { useArrival } from "@/lib/hooks/useArrival";
 import { useTrip } from "@/lib/hooks/useTrip";
 import { ACCESS_OPTIONS, DEPART_OPTIONS } from "@/lib/trip";
+import { arriveByParam, CONFIDENCE_OPTIONS, minutesLater, DAY_OPTIONS, MODE_OPTIONS, parseArrivalQuery, resolveSlot, slotOptions, type Mode } from "@/lib/arrival";
 import { DASH, durParts, hm, num } from "@/lib/format";
 import { locatedIncidents, tripLayers, WARN } from "@/lib/layers";
 import { corridorEnds, decodePlace, encodePlace, KIND_LABEL } from "@/lib/places";
@@ -39,6 +42,23 @@ export default function Home() {
       ...(to && !q.to ? { to: encodePlace(to) } : {}), ...p } }, undefined, { shallow: true, scroll: false });
 
   const { trip, t } = useTrip(router.isReady, from, to, departIn, access);
+
+  // 도착 시각 기준 (?by=arrive&d=0|1&at=1400&c=90) — 선택지는 '지금'에 달려 있어 브라우저에서만 만든다(서버 렌더와 어긋나지 않게)
+  const aq = parseArrivalQuery(q);
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => { setNow(new Date()); const id = setInterval(() => setNow(new Date()), 60_000); return () => clearInterval(id); }, []);
+  const arriveMode = aq.mode === "arrive";
+  const slot = now ? resolveSlot(now, aq) : null;
+  const slots = now && slot ? slotOptions(now, slot.day) : [];
+  const arriveBy = arriveMode && router.isReady && now && slot ? arriveByParam(now, slot.day, slot.at) : null;
+  const { arrival, a } = useArrival(from, to, arriveBy, aq.confidence, access);
+  // 기차가 신뢰 수준을 만족할 때만 비교한다 (미달이면 차이를 내지 않음)
+  const laterMin = a ? minutesLater(a.train.meetsConfidence ? a.train.latestDepart : null, a.car.latestDepart) : null;
+  const pickDay = (day: number) => {
+    if (!now) return;
+    const opts = slotOptions(now, day);
+    set({ d: day, at: opts.some((o) => o.value === slot?.at) ? slot!.at : opts[0]?.value ?? "" });
+  };
 
   const d = t?.decision;
   const car = durParts(d?.carTotalMin ?? (t?.car.durationSec ? t.car.durationSec / 60 : null));
@@ -68,13 +88,15 @@ export default function Home() {
           <a href="#about" className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1 text-[12px] text-ink2 ring-1 ring-black/5 backdrop-blur-sm hover:bg-white">
             <b className="font-medium text-ink">로드레일</b> · 공공데이터로 비교하는 자동차 vs 기차 <span className="text-muted">소개 ↓</span>
           </a>
-          <p className="eyebrow">{hm(t?.departAt)} 출발 기준 · 직선 {num(t?.distanceKm, 0)}km</p>
+          <p className="eyebrow">{arriveMode ? `${slot ? `${slot.day ? "내일" : "오늘"} ${slot.at.slice(0, 2)}:${slot.at.slice(2)}` : ""} 도착 기준` : `${hm(t?.departAt)} 출발 기준`} · 직선 {num(t?.distanceKm, 0)}km</p>
           <h1 className="mt-2 text-[34px] sm:text-[48px] font-medium tracking-tight text-ink">
             {from?.name ?? " "} <span className="text-faint">→</span> {to?.name ?? " "}
           </h1>
           <p className="mt-2 min-h-[3em] sm:min-h-[1.5em] text-[15px] sm:text-[17px] text-ink2">
-            {trip.loading && !t ? "판단 중…" : d?.summary ?? (trip.error ? "판단 카드를 불러오지 못했습니다" : "")}
-            {d && <a href="#evidence" className="ml-2 underline underline-offset-4 text-ink">근거 보기</a>}
+            {arriveMode
+              ? (a ? a.summary : arrival.error ? "도착 기준 판단을 불러오지 못했습니다" : "마지막 출발 시각 계산 중…")
+              : trip.loading && !t ? "판단 중…" : d?.summary ?? (trip.error ? "판단 카드를 불러오지 못했습니다" : "")}
+            {(arriveMode ? a : d) && <a href="#evidence" className="ml-2 underline underline-offset-4 text-ink">근거 보기</a>}
           </p>
           <div className="mt-6 flex flex-col items-center justify-center gap-2 sm:flex-row">
             {picker("출발지", from, "from")}
@@ -83,18 +105,39 @@ export default function Home() {
             {picker("도착지", to, "to")}
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-            <Segmented label="출발 시점" value={departIn} onChange={(v) => set({ t: v })} options={DEPART_OPTIONS} />
+            <Segmented<Mode> label="판단 기준" value={aq.mode} onChange={(v) => set({ by: v })} options={[...MODE_OPTIONS]} />
+          </div>
+          {/* 두 모드의 조작 줄은 높이가 같아 바꿔도 아래가 밀리지 않는다 */}
+          <div className="mt-2 flex min-h-8 flex-wrap items-center justify-center gap-2">
+            {arriveMode ? (
+              <>
+                <Segmented label="도착 날짜" value={slot?.day ?? 0} onChange={pickDay} options={DAY_OPTIONS} />
+                <Select label="도착 시각" value={slot?.at ?? ""} onChange={(v) => set({ d: slot?.day ?? 0, at: v })}
+                        options={slots.length ? slots : [{ value: "", label: "도착 시각" }]} />
+                <Segmented label="신뢰 수준" value={aq.confidence} onChange={(v) => set({ c: v })} options={CONFIDENCE_OPTIONS} />
+              </>
+            ) : <Segmented label="출발 시점" value={departIn} onChange={(v) => set({ t: v })} options={DEPART_OPTIONS} />}
             <Select label="역까지 걸리는 시간" value={access} onChange={(v) => set({ a: v })} options={ACCESS_OPTIONS} />
           </div>
         </div>
 
         <div className="absolute inset-x-0 bottom-0 pb-10 sm:pb-14">
-          <SpecStrip>
-            <Spec value={t?.car.pending && car.big === DASH ? "…" : car.big} unit={car.unit} label="자동차" tone="road" />
-            <Spec value={train.big} unit={train.unit} label="기차" tone="rail" />
-            <Spec value={d?.diffMin == null ? DASH : String(Math.abs(d.diffMin))} unit={d?.diffMin == null ? "" : "분"}
-                  label={d?.verdict === "TRAIN" ? "기차가 빠름" : d?.verdict === "CAR" ? "자동차가 빠름" : "차이"} />
-          </SpecStrip>
+          {arriveMode ? (
+            <SpecStrip>
+              <Spec value={a?.car.latestDepart ? hm(a.car.latestDepart) : a?.pending ? "…" : DASH} unit="" label="자동차 마지막 출발" tone="road" />
+              <Spec value={a?.train.latestDepart ? hm(a.train.latestDepart) : a?.pending ? "…" : DASH} unit=""
+                    label={a?.train.latestDepart && !a.train.meetsConfidence ? `기차 (${aq.confidence}% 미달)` : "기차 마지막 출발"} tone="rail" />
+              <Spec value={laterMin == null ? DASH : String(Math.abs(laterMin))} unit={laterMin == null ? "" : "분"}
+                    label={laterMin == null || laterMin === 0 ? "차이" : laterMin > 0 ? "기차가 늦게 떠남" : "자동차가 늦게 떠남"} />
+            </SpecStrip>
+          ) : (
+            <SpecStrip>
+              <Spec value={t?.car.pending && car.big === DASH ? "…" : car.big} unit={car.unit} label="자동차" tone="road" />
+              <Spec value={train.big} unit={train.unit} label="기차" tone="rail" />
+              <Spec value={d?.diffMin == null ? DASH : String(Math.abs(d.diffMin))} unit={d?.diffMin == null ? "" : "분"}
+                    label={d?.verdict === "TRAIN" ? "기차가 빠름" : d?.verdict === "CAR" ? "자동차가 빠름" : "차이"} />
+            </SpecStrip>
+          )}
           <div className="mt-8 flex flex-col items-center justify-center gap-3 px-4 sm:flex-row sm:gap-6">
             <a href="#compare" className="btn-primary">자세히 보기</a>
             {from && to ? <Link href={`/road?from=${encodeURIComponent(encodePlace(from))}&to=${encodeURIComponent(encodePlace(to))}`} className="btn-secondary">경로 분석</Link>
@@ -106,15 +149,26 @@ export default function Home() {
       <About />
 
       {/* ---------- 비교 */}
-      <Section id="compare" eyebrow="자동차와 기차" title="같은 출발 시각, 두 가지 선택" gray
-               desc="자동차는 도로(고속도로·국도·일반도로) 기준 카카오 경로 예측, 기차는 가까운 역에서 목적지 가까운 역까지 코레일 환승 경로와 최근 30일 실제 운행으로 계산합니다.">
-        <ErrorBox error={trip.error} />
-        {!t && trip.loading && <Loading />}
-        {t && <div className="grid gap-6 lg:grid-cols-2"><CarTile trip={t} /><TrainTile trip={t} /></div>}
+      <Section id="compare" eyebrow="자동차와 기차" title={arriveMode ? "같은 도착 기한, 늦어도 언제 떠나나" : "같은 출발 시각, 두 가지 선택"} gray
+               desc={arriveMode
+                 ? "기차는 기한 안에 닿는 열차를 늦게 떠나는 순으로 찾아, 최근 30일 같은 열차의 실제 도착 지연 빈도가 신뢰 수준 이상인 가장 늦은 여정을 고릅니다. 자동차는 카카오 예측 소요로 계산하며 확률은 내지 않습니다."
+                 : "자동차는 도로(고속도로·국도·일반도로) 기준 카카오 경로 예측, 기차는 가까운 역에서 목적지 가까운 역까지 코레일 환승 경로와 최근 30일 실제 운행으로 계산합니다."}>
+        {arriveMode ? (
+          <>
+            <ErrorBox error={arrival.error} />
+            {a ? <ArrivalCards a={a} /> : !arrival.error && <div className="min-h-[460px]"><Loading /></div>}
+          </>
+        ) : (
+          <>
+            <ErrorBox error={trip.error} />
+            {!t && trip.loading && <Loading />}
+            {t && <div className="grid gap-6 lg:grid-cols-2"><CarTile trip={t} /><TrainTile trip={t} /></div>}
+          </>
+        )}
       </Section>
 
-      <Section id="evidence" eyebrow="R-DEC-01" title="왜 이렇게 판단했나요">
-        {t ? <Evidence decision={t.decision} freshness={t.freshness} caveat={t.caveat} cache={t.cache} asOf={t.asOf}
+      <Section id="evidence" eyebrow={arriveMode ? "AR-v1" : "R-DEC-01"} title="왜 이렇게 판단했나요">
+        {arriveMode ? (a ? <ArrivalAssumptions a={a} /> : <Loading />) : t ? <Evidence decision={t.decision} freshness={t.freshness} caveat={t.caveat} cache={t.cache} asOf={t.asOf}
                        incidents={t.incidents} incidentTotal={t.incidentTotal} onLocate={locate} /> : <Loading />}
       </Section>
 
