@@ -7,6 +7,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import com.roadrail.ops.data.OpsRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -35,10 +36,13 @@ public class OpsService {
         Map<String, Integer> gaps = open.gaps(), noSamples = open.noSamples();
         List<String> names = repo.jobNames();
         Set<String> running = runningJobs(names);  // 잠금 확인을 작업마다 1번씩 → MGET 1번
+        List<Freshness> freshness = freshness(repo.latestSlots(), now);
+        Set<String> staleJobs = new HashSet<>();
+        freshness.stream().filter(Freshness::stale).forEach(f -> staleJobs.add(f.job()));
         List<Job> jobs = repo.jobs().stream().map(r -> {
             Double c = completeness.get(r.job());
             String last = r.lastStatus();
-            boolean warn = (c != null && c < 0.95) || "FAILED".equals(last) || "SKIPPED_QUOTA".equals(last);
+            boolean warn = (c != null && c < 0.95) || "FAILED".equals(last) || "SKIPPED_QUOTA".equals(last) || staleJobs.contains(r.job());
             return new Job(r.job(), r.provider(), r.cron(), r.description(), r.enabled(), last, r.lastRunAt(), r.lastDurationMs(),
                     r.lastCalls(), r.lastRows(), r.lastMessage(), c,
                     gaps.getOrDefault(r.job(), c == null ? null : 0), noSamples.getOrDefault(r.job(), c == null ? null : 0),
@@ -61,7 +65,21 @@ public class OpsService {
                     f.status(), null, null, f.resolvedAt())).toList();
         }
         return new Status(now, hb != null, hb == null ? null : OffsetDateTime.parse(hb), jobs, quotas(), runs, errors,
-                failures, backfills, lag, volumes(), detailed);
+                failures, backfills, lag, freshness, volumes(), detailed);
+    }
+
+    /** 계열 → 이보다 오래되면 원천이 멈춘 것으로 본다(분) — 공개 지연(통행시간 약 3시간 · 교통량 약 80분)의 두 배쯤 */
+    static final Map<String, Integer> STALE_AFTER_MIN = Map.of("road_travel_time", 360, "road_volume_all", 180);
+
+    static List<Freshness> freshness(Map<String, OffsetDateTime> latest, OffsetDateTime now) {
+        List<Freshness> out = new ArrayList<>();
+        STALE_AFTER_MIN.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(e -> {
+            OffsetDateTime t = latest.get(e.getKey());
+            Long age = t == null ? null : Duration.between(t, now).toMinutes();
+            // 행이 하나도 없으면 아직 수집 전일 수 있어 멈춤으로 보지 않는다(모름)
+            out.add(new Freshness(e.getKey(), e.getKey(), t, age, e.getValue(), age != null && age > e.getValue()));
+        });
+        return out;
     }
 
     /** 정상 종료(또는 아직 실행 전 · 실행 중)의 메시지는 작업 메모라 공개해도 된다 — 실패 · 부분 성공 · 예산 부족의 메시지는 오류 내용 */

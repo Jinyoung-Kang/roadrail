@@ -82,6 +82,19 @@ public class OpsRepository {
                         Times.kst(rs.getObject(9, OffsetDateTime.class)), Times.kst(rs.getObject(10, OffsetDateTime.class)))).list();
     }
 
+    /** 계열별 가장 최근 슬롯 (도로공사 통행시간 · 교통량) — 계열 이름 → 시각 (행이 없으면 빠짐) */
+    public Map<String, OffsetDateTime> latestSlots() {
+        Map<String, OffsetDateTime> m = new LinkedHashMap<>();
+        jdbc.sql("""
+                SELECT 'road_travel_time' AS s, (SELECT max(slot_ts) FROM ts.road_travel_time) AS t
+                UNION ALL SELECT 'road_volume_all', (SELECT max(slot_ts) FROM ts.road_volume)""")
+                .query(rs -> {
+                    OffsetDateTime t = rs.getObject("t", OffsetDateTime.class);
+                    if (t != null) m.put(rs.getString("s"), Times.kst(t));
+                });
+        return m;
+    }
+
     /** 공개 지연: 원본 행이 처음 저장된 시각 − 슬롯 시각 (도로공사 통행시간·교통량) */
     public List<Lag> publishLag() {
         return jdbc.sql("""
