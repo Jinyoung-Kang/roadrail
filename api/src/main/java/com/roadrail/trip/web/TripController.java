@@ -102,13 +102,13 @@ public class TripController {
                                                        @RequestParam @Size(max = 16) String arriveBy,
                                                        @RequestParam(defaultValue = "0.9") double confidence,
                                                        @RequestParam(required = false) @Min(0) @Max(180) Integer accessMin) {
-        if (ArrivalService.CONFIDENCES.stream().noneMatch(c -> Math.abs(c - confidence) < 1e-9)) {
-            throw ApiException.invalid("confidence 는 0.8 · 0.9 · 0.95 중 하나입니다.");
-        }
+        // 입력값 대신 허용 목록의 상수를 넘긴다 — 뒤의 계산 · 캐시 키에 사용자 숫자가 그대로 흘러가지 않게
+        double level = ArrivalService.CONFIDENCES.stream().filter(c -> Math.abs(c - confidence) < 1e-9).findFirst()
+                .orElseThrow(() -> ApiException.invalid("confidence 는 0.8 · 0.9 · 0.95 중 하나입니다."));
         var by = arriveBy(arriveBy, Times.now());
         var from = new TripDtos.Place(fromName, null, fromLat, fromLon, fromStation == null ? "PLACE" : "STATION", blank(fromStation));
         var to = new TripDtos.Place(toName, null, toLat, toLon, toStation == null ? "PLACE" : "STATION", blank(toStation));
-        var a = arrivals.arrival(from, to, by, confidence, accessMin);
+        var a = arrivals.arrival(from, to, by, level, accessMin);
         return ResponseEntity.ok().header("X-Cache", a.cache()).body(a);
     }
 
