@@ -124,4 +124,78 @@ public final class RailRouter {
         }
         return out;
     }
+
+    /** 출발 후보역 — 집(어디서)에서 그 역까지 이동 + 승차 여유(초). 집 출발 = 탄 열차 출발 − leadSec */
+    public record Access(String stn, long leadSec) {}
+
+    /**
+     * 거꾸로 찾는 CSA (AR-2): 도착 기한까지 (도착 + 역에서 이동)이 끝나는 여정 중 '집 출발'이 가장 늦은 것.
+     * 연결을 출발 시각 내림차순으로 훑으며, 역마다 그 역에서 출발해 기한 안에 닿는 가장 늦은 출발 시각 τ 를 갱신한다.
+     * 같은 열차를 계속 타는 데는 벌점이 없고, 갈아타려면 앞 열차 도착 + transferSec ≤ τ(다음 역).
+     * 집 출발은 [notBefore, notAfter] 안 — notAfter 를 앞 결과보다 이르게 주면 다음(더 이른) 후보를 얻는다.
+     * 지연은 보지 않는다(계획 시각) — 확률은 호출하는 쪽이 지연 분포로 매긴다.
+     */
+    public static Optional<Journey> latest(List<Connection> sorted, List<Access> origins, List<Dest> dests, long deadline,
+                                           long transferSec, long notBefore, long notAfter) {
+        if (origins.isEmpty() || dests.isEmpty()) return Optional.empty();
+        Map<String, Long> egress = new HashMap<>();
+        for (Dest d : dests) egress.merge(d.stn(), d.egressSec(), Math::min);
+        Map<String, Long> lead = new HashMap<>();
+        for (Access a : origins) lead.merge(a.stn(), a.leadSec(), Math::min);
+        Map<String, Long> tau = new HashMap<>();                 // 역 → 거기서 탈 수 있는 가장 늦은 출발
+        Map<String, Connection[]> next = new HashMap<>();        // 역 → {탈 연결, 내릴 연결}
+        Map<String, Connection> tripExit = new HashMap<>();      // 열차 → 내릴 연결(기한 안에 닿는 곳)
+        long bestHome = Long.MIN_VALUE;
+        Connection[] bestFirst = null;
+        for (int i = sorted.size() - 1; i >= 0; i--) {
+            Connection c = sorted.get(i);
+            if (!tripExit.containsKey(c.trip())) {
+                Long eg = egress.get(c.to());
+                Long t = tau.get(c.to());
+                if ((eg != null && c.arr() + eg <= deadline) || (t != null && c.arr() + transferSec <= t)) tripExit.put(c.trip(), c);
+            }
+            Connection ex = tripExit.get(c.trip());
+            if (ex == null) continue;
+            if (c.dep() > tau.getOrDefault(c.from(), Long.MIN_VALUE)) {
+                tau.put(c.from(), c.dep());
+                next.put(c.from(), new Connection[]{c, ex});
+            }
+            Long ld = lead.get(c.from());
+            if (ld != null) {
+                long home = c.dep() - ld;
+                if (home >= notBefore && home <= notAfter && home > bestHome) {
+                    bestHome = home;
+                    bestFirst = new Connection[]{c, ex};
+                }
+            }
+        }
+        if (bestFirst == null) return Optional.empty();
+        List<Leg> legs = new ArrayList<>();
+        Connection[] v = bestFirst;
+        for (int guard = 0; guard < 12 && v != null; guard++) {
+            legs.add(new Leg(v[0].trip(), v[0].from(), v[1].to(), v[0].dep(), v[1].arr()));
+            Long eg = egress.get(v[1].to());
+            if (eg != null && v[1].arr() + eg <= deadline) {
+                return Optional.of(new Journey(List.copyOf(legs), legs.getFirst().from(), v[1].to(), v[1].arr(), v[1].arr() + eg));
+            }
+            v = next.get(v[1].to());
+        }
+        return Optional.empty();
+    }
+
+    /** 집 출발이 늦은 순으로 n 개 — 앞 후보보다 1분 이상 이른 출발로 다시 찾는다 */
+    public static List<Journey> latestSeveral(List<Connection> sorted, List<Access> origins, List<Dest> dests, long deadline,
+                                              long transferSec, long notBefore, int n) {
+        Map<String, Long> lead = new HashMap<>();
+        for (Access a : origins) lead.merge(a.stn(), a.leadSec(), Math::min);
+        List<Journey> out = new ArrayList<>();
+        long cap = Long.MAX_VALUE;
+        for (int i = 0; i < n; i++) {
+            var j = latest(sorted, origins, dests, deadline, transferSec, notBefore, cap);
+            if (j.isEmpty()) break;
+            out.add(j.get());
+            cap = j.get().departure() - lead.get(j.get().originStn()) - 60;
+        }
+        return out;
+    }
 }
