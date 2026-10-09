@@ -6,12 +6,12 @@ import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Select, S
 import { api } from "@/lib/api/client";
 import { useRailOd } from "@/lib/hooks/useRailOd";
 import { DASH, durMin, hm, num, pct } from "@/lib/format";
-import { dowBars, hourBars, mostlyUnplanned, PERIODS, THRESHOLDS } from "@/lib/rail";
+import { BAND_PERIODS, bandRows, bandText, dowBars, hourBars, mostlyUnplanned, PERIODS, THRESHOLDS, trainsOverThreshold } from "@/lib/rail";
 import type { Station } from "@/lib/types";
 
 export default function RailPage() {
   const { dep, arr, go, days, setDays, thr, setThr, date, setDate, all, setAll, period, allStations, byTrain, byDow, byHour, trains,
-    ttPending, depName, arrName } = useRailOd();
+    ttPending, depName, arrName, bandDays, setBandDays, bands } = useRailOd();
   const s = byTrain.data?.summary;
   const nat = byTrain.data?.nationwideExact;
   const stationPicker = (label: string, value: string | undefined, key: "dep" | "arr") => (
@@ -81,6 +81,7 @@ export default function RailPage() {
               <thead><tr>
                 <th className="th">열차</th><th className="th text-right">운행</th><th className="th text-right">정시율</th>
                 <th className="th text-right">평균 지연</th><th className="th text-right">p90</th><th className="th text-right">평균 소요</th>
+                <th className="th text-right" title="도착 지연 20분 이상(지연 배상 기준 시간) 운행 / 검증 운행">20분↑</th>
               </tr></thead>
               <tbody>
                 {byTrain.data.items.slice(0, 40).map((i) => (
@@ -96,12 +97,48 @@ export default function RailPage() {
                     <td className="td text-right">{num(i.avgArrDelayMin)}분</td>
                     <td className="td text-right">{num(i.p90ArrDelayMin)}분</td>
                     <td className="td text-right">{durMin(i.avgRideMin)}</td>
+                    <td className="td text-right tabular">{bandText(i.delayBands) ?? DASH}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
+      </Section>
+
+      <Section eyebrow="지연 배상 기준" title="배상 기준 시간을 넘긴 운행" wide
+               desc="도착역 계획 도착보다 20분 이상 늦으면 지연 배상 대상이 될 수 있습니다(코레일 여객운송약관). 드문 일이라 횟수를 먼저 보이고, 검증 운행 15회 미만은 비율을 내지 않습니다.">
+        <div className="mb-6 flex justify-center">
+          <Segmented label="배상 통계 범위" value={bandDays} onChange={setBandDays} options={BAND_PERIODS} />
+        </div>
+        <ErrorBox error={bands.error} />
+        {!bands.data && bands.loading && <Loading />}
+        {bands.data && (
+          <div className="grid items-start gap-6 lg:grid-cols-[1fr_1.2fr]">
+            <div className="tile overflow-x-auto">
+              <table className="w-full">
+                <thead><tr><th className="th">도착 지연</th><th className="th text-right">이 역 쌍</th><th className="th text-right">전국 종착역</th></tr></thead>
+                <tbody>{bandRows(bands.data.summary.delayBands, bands.data.nationwideExact.delayBands).map((r) => (
+                  <tr key={r.threshold}><td className="td">{r.threshold}분 이상</td>
+                    <td className="td text-right tabular">{r.pair ?? DASH}</td><td className="td text-right tabular">{r.nation ?? DASH}</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+            <div className="tile p-5">
+              <p className="text-sm font-medium">20분 이상 늦은 적이 있는 열차</p>
+              {trainsOverThreshold(bands.data.items).length === 0
+                ? <p className="mt-2 text-sm text-muted">이 기간 20분 이상 늦은 검증 운행이 없습니다.</p>
+                : <ul className="mt-2 divide-y divide-line text-sm">{trainsOverThreshold(bands.data.items).slice(0, 12).map((i) => (
+                    <li key={i.key} className="flex items-center justify-between gap-3 py-2">
+                      <TrainName trnNo={i.key} meta={i.meta} grade={i.grade} />
+                      <span className="tabular text-ink2">{bandText(i.delayBands)}{i.delayBands.ge60 > 0 ? ` · 60분↑ ${i.delayBands.ge60}회` : ""}</span>
+                    </li>
+                  ))}</ul>}
+            </div>
+          </div>
+        )}
+        <Note>배상 여부는 지연 원인(천재지변 · 응급 구호 등 제외 사유)에 따라 달라 이 값과 다를 수 있습니다. 운행정보에는 지연 원인이 없습니다.
+          배상률은 출처가 엇갈려(예: 60분 이상 50% ↔ 구간별 50·75·100%) 원문을 확인하기 전까지 표시하지 않습니다.</Note>
       </Section>
 
       <Section eyebrow="운행표" title="날짜별 운행" wide>

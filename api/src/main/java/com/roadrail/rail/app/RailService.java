@@ -1,5 +1,7 @@
 package com.roadrail.rail.app;
 
+import com.roadrail.domain.CompensationRule;
+
 import com.roadrail.env.app.HolidayService;
 import com.roadrail.rail.data.RailRepository;
 import com.roadrail.shared.JsonCache;
@@ -184,7 +186,7 @@ public class RailService {
             default -> throw ApiException.invalid("groupBy 는 train · dow · hour 중 하나입니다.");
         };
         // 과거 기간 결과는 새 운행 자료(하루 세 번)나 시간표가 들어오기 전까지 같다 → 10분 캐시 (시간표를 받는 중이면 캐시하지 않음)
-        String cacheKey = "rail:punct:v2:%s:%s:%s:%s:%s:%d".formatted(dep, arr, from, to, groupBy, thr);
+        String cacheKey = "rail:punct:v3:%s:%s:%s:%s:%s:%d".formatted(dep, arr, from, to, groupBy, thr);
         Punctuality hit = cache.peek(cacheKey, Punctuality.class);
         if (hit != null) return hit;
 
@@ -194,16 +196,16 @@ public class RailService {
         // 한 번의 계산으로 묶음별 행 + 전체 요약 행(total) — 요약 행은 막대그래프 · 요약으로, 나머지는 묶음 항목으로
         List<PunctualityItem> items = new ArrayList<>();
         List<Bucket> hist = new ArrayList<>();
-        Summary summary = new Summary(0, 0, 0, null, null, null);
+        Summary summary = new Summary(0, 0, 0, null, null, null, DelayBands.EMPTY);
         for (RailRepository.PunctualityRow r : repo.punctuality(dep, arr, from, to, thr, key)) {
             if (r.total()) {
                 String[] labels = {"≤0분", "1–5분", "6–10분", "11–20분", "21–30분", ">30분"};
                 for (int i = 0; i < 6; i++) hist.add(new Bucket(labels[i], r.buckets().get(i)));
                 summary = new Summary(r.samples(), r.verified(), r.samples() - r.verified(), r.onTimeRate(), r.avgArrDelayMin(),
-                        r.p90ArrDelayMin());
+                        r.p90ArrDelayMin(), r.delayBands());
             } else {
                 items.add(new PunctualityItem(r.key(), r.samples(), r.verified(), r.onTimeRate(), r.avgArrDelayMin(),
-                        r.p90ArrDelayMin(), r.avgRideMin(), null, "train".equals(groupBy) ? r.grade() : null));
+                        r.p90ArrDelayMin(), r.avgRideMin(), null, "train".equals(groupBy) ? r.grade() : null, r.delayBands()));
             }
         }
         if (hist.isEmpty()) for (String l : List.of("≤0분", "1–5분", "6–10분", "11–20분", "21–30분", ">30분")) hist.add(new Bucket(l, 0));
@@ -214,13 +216,14 @@ public class RailService {
         if ("train".equals(groupBy) && !items.isEmpty()) {
             Map<String, TrainMeta> meta = trainMeta(items.stream().map(PunctualityItem::key).toList(), from, to);
             out = items.stream().map(it -> new PunctualityItem(it.key(), it.samples(), it.verified(), it.onTimeRate(),
-                    it.avgArrDelayMin(), it.p90ArrDelayMin(), it.avgRideMin(), meta.get(it.key()), it.grade())).toList();
+                    it.avgArrDelayMin(), it.p90ArrDelayMin(), it.avgRideMin(), meta.get(it.key()), it.grade(), it.delayBands())).toList();
         }
         Summary nation = nationwide(from, to, thr);
         Punctuality p = new Punctuality(dep, arr, depName, arrName, from.toString(), to.toString(), groupBy, thr, summary, out,
                 hist, nation,
                 Map.of("P-v1", "시발 출발·종착 도착을 코레일 운행계획과 정확 비교",
-                        "P-t1", "중간역은 TAGO 열차 시간표의 역별 계획 시각과 정확 비교 (시간표가 없으면 확인 불가로 제외)"),
+                        "P-t1", "중간역은 TAGO 열차 시간표의 역별 계획 시각과 정확 비교 (시간표가 없으면 확인 불가로 제외)",
+                        CompensationRule.VERSION, CompensationRule.DESCRIPTION),
                 "계획 시각(운행계획 · TAGO 시간표)과 운행정보(역별 실제 출발·도착)를 비교한 값. 계획 시각을 알 수 없는 열차는 "
                         + "'운행 확인 불가'로 정시율 분모에서 제외합니다. 직통 열차만 다룹니다(환승 제외)."
                         + ("dow".equals(groupBy) ? " 요일별의 H 는 공휴일(한국천문연구원 특일 정보)입니다." : ""), !ready);
@@ -261,7 +264,7 @@ public class RailService {
 
     /** 같은 기간 전국 여객열차 종착역 기준 정시성(P-v1) — 역 쌍과 무관하므로 (기간, 기준)으로 따로 10분 캐시 (PERF-04) */
     Summary nationwide(LocalDate from, LocalDate to, int thr) {
-        return cache.get("rail:nation:v1:%s:%s:%d".formatted(from, to, thr), Duration.ofMinutes(10), Summary.class,
+        return cache.get("rail:nation:v2:%s:%s:%d".formatted(from, to, thr), Duration.ofMinutes(10), Summary.class,
                 () -> repo.nationwide(from, to, thr)).value();
     }
 

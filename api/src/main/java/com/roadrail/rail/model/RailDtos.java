@@ -31,12 +31,17 @@ public final class RailDtos {
                          List<TrainRun> trains, List<String> availableDates, String note) {}
 
     public record PunctualityItem(String key, int samples, int verified, Double onTimeRate, Double avgArrDelayMin,
-                                  Double p90ArrDelayMin, Double avgRideMin, TrainMeta meta, String grade) {}
+                                  Double p90ArrDelayMin, Double avgRideMin, TrainMeta meta, String grade, DelayBands delayBands) {}
+
+    /** 배상 기준 시간(규칙 DB-v1)을 넘긴 검증 운행 수 — verified 가 분모, geN = 도착 지연 N분 이상 */
+    public record DelayBands(int verified, int ge20, int ge40, int ge60, int ge90, int ge120) {
+        public static final DelayBands EMPTY = new DelayBands(0, 0, 0, 0, 0, 0);
+    }
 
     public record Bucket(String label, int count) {}
 
     public record Summary(int samples, int verified, int unverified, Double onTimeRate, Double avgArrDelayMin,
-                          Double p90ArrDelayMin) {}
+                          Double p90ArrDelayMin, DelayBands delayBands) {}
 
     public record Punctuality(String depCode, String arrCode, String depStation, String arrStation, String from, String to, String groupBy,
                               int onTimeThresholdMin, Summary summary, List<PunctualityItem> items,

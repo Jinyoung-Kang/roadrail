@@ -68,13 +68,15 @@ export interface TrainRun { trnNo: string; actDepAt: string; actArrAt: string; p
   onTime: boolean | null; stats30d: TrainStats | null; meta: TrainMeta | null; grade: string | null }
 export interface Trains { depCode: string; arrCode: string; date: string | null; depStation: string; arrStation: string;
   trains: TrainRun[]; availableDates: string[]; note: string }
+/** 배상 기준 시간(규칙 DB-v1)을 넘긴 검증 운행 수 — geN = 도착 지연 N분 이상, verified 가 분모 */
+export interface DelayBands { verified: number; ge20: number; ge40: number; ge60: number; ge90: number; ge120: number }
 export interface PunctualitySummary { samples: number; verified: number; unverified: number; onTimeRate: number | null;
-  avgArrDelayMin: number | null; p90ArrDelayMin: number | null }
+  avgArrDelayMin: number | null; p90ArrDelayMin: number | null; delayBands: DelayBands }
 export interface Punctuality {
   depCode: string; arrCode: string; depStation: string; arrStation: string; from: string; to: string; groupBy: string; onTimeThresholdMin: number;
   summary: PunctualitySummary; nationwideExact: PunctualitySummary;
   items: { key: string; samples: number; verified: number; onTimeRate: number | null; avgArrDelayMin: number | null;
-    p90ArrDelayMin: number | null; avgRideMin: number | null; meta: TrainMeta | null; grade: string | null }[];
+    p90ArrDelayMin: number | null; avgRideMin: number | null; meta: TrainMeta | null; grade: string | null; delayBands: DelayBands }[];
   histogram: { label: string; count: number }[]; rules: Record<string, string>; note: string;
   /** TAGO 시간표를 아직 다 받지 못함 → 잠시 뒤 다시 부르면 보간 추정(⚠)이 줄어든다 */
   timetablePending: boolean;

@@ -18,6 +18,7 @@ export function useRailOd() {
   const [thr, setThr] = useState(5);
   const [date, setDate] = useState<string | null>(null);
   const [all, setAll] = useState(false);
+  const [bandDays, setBandDays] = useState(90);   // 배상 기준 통계는 기간을 따로 (드문 사건이라 기본 90일)
   useEffect(() => { setDate(null); setAll(false); }, [dep, arr]);
   const go = (p: { dep?: string; arr?: string }) =>
     router.push({ pathname: "/rail", query: { dep, arr, ...p } }, undefined, { scroll: false });
@@ -31,6 +32,11 @@ export function useRailOd() {
   const byDow = useApi<Punctuality>(base ? api.railPunctuality({ ...base, groupBy: "dow" }) : null, PENDING);
   const byHour = useApi<Punctuality>(base ? api.railPunctuality({ ...base, groupBy: "hour" }) : null, PENDING);
   const trains = useApi<Trains>(base ? api.railTrains({ dep, arr, date }) : null);
+  const bandPeriod = router.isReady ? daysUntilYesterday(new Date(), bandDays) : null;
+  // 기간이 랭킹 표와 같으면 같은 응답을 쓴다 (같은 주소를 두 번 부르지 않게)
+  const ownBands = useApi<Punctuality>(bandPeriod && dep !== arr && bandDays !== days
+    ? api.railPunctuality({ dep, arr, ...bandPeriod, thresholdMin: thr, groupBy: "train" }) : null, PENDING);
+  const bands = bandDays === days ? byTrain : ownBands;
   const ttPending = timetablePending(byTrain.data, byDow.data, byHour.data);
   // 운행표도 같은 시간표를 쓴다 — 이 역 쌍의 시간표 받기가 끝나면 한 번 다시
   const pair = `${dep}-${arr}`;
@@ -42,7 +48,7 @@ export function useRailOd() {
 
   return {
     dep, arr, go, days, setDays, thr, setThr, date, setDate, all, setAll, period,
-    allStations, byTrain, byDow, byHour, trains, ttPending,
+    allStations, byTrain, byDow, byHour, trains, ttPending, bandDays, setBandDays, bands,
     depName: byTrain.data?.depStation ?? trains.data?.depStation,
     arrName: byTrain.data?.arrStation ?? trains.data?.arrStation,
   };
