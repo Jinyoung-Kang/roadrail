@@ -8,7 +8,7 @@ import { DASH, mdhm, num, pct } from "@/lib/format";
 import { useAdminToken } from "@/lib/hooks/useAdminToken";
 import { useApi } from "@/lib/hooks/useApi";
 import { useDebounced } from "@/lib/hooks/useDebounced";
-import { failuresText, PROVIDER, quotaShares, summarize } from "@/lib/ops";
+import { failuresText, PROVIDER, quotaShares, staleText, summarize } from "@/lib/ops";
 import type { OpsStatus } from "@/lib/types";
 
 export default function Ops() {
@@ -38,7 +38,7 @@ export default function Ops() {
 
   const d = full.data ?? s.data;
   const detailed = !!d?.detailed;
-  const { road, lag, warnJobs, failures, unresolved: open, latestFailure: failed } = summarize(d);
+  const { road, lag, warnJobs, failures, unresolved: open, latestFailure: failed, stale } = summarize(d);
 
   return (
     <Layout title="수집 상태">
@@ -54,6 +54,13 @@ export default function Ops() {
 
       <Section eyebrow="작업" title="작업별 최근 실행" wide>
         <ErrorBox error={s.error} />
+        {stale.length > 0 && (
+          <div role="alert" className="tile mb-6 border-l-4 border-serious p-5">
+            <p className="font-medium"><span className="text-serious" aria-hidden>! </span>원천이 새 값을 주지 않습니다 — 작업은 정상으로 끝나도 저장된 행이 없습니다</p>
+            <ul className="mt-2 space-y-1 text-sm text-ink2">{stale.map((f) => <li key={f.series}>{staleText(f)}</li>)}</ul>
+            <p className="mt-2 text-xs text-muted">원천(공공데이터)이 빈 응답을 주는 동안은 다시 받을 수 없습니다. 원천이 재개되면 그날 값부터 다시 쌓입니다.</p>
+          </div>
+        )}
         {!d && s.loading && <Loading />}
         {d && (
           <div className="tile overflow-x-auto">

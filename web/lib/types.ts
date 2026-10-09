@@ -97,6 +97,8 @@ export interface OpsStatus {
   backfills: { backfillId: string; provider: string; job: string; from: string; to: string; plannedCalls: number; doneDays: number;
     status: string; requestedAt: string; finishedAt: string | null }[];
   publicationLag: { series: string; medianMin: number | null; p90Min: number | null; n: number }[];
+  /** 원천 신선도 — 마지막 슬롯이 staleAfterMin 보다 오래되면 stale (작업이 정상이어도 원천이 빈 응답만 줄 때) */
+  freshness: { series: string; job: string; latestAt: string | null; ageMin: number | null; staleAfterMin: number; stale: boolean }[];
   volumes: Record<string, number | string | null>;
   /** 오류 상세(메시지 · 스택 트레이스 · 외부 호출) 포함 — 공개 경로는 false, 관리 경로는 true */
   detailed: boolean;

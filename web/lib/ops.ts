@@ -23,7 +23,19 @@ export function summarize(d: OpsStatus | null) {
     failures,
     unresolved: failures.filter((f) => !f.resolvedAt).length,
     latestFailure,
+    stale: d?.freshness?.filter((f) => f.stale) ?? [],
   };
+}
+
+const SERIES: Record<string, string> = { road_travel_time: "고속도로 통행시간", road_volume_all: "고속도로 교통량" };
+
+/** 멈춘 원천 한 줄 — "고속도로 통행시간: 마지막 값이 5일 4시간 전 (기준 6시간)" */
+export function staleText(f: { series: string; ageMin: number | null; staleAfterMin: number }) {
+  const span = (m: number) => {
+    const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
+    return d ? `${d}일 ${h}시간` : h ? `${h}시간${mm ? ` ${mm}분` : ""}` : `${mm}분`;
+  };
+  return `${SERIES[f.series] ?? f.series}: 마지막 값이 ${f.ageMin == null ? "없음" : `${span(f.ageMin)} 전`} (기준 ${span(f.staleAfterMin)})`;
 }
 
 /** 예산 막대 — 한도 대비 사용 · 예약 비율 (한도가 0 이면 0) */
