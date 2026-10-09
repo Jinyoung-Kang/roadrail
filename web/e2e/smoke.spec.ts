@@ -192,6 +192,20 @@ test("고속도로 실측 분석(길): 추이 차트와 히트맵", async ({ pag
   await expect(page.getByRole("heading", { name: "요일 × 시간 히트맵" })).toBeVisible();
 });
 
+test("철도 분석: 지연 배상 기준(20분 이상) — 횟수가 먼저, 기간을 따로 고른다 (AR-3)", async ({ page }) => {
+  await page.goto("/rail");
+  const section = page.getByRole("heading", { name: "배상 기준 시간을 넘긴 운행" }).locator("xpath=ancestor::section[1]");
+  await expect(section.getByRole("cell", { name: "20분 이상", exact: true })).toBeVisible();
+  // "29/4321 · 0.7%" 처럼 횟수/검증 운행 — 퍼센트만 내지 않는다
+  await expect(section.getByRole("cell", { name: /^\d+\/\d+/ }).first()).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "20분↑" })).toBeVisible();
+  const group = page.getByRole("radiogroup", { name: "배상 통계 범위" });
+  await expect(group.getByRole("radio", { name: "최근 90일" })).toHaveAttribute("aria-checked", "true");
+  await group.getByRole("radio", { name: "최근 1년" }).click();
+  await expect(group.getByRole("radio", { name: "최근 1년" })).toHaveAttribute("aria-checked", "true");
+  await expect(section.getByText(/배상 여부는 지연 원인/)).toBeVisible();
+});
+
 test("철도 분석: 임의 역 쌍 — 역 검색으로 바꾼다", async ({ page }) => {
   await page.goto("/rail?dep=3900023&arr=3900073");
   await expect(page.getByText(/정시율 \(도착 ≤5분\)/)).toBeVisible({ timeout: 15_000 });
