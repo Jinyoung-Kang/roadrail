@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Joined, Lines } from "@/components/ui";
 
 /**
  * 메인 화면 소개 — 처음 온 사람이 "무엇을 하는 서비스인가"를 한 화면에서 알 수 있게.
@@ -26,10 +27,10 @@ export default function About() {
         <div className="mx-auto max-w-3xl text-center">
           <p className="eyebrow mb-2">로드레일 RoadRail</p>
           <h2 id="about-title" className="text-[28px] font-medium text-ink sm:text-[32px]">차로 갈까, 기차로 갈까 — 공공데이터로 비교합니다</h2>
-          <p className="mt-4 text-[15px] leading-relaxed text-ink2">
+          <p className="mt-4 text-[15px] leading-relaxed text-ink2"><Lines>
             로드레일은 같은 출발 시각을 기준으로 <b className="font-medium text-ink">자동차</b>와 <b className="font-medium text-ink">기차</b>의
             도착 시각을 계산해, 어느 쪽이 빠를지 근거와 함께 알려 주는 이동 판단 서비스입니다.
-          </p>
+          </Lines></p>
         </div>
 
         <ol className="mt-12 grid gap-4 sm:grid-cols-3">
@@ -37,7 +38,7 @@ export default function About() {
             <li key={s.n} className="tile p-6">
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ink text-[13px] font-medium text-white" aria-hidden>{s.n}</span>
               <p className="mt-4 text-[17px] font-medium text-ink">{s.title}</p>
-              <p className="mt-2 text-sm leading-relaxed text-muted">{s.body}</p>
+              <p className="mt-2 text-sm leading-relaxed text-muted"><Lines>{s.body}</Lines></p>
             </li>
           ))}
         </ol>
@@ -48,14 +49,14 @@ export default function About() {
               <p className="flex items-center justify-between text-sm font-medium text-ink">
                 {m.title}<span className="text-muted transition group-hover:translate-x-0.5" aria-hidden>→</span>
               </p>
-              <p className="mt-1 text-xs leading-relaxed text-muted">{m.body}</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted"><Lines>{m.body}</Lines></p>
             </Link>
           ))}
         </div>
 
         <p className="mt-8 text-center text-xs leading-relaxed text-muted">
-          데이터 · {SOURCES.join(" · ")}
-          <br />모든 수치에는 데이터 시각과 표본 수를 함께 표시하고, 값을 알 수 없으면 비워 둡니다. 참고 정보이며 교통 안내(내비게이션) 서비스가 아닙니다.
+          <span className="block">데이터 · <Joined items={SOURCES} /></span>
+          <Lines>{"모든 수치에는 데이터 시각과 표본 수를 함께 표시하고, 값을 알 수 없으면 비워 둡니다. 참고 정보이며 교통 안내(내비게이션) 서비스가 아닙니다."}</Lines>
         </p>
       </div>
     </section>

@@ -108,7 +108,13 @@
   :root { color-scheme: light; }
   html, body { background: #fff; color: #171a20; }
   body { font-family: "Pretendard Variable", Pretendard, system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
-         -webkit-font-smoothing: antialiased; }
+         -webkit-font-smoothing: antialiased;
+         /* 한글은 단어(어절) 단위로만 줄을 바꾼다 — 기본값은 글자마다 끊어 "서비\n스입니다" 처럼 낱말이 갈렸다.
+            넘치는 긴 낱말(주소 · 영문 식별자)만 칸 안에서 끊는다 */
+         word-break: keep-all; overflow-wrap: break-word; }
+  /* 문단 끝 줄에 한두 낱말만 남지 않게 · 제목은 줄 길이를 고르게 */
+  p, li, dd, dt, figcaption, summary { text-wrap: pretty; }
+  h1, h2, h3 { text-wrap: balance; }
   .tabular { font-variant-numeric: tabular-nums; }
 }
 

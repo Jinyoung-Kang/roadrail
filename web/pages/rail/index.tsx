@@ -2,7 +2,7 @@ import Layout from "@/components/Layout";
 import SearchPicker from "@/components/SearchPicker";
 import { SimpleBars } from "@/components/LazyCharts";
 import { C } from "@/lib/palette";
-import { Empty, ErrorBox, Loading, Note, PageHero, Section, Segmented, Select, Spec, SpecStrip, TrainName } from "@/components/ui";
+import { Empty, ErrorBox, Lines, Loading, Note, PageHero, Section, Segmented, Select, Spec, SpecStrip, TrainName } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import { useRailOd } from "@/lib/hooks/useRailOd";
 import { DASH, durMin, hm, num, pct } from "@/lib/format";
@@ -46,7 +46,7 @@ export default function RailPage() {
           </SpecStrip>
           {ttPending && <p className="mt-6 text-xs text-muted" role="status"><span className="mr-1 inline-block h-3 w-3 animate-spin rounded-full border-2 border-line border-t-ink align-[-2px]" aria-hidden />
             TAGO 열차 시간표를 받는 중 — 받는 대로 다시 계산합니다 (그동안 시간표가 없는 중간역 운행은 확인 불가로 제외)</p>}
-          {nat && <p className="mt-6 text-xs text-muted">비교: 같은 기간 전국 여객열차 종착역 기준(정확 비교 P-v1) 정시율 {pct(nat.onTimeRate, 1)} · 평균 지연 {num(nat.avgArrDelayMin)}분 · {nat.verified.toLocaleString()}회</p>}
+          {nat && <p className="mt-6 text-xs text-muted"><Lines>비교: 같은 기간 전국 여객열차 종착역 기준(정확 비교 P-v1) 정시율 {pct(nat.onTimeRate, 1)} · 평균 지연 {num(nat.avgArrDelayMin)}분 · {nat.verified.toLocaleString()}회</Lines></p>}
         </div>
       </PageHero>
 
@@ -70,7 +70,7 @@ export default function RailPage() {
                                        format={(v, d) => `${d.label}시 출발 · 정시율 ${num(v, 1)}% · ${d.verified}회`} /> : <Loading />}
           </div>
         </div>
-        {byTrain.data && <Note>{byTrain.data.note} {Object.entries(byTrain.data.rules).map(([k, v]) => `${k}: ${v}`).join(" · ")}</Note>}
+        {byTrain.data && <Note>{[byTrain.data.note, ...Object.entries(byTrain.data.rules).map(([k, v]) => `규칙 ${k}: ${v}.`)]}</Note>}
       </Section>
 
       <Section eyebrow="열차별" title="정시율 랭킹" gray wide desc="표본이 많은 열차부터. 차종은 TAGO 열차 시간표에 적힌 최근 운행일의 배정 차종입니다. 운행 = 계획 시각과 비교한 운행 / 전체 운행 (시간표가 없는 날의 중간역 운행은 확인 불가로 제외).">
