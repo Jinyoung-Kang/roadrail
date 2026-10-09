@@ -63,4 +63,5 @@ export const DIR_LABEL: Record<string, string> = { DN: "하행", UP: "상행" };
 export const pm25Label = (g: number | null | undefined) =>
   g === null || g === undefined ? DASH : ["", "좋음", "보통", "나쁨", "매우나쁨"][g] ?? String(g);
 
-export const MODEL_LABEL: Record<string, string> = { M0: "M0 기준선", M1: "M1 기준선+편차", persistence: "지속" };
+/** 예측 방법 이름 — 영어 · 기호 대신 무엇을 하는지 드러나는 말 (M0 · M1 · persistence 는 API 의 열쇠 이름) */
+export const MODEL_LABEL: Record<string, string> = { M0: "평소 값", M1: "평소 값 + 지금 차이", persistence: "지금 값 그대로" };
