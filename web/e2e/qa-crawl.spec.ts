@@ -42,7 +42,10 @@ for (const vp of VIEWPORTS) {
       const n = Math.min(await buttons.count(), 40);
       for (let i = 0; i < n; i++) {
         const b = buttons.nth(i);
-        const label = ((await b.getAttribute("aria-label")) ?? (await b.innerText().catch(() => ""))).trim().slice(0, 30);
+        // 앞 버튼을 누른 뒤 화면이 바뀌어(예: 판단 기준 → 도착 시각) 이 버튼이 사라졌으면 기다리지 않고 건너뛴다
+        if (i >= await buttons.count()) break;
+        const label = ((await b.getAttribute("aria-label", { timeout: 2000 }).catch(() => null))
+          ?? (await b.innerText({ timeout: 2000 }).catch(() => ""))).trim().slice(0, 30);
         if (!label || /실행|지우기|복사/.test(label) || !(await b.isEnabled().catch(() => false))) continue;
         await b.click({ timeout: 3000 }).catch(() => {});
         clicked.push(label);

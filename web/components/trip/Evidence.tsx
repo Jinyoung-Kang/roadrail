@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Lines } from "@/components/ui";
 import { hm, mdhm, num } from "@/lib/format";
 import type { Decision, Incident } from "@/lib/types";
 
@@ -85,7 +86,7 @@ export function Evidence({ decision, freshness, caveat, cache, asOf, incidents =
             ))}
           </ul>
         )}
-        <p className="mt-5 text-xs leading-relaxed text-muted">{caveat}</p>
+        <p className="mt-5 text-xs leading-relaxed text-muted"><Lines>{caveat}</Lines></p>
       </div>
       <div className="tile p-6 sm:p-8">
         <p className="eyebrow">데이터 시각</p>

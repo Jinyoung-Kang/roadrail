@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import {
   Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { DASH, DOW, dur, hm, mdhm } from "@/lib/format";
+import { DASH, DOW, dur, hm, mdhm, MODEL_LABEL } from "@/lib/format";
 import type { Baseline, Series } from "@/lib/types";
 
 import { C } from "@/lib/palette";
@@ -145,7 +145,7 @@ export function SimpleBars({ data, x, y, color, format, height = 240, yFormat }:
   );
 }
 
-/** 백테스트 MAE — horizon 별 모델 3개 (범례 + 표로 식별, 색만으로 구분하지 않음) */
+/** 지난 기록으로 채점한 평균 오차 — 몇 분 뒤 예측인지별 방법 3개 (범례 + 표로 식별, 색만으로 구분하지 않음) */
 export function MaeChart({ cells }: { cells: { horizonMin: number; model: string; maeSec: number | null; n: number }[] }) {
   const data = useMemo(() => {
     const m = new Map<number, any>();
@@ -158,7 +158,7 @@ export function MaeChart({ cells }: { cells: { horizonMin: number; model: string
     return [...m.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]);
   }, [cells]);
   if (!data.length) return null;
-  const names: Record<string, string> = { M0: "M0 기준선", M1: "M1 기준선+편차", persistence: "지속(현재값)" };
+  const names = MODEL_LABEL;
   return (
     <div className="h-[320px]">
       <ResponsiveContainer>
@@ -169,7 +169,7 @@ export function MaeChart({ cells }: { cells: { horizonMin: number; model: string
           <Tooltip cursor={{ fill: "rgba(0,0,0,0.04)" }} content={({ active, payload }) => active && payload?.length ? (
             <Box>
               <div className="font-medium">{payload[0].payload.h} 뒤</div>
-              {payload.map((p) => <div key={String(p.dataKey)} className="flex items-center gap-2"><i className="h-2 w-2 rounded-full" style={{ background: p.color }} />{names[String(p.dataKey)]}: {p.value == null ? DASH : `${(p.value as number).toFixed(1)}분`} <span className="text-muted">n={p.payload[`${String(p.dataKey)}_n`]}</span></div>)}
+              {payload.map((p) => <div key={String(p.dataKey)} className="flex items-center gap-2"><i className="h-2 w-2 rounded-full" style={{ background: p.color }} />{names[String(p.dataKey)]}: {p.value == null ? DASH : `${(p.value as number).toFixed(1)}분`} <span className="text-muted">채점 {p.payload[`${String(p.dataKey)}_n`]}번</span></div>)}
             </Box>) : null} />
           <Legend verticalAlign="top" align="right" height={28} wrapperStyle={{ fontSize: 12 }} formatter={(v) => legendText(names[v] ?? v)} />
           <Bar dataKey="M0" fill={C.road} radius={[4, 4, 0, 0]} isAnimationActive={false} />

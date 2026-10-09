@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { TrainName } from "@/components/ui";
+import { Lines, TrainName } from "@/components/ui";
 import { Fold, Headline, plusMin, Stats, Step, TimeBar } from "@/components/trip/parts";
 import { DASH, durMin, hm, num, pct } from "@/lib/format";
 import { barMax } from "@/lib/trip";
@@ -128,7 +128,11 @@ export function TrainTile({ trip }: { trip: Trip }) {
         </div>
       )}
       {j && r?.referenceDate && (
-        <p className="mt-3 text-xs leading-relaxed text-muted">시간표 기준 {r.referenceDate} ({r.basis}) — 앞으로의 시간표는 공개 데이터에 없어 최근 같은 요일의 실제 시간표(코레일 운행계획 · TAGO)를 씁니다{j.legs.some((l) => !l.timetable) && " · ⚠ 일부 구간은 시간표를 받지 못해 보간한 시각"} · 근처 역 {r.originCandidates}×{r.destCandidates}곳 조합 · 승차 여유 {r.boardingBufferMin}분 · 최소 환승 {r.transferMin}분 · {r.note}</p>
+        <p className="mt-3 text-xs leading-relaxed text-muted"><Lines>{[`시간표 기준 ${r.referenceDate} (${r.basis}).`,
+          "앞으로의 시간표는 공개 데이터에 없어 최근 같은 요일의 실제 시간표(코레일 운행계획 · TAGO)를 씁니다.",
+          j.legs.some((l) => !l.timetable) ? "⚠ 일부 구간은 시간표를 받지 못해 보간한 시각입니다." : null,
+          `근처 역 ${r.originCandidates}×${r.destCandidates}곳 조합 · 승차 여유 ${r.boardingBufferMin}분 · 최소 환승 ${r.transferMin}분.`,
+          r.note]}</Lines></p>
       )}
       {j && (
         <div className="mt-auto flex flex-wrap justify-center gap-x-5 pt-6">

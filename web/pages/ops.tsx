@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Layout from "@/components/Layout";
 import CopyButton from "@/components/ops/CopyButton";
 import FailureLog from "@/components/ops/FailureLog";
-import { ErrorBox, Loading, Note, PageHero, Section, Spec, SpecStrip, StatusBadge } from "@/components/ui";
+import { ErrorBox, Lines, Loading, Note, PageHero, Section, Spec, SpecStrip, StatusBadge } from "@/components/ui";
 import { api, errorText, runJob } from "@/lib/api/client";
 import { DASH, mdhm, num, pct } from "@/lib/format";
 import { useAdminToken } from "@/lib/hooks/useAdminToken";
@@ -58,7 +58,7 @@ export default function Ops() {
           <div role="alert" className="tile mb-6 border-l-4 border-serious p-5">
             <p className="font-medium"><span className="text-serious" aria-hidden>! </span>원천이 새 값을 주지 않습니다 — 작업은 정상으로 끝나도 저장된 행이 없습니다</p>
             <ul className="mt-2 space-y-1 text-sm text-ink2">{stale.map((f) => <li key={f.series}>{staleText(f)}</li>)}</ul>
-            <p className="mt-2 text-xs text-muted">원천(공공데이터)이 빈 응답을 주는 동안은 다시 받을 수 없습니다. 원천이 재개되면 그날 값부터 다시 쌓입니다.</p>
+            <p className="mt-2 text-xs text-muted"><Lines>원천(공공데이터)이 빈 응답을 주는 동안은 다시 받을 수 없습니다. 원천이 재개되면 그날 값부터 다시 쌓입니다.</Lines></p>
           </div>
         )}
         {!d && s.loading && <Loading />}
