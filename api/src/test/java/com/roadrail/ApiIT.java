@@ -368,6 +368,48 @@ class ApiIT extends IntegrationTest {
     }
 
     @Test
+    void arrivalByDeadlineGivesLatestTrainWithFrequencyAndCachesIt() throws Exception {
+        // 씨앗 열차: 오늘 23:58 서울 → 00:55 대전. 기한 내일 01:30 → 늦어도 23:52(역까지 도보 1분 + 승차 여유 5분) 출발.
+        // 검증 운행이 1회뿐이라 퍼센트 없이 빈도만, 신뢰 수준 판단도 하지 않는다(15회 미만). 자정 언저리에는 기한 범위가 맞지 않아 건너뛴다
+        var now = java.time.LocalDateTime.now(KST);
+        org.junit.jupiter.api.Assumptions.assumeTrue(now.getHour() >= 2 && now.getHour() < 23);
+        String by = now.toLocalDate().plusDays(1).atTime(1, 30).toString();
+        var req = get("/api/v1/trip/arrival").param("fromLat", "37.55").param("fromLon", "126.97").param("fromName", "서울역")
+                .param("fromStation", "S1").param("toLat", "36.33").param("toLon", "127.43").param("toName", "대전역")
+                .param("toStation", "S2").param("arriveBy", by);
+        mvc.perform(req).andExpect(status().isOk()).andExpect(header().string("X-Cache", "MISS"))
+                .andExpect(jsonPath("$.confidence").value(0.9))
+                .andExpect(jsonPath("$.train.journey.legs[0].trnNo").value("00199"))
+                .andExpect(jsonPath("$.train.latestDepart").value(org.hamcrest.Matchers.containsString("T23:52")))
+                .andExpect(jsonPath("$.train.odds.n").value(1))
+                .andExpect(jsonPath("$.train.odds.within").value(1))
+                .andExpect(jsonPath("$.train.odds.percent").isEmpty())
+                .andExpect(jsonPath("$.train.meetsConfidence").value(false))
+                .andExpect(jsonPath("$.train.legRisks[0].kind").value("ARRIVAL"))
+                .andExpect(jsonPath("$.car.latestDepart").isEmpty())
+                .andExpect(jsonPath("$.car.note").value(org.hamcrest.Matchers.containsString("카카오 키")))
+                .andExpect(jsonPath("$.summary").value(org.hamcrest.Matchers.containsString("15회 미만")))
+                .andExpect(jsonPath("$.assumptions", not(empty())))
+                .andExpect(jsonPath("$.pending").value(false));
+        mvc.perform(req).andExpect(header().string("X-Cache", "HIT"));
+    }
+
+    @Test
+    void arrivalRejectsDeadlineOutsideWindowAndUnknownConfidence() throws Exception {
+        var base = get("/api/v1/trip/arrival").param("fromLat", "37.55").param("fromLon", "126.97").param("fromName", "x")
+                .param("toLat", "36.33").param("toLon", "127.43").param("toName", "y");
+        var now = java.time.LocalDateTime.now(KST).withSecond(0).withNano(0);
+        for (String bad : new String[]{now.plusMinutes(10).toString(), now.plusHours(25).toString(), "2026-13-01T10:00", "내일"}) {
+            mvc.perform(base.param("arriveBy", bad)).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        }
+        mvc.perform(get("/api/v1/trip/arrival").param("fromLat", "37.55").param("fromLon", "126.97").param("fromName", "x")
+                        .param("toLat", "36.33").param("toLon", "127.43").param("toName", "y")
+                        .param("arriveBy", now.plusHours(3).toString()).param("confidence", "0.85"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
     void nonFiniteCoordinatesAreRejected() throws Exception {
         // NaN 은 모든 비교가 거짓이라 '범위 밖(<, >)' 조건을 통과했다 → 200 · 0.0km 판단 · 외부 API 호출 (SEC-03)
         for (String bad : new String[]{"NaN", "Infinity", "-Infinity"}) {

@@ -276,6 +276,92 @@ public class RailJourneyService {
                 Futures.join(fSubDep, Futures.left(subDeadline)), Futures.join(fSubArr, Futures.left(subDeadline)), pending);
     }
 
+    /** 도착 기한 기준 후보 하나 — 실제 시간표로 확인한 여정과 집에서 늦어도 떠나야 하는 시각 */
+    public record LatestCandidate(Journey journey, OffsetDateTime latestDepart) {}
+
+    public record LatestPlan(List<LatestCandidate> candidates, String referenceDate, String basis, String note, boolean pending) {}
+
+    /** 역까지 시간을 처음 구할 때 쓰는 출발 짐작 — 기한 − (직선거리 ÷ 100km/h + 60분). 실제 출발과 30분 넘게 다르면 다시 구한다 */
+    static OffsetDateTime guessDepart(Place from, Place to, OffsetDateTime deadline, OffsetDateTime now) {
+        OffsetDateTime g = deadline.minusMinutes(Math.round(km(from, to) / 100 * 60) + 60);
+        return g.isBefore(now) ? now : g;
+    }
+
+    static final int LATEST_CANDIDATES = 6, RECHECK_MIN = 30;
+
+    /**
+     * 도착 기한까지 닿는 여정을 집 출발이 늦은 순으로 (AR-2). 후보 역 · 역까지 시간 · 오늘+내일 시간표 · 실제 시간표 재확인은 plan() 과 같다.
+     * 거꾸로 찾는 CSA(RailRouter.latestSeveral)로 계획 시각상 성립하는 후보를 뽑고, 실제 시간표로 승차 여유 · 환승 · 기한을 다시 본다.
+     * 확률은 여기서 매기지 않는다(ArrivalService).
+     */
+    public LatestPlan latestPlan(Place from, Place to, OffsetDateTime deadline, Integer accessOverride, OffsetDateTime now) {
+        long budget = System.nanoTime() + PLAN_BUDGET.toNanos();
+        List<RailDtos.StationNear> origins = new ArrayList<>(rail.near(from.lat(), from.lon(), RADIUS_KM, CANDIDATES));
+        List<RailDtos.StationNear> dests = new ArrayList<>(rail.near(to.lat(), to.lon(), RADIUS_KM, CANDIDATES));
+        pin(origins, from);
+        pin(dests, to);
+        if (origins.isEmpty() || dests.isEmpty()) {
+            return new LatestPlan(List.of(), null, null, (origins.isEmpty() ? "출발지" : "도착지") + " 반경 " + (int) RADIUS_KM + "km 안에 운행 중인 기차역이 없습니다", false);
+        }
+        OffsetDateTime guess = guessDepart(from, to, deadline, now);
+        var fAcc = CompletableFuture.supplyAsync(() -> accessTimes(from, origins, true, accessOverride, guess), exec);
+        var fEg = CompletableFuture.supplyAsync(() -> accessTimes(to, dests, false, null, deadline.minusMinutes(30)), exec);
+        List<String> basis = new ArrayList<>(), ref = new ArrayList<>();
+        var conns = timetable(Times.kst(now).toLocalDate(), basis, ref);
+        Access accR = fAcc.join(), egR = fEg.join();
+        Map<String, Transfer> acc = new HashMap<>(accR.byStation()), eg = egR.byStation();
+        boolean pending = accR.pending() || egR.pending();
+        if (conns.isEmpty()) return new LatestPlan(List.of(), null, null, "운행 데이터가 없습니다", pending);
+        origins.removeIf(s -> !acc.containsKey(s.code()));
+        dests.removeIf(s -> !eg.containsKey(s.code()));
+        String refDay = ref.isEmpty() ? null : ref.getFirst(), basisName = basis.isEmpty() ? null : basis.getFirst();
+        if (origins.isEmpty() || dests.isEmpty()) {
+            return new LatestPlan(List.of(), refDay, basisName,
+                    (origins.isEmpty() ? "출발지에서 역까지" : "역에서 도착지까지") + " 경로를 아직 계산하지 못했습니다", pending);
+        }
+        List<RailRouter.Access> o = origins.stream().map(s -> new RailRouter.Access(s.code(),
+                (acc.get(s.code()).minutes() + BOARDING_BUFFER_MIN) * 60L)).toList();
+        List<RailRouter.Dest> d = dests.stream().map(s -> new RailRouter.Dest(s.code(), eg.get(s.code()).minutes() * 60L)).toList();
+        long dl = deadline.toEpochSecond();
+        var found = RailRouter.latestSeveral(conns, o, d, dl, TRANSFER_MIN * 60L, now.toEpochSecond(), LATEST_CANDIDATES);
+        if (found.isEmpty() || refDay == null) {
+            return new LatestPlan(List.of(), refDay, basisName, "기한 안에 도착하는 열차가 오늘·내일 시간표에 없습니다", pending);
+        }
+        Map<String, String> names = new HashMap<>();
+        origins.forEach(s -> names.put(s.code(), s.name()));
+        dests.forEach(s -> names.put(s.code(), s.name()));
+        LocalDate refDate = LocalDate.parse(refDay);
+        AtomicBoolean late = new AtomicBoolean();
+        List<LatestCandidate> out = new ArrayList<>();
+        for (var j : found) {
+            // 실제 시간표 확인은 '지금 출발'로 — 지금부터 탈 수 있는지만 본다. 늦어도 떠날 시각은 확인한 첫 열차 출발에서 거꾸로 센다
+            Journey jn = toJourney(j, acc, eg, names, now, refDate, true, budget, late);
+            if (jn == null) continue;
+            Transfer a = jn.access();
+            if (jn.arriveAt().plusMinutes(jn.egress().minutes()).toEpochSecond() > dl) continue;   // 실제 도착이 기한을 넘음
+            OffsetDateTime leave = jn.departAt().minusMinutes(a.minutes() + BOARDING_BUFFER_MIN);
+            // 역까지 시간을 짐작한 출발과 실제 출발이 30분 넘게 다르면, 그 시각의 경로로 다시 구한다 (카카오 캐시 · 다중 길찾기는 시각 무관)
+            if ("CAR".equals(a.mode()) && a.straightKm() > KAKAO_RADIUS_KM && Math.abs(Duration.between(guess, leave).toMinutes()) > RECHECK_MIN) {
+                String code = a.stationCode();
+                var st = origins.stream().filter(s -> s.code().equals(code)).toList();
+                Access again = accessTimes(from, st, true, accessOverride, leave);
+                pending |= again.pending();
+                Transfer a2 = again.byStation().get(code);
+                if (a2 == null) continue;
+                a = a2;
+                leave = jn.departAt().minusMinutes(a.minutes() + BOARDING_BUFFER_MIN);
+            }
+            if (leave.isBefore(now)) continue;
+            int ride = (int) Duration.between(jn.departAt(), jn.arriveAt()).toMinutes();
+            out.add(new LatestCandidate(new Journey(a, jn.legs(), jn.egress(), jn.departAt(), jn.arriveAt(), BOARDING_BUFFER_MIN,
+                    jn.transfers(), a.minutes() + BOARDING_BUFFER_MIN + ride + jn.egress().minutes(), jn.expectedDelayMin()), leave));
+        }
+        out.sort(Comparator.comparing(LatestCandidate::latestDepart).reversed());
+        pending |= late.get();
+        return new LatestPlan(out, refDay, basisName, out.isEmpty() ? "실제 시간표로 확인하니 기한 안에 도착하는 열차가 없습니다"
+                : "코레일 여객열차(KTX·ITX·무궁화 등) 기준. 지하철·버스 환승은 다루지 않습니다.", pending);
+    }
+
     /** 갈아탈 지하철 — 부가 정보라 실패해도 여정 응답은 낸다(예전에는 예외가 /trip 전체를 500 으로 만들었다) */
     private List<NextSubway> subway(String station, OffsetDateTime after) {
         try {
