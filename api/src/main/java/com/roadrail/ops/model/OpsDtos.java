@@ -33,13 +33,19 @@ public final class OpsDtos {
                           String status, String message, String detail, OffsetDateTime resolvedAt) {}
 
     /**
+     * 원천 신선도 — 계열의 가장 최근 슬롯이 staleAfterMin 보다 오래되면 stale. 작업은 정상(OK)으로 끝나도 원천이 빈 응답만 주면
+     * 새 행이 없다(실측 2026-10-10: 도로공사 통행시간 · 교통량이 인증 정상 · count 0 으로 5일간 비었는데 상태는 모두 정상이었다).
+     */
+    public record Freshness(String series, String job, OffsetDateTime latestAt, Long ageMin, int staleAfterMin, boolean stale) {}
+
+    /**
      * detailed = 오류 상세 포함 여부. 공개 경로(/ops/collect-status)는 false — 실패한 실행의 메시지 · 스택 트레이스 · 외부 호출 주소와
      * 오류 문구를 비운다(상태 · 시각 · 건수는 그대로). 관리 경로(/admin/collect-status, X-Admin-Token)는 true.
      */
     public record Status(OffsetDateTime asOf, boolean collectorAlive, OffsetDateTime collectorHeartbeat,
                          List<Job> jobs, List<Quota> quota, List<Run> recentRuns, List<ApiError> recentErrors,
                          List<Failure> failures, List<Backfill> backfills, List<Lag> publicationLag,
-                         Map<String, Object> volumes, boolean detailed) {}
+                         List<Freshness> freshness, Map<String, Object> volumes, boolean detailed) {}
 
     public record Health(String status, Map<String, String> components, OffsetDateTime asOf) {}
 

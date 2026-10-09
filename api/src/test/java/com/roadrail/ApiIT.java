@@ -412,6 +412,21 @@ class ApiIT extends IntegrationTest {
     }
 
     @Test
+    void collectStatusFlagsSourceThatStoppedPublishingWhileJobsStayOk() throws Exception {
+        // 실측 2026-10-10: 도로공사가 인증 정상 · count 0 만 주자 작업은 계속 정상(OK · 0행)인데 마지막 슬롯은 5일 전에 멈춰 있었다
+        jdbc.update("DELETE FROM ts.road_travel_time");
+        jdbc.update("DELETE FROM ts.road_volume");
+        jdbc.update("""
+                INSERT INTO ts.road_travel_time (slot_ts, start_unit_code, end_unit_code, car_type, travel_sec, min_sec, max_sec, vehicles, quality, collected_at)
+                VALUES (date_trunc('hour', now()) - interval '10 hours', '101', '115', '1', 3600, 3000, 4000, 10, 'OK', now() - interval '7 hours')""");
+        mvc.perform(get("/api/v1/ops/collect-status")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.freshness[?(@.series == 'road_travel_time')].stale").value(hasItem(true)))
+                .andExpect(jsonPath("$.freshness[?(@.series == 'road_travel_time')].staleAfterMin").value(hasItem(360)))
+                .andExpect(jsonPath("$.freshness[?(@.series == 'road_volume_all')].stale").value(hasItem(false)))   // 행이 없으면 모름
+                .andExpect(jsonPath("$.jobs[?(@.job == 'road_travel_time')].warn").value(hasItem(true)));
+    }
+
+    @Test
     void nonFiniteCoordinatesAreRejected() throws Exception {
         // NaN 은 모든 비교가 거짓이라 '범위 밖(<, >)' 조건을 통과했다 → 200 · 0.0km 판단 · 외부 API 호출 (SEC-03)
         for (String bad : new String[]{"NaN", "Infinity", "-Infinity"}) {
