@@ -82,8 +82,8 @@ public class RoadService {
         }
         return new Forecast(cid, dir, now, latest.map(Latest::slotTs).orElse(null), latest.map(Latest::travelSec).orElse(null),
                 items, backtest(cid, dir),
-                "도로공사 통행시간은 공개가 늦으므로(수 시간) 예측의 실제 선행시간 leadMin = 목표 시각 − 마지막 관측 슬롯. "
-                        + "backtest 는 데이터가 쌓이기 전까지 비어 있을 수 있습니다.");
+                "도로공사 통행시간은 몇 시간 늦게 공개되어, 실제로 예측하는 거리는 목표 시각에서 마지막 관측 시각을 뺀 만큼입니다. "
+                        + "지난 기록 채점은 기록이 쌓이기 전까지 비어 있을 수 있습니다.");
     }
 
     public Backtest backtest(String cid, String dir) {

@@ -1,5 +1,6 @@
-import { useRef } from "react";
+import { Fragment, isValidElement, useRef } from "react";
 import { DASH } from "@/lib/format";
+import { toLines } from "@/lib/text";
 
 /** 테슬라 모델 페이지의 스펙 숫자 — 큰 숫자 + 작은 설명 */
 export function Spec({ value, unit, label, tone = "ink" }: { value: string; unit?: string; label: string; tone?: "ink" | "road" | "rail" }) {
@@ -32,7 +33,7 @@ export function Section({ id, eyebrow, title, desc, children, gray = false, wide
           <div className="mb-10 text-center">
             {eyebrow && <p className="eyebrow mb-2">{eyebrow}</p>}
             {title && <h2 className="text-[28px] sm:text-[32px] font-medium text-ink">{title}</h2>}
-            {desc && <p className="mt-3 text-sm text-muted max-w-2xl mx-auto leading-relaxed">{desc}</p>}
+            {desc && <p className="mt-3 text-sm text-muted max-w-2xl mx-auto leading-relaxed"><Lines>{desc}</Lines></p>}
           </div>
         )}
         {children}
@@ -49,7 +50,7 @@ export function PageHero({ eyebrow, title, sub, children }: { eyebrow?: string; 
         {eyebrow && <p className="eyebrow mb-3">{eyebrow}</p>}
         {/* 제목이 아직 없으면(" ") 빈 줄 높이를 지킨다 — 공백만 든 h1 은 높이 0 이라 이름이 들어오며 아래가 밀렸다(QA-04) */}
         <h1 className="text-[34px] sm:text-[44px] font-medium tracking-tight text-ink">{title.trim() ? title : "\u00a0"}</h1>
-        {sub && <div className="mt-3 text-[15px] text-ink2">{sub}</div>}
+        {sub && <div className="mt-3 text-[15px] text-ink2"><Lines>{sub}</Lines></div>}
         {children && <div className="mt-10">{children}</div>}
       </div>
     </div>
@@ -146,8 +147,31 @@ export function Empty({ children }: { children: React.ReactNode }) {
   return <div className="rounded-sm bg-cloud px-4 py-10 text-center text-sm text-muted">{children}</div>;
 }
 
+/** JSX 조각을 펼친다 — 배열 · <>…</> 은 풀고, 비어 있는 값은 버리고, 숫자는 글자로 */
+function flatten(n: React.ReactNode, out: React.ReactNode[]) {
+  if (n == null || typeof n === "boolean") return;
+  if (Array.isArray(n)) { n.forEach((x) => flatten(x, out)); return; }
+  if (isValidElement(n) && n.type === Fragment) { flatten((n.props as { children?: React.ReactNode }).children, out); return; }
+  out.push(typeof n === "number" ? String(n) : n);
+}
+
+/**
+ * 설명 글 — 문장마다 새 줄(lib/text toLines). 끼워 넣은 값 앞뒤에서는 끊지 않는다.
+ * 줄 안에서는 낱말 단위로만 바뀐다(전역 word-break: keep-all).
+ */
+export function Lines({ children }: { children: React.ReactNode }) {
+  const parts: React.ReactNode[] = [];
+  flatten(children, parts);
+  return <>{toLines(parts).map((line, i) => <span key={i} className="block">{line.map((x, j) => <Fragment key={j}>{x}</Fragment>)}</span>)}</>;
+}
+
+/** 이름 목록 — 이름 하나는 한 덩어리로 두고(중간에서 줄이 바뀌지 않음) 이름 사이에서만 줄을 바꾼다 */
+export function Joined({ items, sep = " · " }: { items: readonly string[]; sep?: string }) {
+  return <>{items.map((x, i) => <Fragment key={x}>{i > 0 && sep}<span className="inline-block">{x}</span></Fragment>)}</>;
+}
+
 export function Note({ children }: { children: React.ReactNode }) {
-  return <p className="mt-4 text-xs leading-relaxed text-muted">{children}</p>;
+  return <p className="mt-4 text-xs leading-relaxed text-muted"><Lines>{children}</Lines></p>;
 }
 
 /**

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { TrainName } from "@/components/ui";
+import { Lines, TrainName } from "@/components/ui";
 import { Fold, Step } from "@/components/trip/parts";
 import { DASH, durMin, hm } from "@/lib/format";
 import { oddsText } from "@/lib/arrival";
@@ -13,7 +13,7 @@ function Latest({ at, pending, note }: { at: string | null; pending: boolean; no
     <div className="mt-4">
       <p className="text-[13px] text-muted">늦어도</p>
       <p className="text-[40px] font-medium leading-none tabular sm:text-[44px]">{pending && !at ? "…" : at ? `${hm(at)} 출발` : DASH}</p>
-      <p className="mt-2 min-h-[2.6em] text-[13px] text-muted">{note}</p>
+      <p className="mt-2 min-h-[2.6em] text-[13px] text-muted"><Lines>{note}</Lines></p>
     </div>
   );
 }
@@ -86,7 +86,7 @@ function TrainCard({ a }: { a: Arrival }) {
           </Fold>
         </div>
       )}
-      {j && t.note && <p className="mt-3 text-xs leading-relaxed text-muted">{t.note}</p>}
+      {j && t.note && <p className="mt-3 text-xs leading-relaxed text-muted"><Lines>{t.note}</Lines></p>}
       {j && (
         <div className="mt-auto flex flex-wrap justify-center gap-x-5 pt-6">
           {j.legs.map((l) => (

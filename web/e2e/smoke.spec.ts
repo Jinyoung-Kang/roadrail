@@ -140,7 +140,7 @@ test("판단 화면: 자동차·기차 카드 — 도착 예정 · 시간 구성
   await page.goto("/");
   await expect(page.getByText("도착 예정").first()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("img", { name: /시간 구성: .*탑승/ })).toBeVisible();
-  await expect(page.getByText("선로 © OpenStreetMap contributors (ODbL)", { exact: true })).toBeAttached();
+  await expect(page.locator("#map").getByText("선로 © OpenStreetMap contributors (ODbL)", { exact: true })).toBeAttached();
 });
 
 test("판단 화면: 도착 시각 기준 — 늦어도 떠날 시각 · 빈도 근거 · 주소 유지 · 키보드 전환 (AR-1 · AR-2)", async ({ page }) => {
@@ -165,6 +165,21 @@ test("판단 화면: 도착 시각 기준 — 늦어도 떠날 시각 · 빈도 
   await page.keyboard.press("ArrowLeft");
   await expect(page).toHaveURL(/by=depart/);
   await expect(page.getByRole("radiogroup", { name: "출발 시점" })).toBeVisible();
+});
+
+test("예측 성능: 채점 영역은 영어 용어 없이 한글 · 설명은 문장마다 한 줄 · 낱말 중간에서 줄이 바뀌지 않음", async ({ page }) => {
+  await page.goto("/forecast");
+  const heading = page.getByRole("heading", { name: "몇 분 뒤를 예측했을 때 평균 몇 분 틀렸나" });
+  await expect(heading).toBeVisible();
+  const section = page.locator("section").filter({ has: heading });
+  // 표 머리 · 범례 · 설명에 MAE · MAPE · horizon · M0 · M1 · backtest 같은 영어 용어가 없다
+  await expect(section).not.toContainText(/MAE|MAPE|horizon|backtest|\bM[01]\b|\bn\b/);
+  // 설명 문단: 문장마다 한 줄(block) — 첫 두 문장이 서로 다른 줄
+  const lines = section.locator("p.text-muted").first().locator("span.block");
+  await expect(lines.first()).toHaveText(/비교했습니다\.$/);
+  await expect(lines.nth(1)).toHaveText(/했습니다\.$/);
+  // 전역 규칙: 한글은 어절 단위로만 줄바꿈
+  expect(await page.evaluate(() => getComputedStyle(document.body).wordBreak)).toBe("keep-all");
 });
 
 test("도로 분석: 전국 어디든 — 출발 시각별 · 도로 구성", async ({ page }) => {

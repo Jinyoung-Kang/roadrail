@@ -1,4 +1,5 @@
 /** 판단 카드들이 함께 쓰는 작은 조각 — 큰 소요 시간 · 지표 · 시간 구성 막대 · 시간표 단계 · 접기 */
+import { Lines } from "@/components/ui";
 import { DASH, durMin, hm } from "@/lib/format";
 
 /** 분 → ISO 시각 */
@@ -10,7 +11,7 @@ export function Headline({ total, pending, arrive, note }: { total: number | nul
     <div className="mt-4 flex items-end justify-between gap-4">
       <div>
         <p className="text-[40px] font-medium leading-none tabular sm:text-[44px]">{pending ? "…" : durMin(total)}</p>
-        <p className="mt-2 text-[13px] text-muted">{note}</p>
+        <p className="mt-2 text-[13px] text-muted"><Lines>{note}</Lines></p>
       </div>
       <div className="shrink-0 text-right">
         <p className="text-[11px] text-muted">도착 예정</p>

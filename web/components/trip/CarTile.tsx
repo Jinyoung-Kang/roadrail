@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Lines } from "@/components/ui";
 import { Headline, plusMin, Stats, TimeBar } from "@/components/trip/parts";
 import { DASH, dur, durMin, hm, MODEL_LABEL, num, signedPct } from "@/lib/format";
 import { C } from "@/lib/palette";
@@ -69,7 +70,7 @@ export function CarTile({ trip }: { trip: Trip }) {
           </dl>
         </div>
       ) : (
-        <p className="mt-6 text-xs leading-relaxed text-muted">평소 대비 정체(고속도로 실측)는 수집 중인 길 8개에서만 보입니다. 이 경로는 카카오 예측만 사용합니다.</p>
+        <p className="mt-6 text-xs leading-relaxed text-muted"><Lines>평소 대비 정체(고속도로 실측)는 수집 중인 길 8개에서만 보입니다. 이 경로는 카카오 예측만 사용합니다.</Lines></p>
       )}
       <div className="mt-auto flex flex-wrap justify-center gap-x-5 pt-6">
         <Link href={`/road?from=${encodeURIComponent(encodePlace(trip.from))}&to=${encodeURIComponent(encodePlace(trip.to))}`}
