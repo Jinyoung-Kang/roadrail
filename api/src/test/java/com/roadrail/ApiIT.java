@@ -465,22 +465,29 @@ class ApiIT extends IntegrationTest {
                 .andExpect(status().isOk());
     }
 
+    /** 창(지금 − 28시간 ~ 지금 − 4시간)의 5분 슬롯을 from ~ to 시간 전까지 두 방향 모두 넣는다 (창 끝 기준 시간) */
+    private void seedCorridorSlots(int fromHoursBeforeEnd, int toHoursBeforeEnd) {
+        jdbc.update("""
+                INSERT INTO ts.road_corridor_tt
+                SELECT e - make_interval(mins => m), 'SEL-DJN', d, 7260, 10, 10, 'OK', now()
+                FROM (SELECT to_timestamp(floor(extract(epoch FROM now() - interval '4 hours') / 300) * 300) AS e) x,
+                     generate_series(?, ?, 5) m, (VALUES ('DN'), ('UP')) v(d)""", toHoursBeforeEnd * 60, fromHoursBeforeEnd * 60);
+    }
+
     @Test
     void roadCompletenessLeavesOutSlotsTheSourceNeverHad() throws Exception {
         // M3: 원천에 표본이 없는 슬롯(새벽 등, 전체를 다시 받아도 빔)까지 결측으로 세어 수집이 완벽한 날도 63~71% — 경고가 늘 켜졌다
-        OffsetDateTime day = OffsetDateTime.now(KST).withHour(0).withMinute(0).withSecond(0).withNano(0);
         jdbc.execute("TRUNCATE ts.road_corridor_tt");
         jdbc.update("DELETE FROM ops.slot_gap");
-        for (int m = 0; m < 60; m += 5) {
-            for (String dir : List.of("DN", "UP")) {
-                if (dir.equals("DN") && (m == 10 || m == 20)) {
-                    jdbc.update("INSERT INTO ops.slot_gap (job_name, series_key, slot_ts, reason) VALUES ('road_travel_time', ?, ?, 'NO_SAMPLES')",
-                            "SEL-DJN:DN", day.plusMinutes(m));
-                    continue;
-                }
-                jdbc.update("INSERT INTO ts.road_corridor_tt VALUES (?, 'SEL-DJN', ?, 7260, 10, 10, 'OK', now())", day.plusMinutes(m), dir);
-            }
-        }
+        seedCorridorSlots(24, 0);
+        // 하행 두 슬롯은 원천에 표본이 없었다 — 행 대신 NO_SAMPLES 결측
+        jdbc.update("""
+                WITH e AS (SELECT to_timestamp(floor(extract(epoch FROM now() - interval '4 hours') / 300) * 300) AS e)
+                DELETE FROM ts.road_corridor_tt USING e WHERE direction = 'DN' AND slot_ts IN (e.e - interval '60 minutes', e.e - interval '65 minutes')""");
+        jdbc.update("""
+                INSERT INTO ops.slot_gap (job_name, series_key, slot_ts, reason)
+                SELECT 'road_travel_time', 'SEL-DJN:DN', e - make_interval(mins => m), 'NO_SAMPLES'
+                FROM (SELECT to_timestamp(floor(extract(epoch FROM now() - interval '4 hours') / 300) * 300) AS e) x, (VALUES (60), (65)) v(m)""");
         try {
             mvc.perform(get("/api/v1/ops/collect-status")).andExpect(status().isOk())
                     .andExpect(jsonPath("$.jobs[?(@.job == 'road_travel_time')].completeness24h").value(hasItem(1.0)))
@@ -489,6 +496,20 @@ class ApiIT extends IntegrationTest {
         } finally {
             jdbc.update("DELETE FROM ops.slot_gap");
         }
+    }
+
+    @Test
+    void roadCompletenessFallsWhenTheSourceStopsInsteadOfFreezingAtTheLastSlot() throws Exception {
+        // 실측 2026-10-12: 원천이 8일 동안 빈 응답이었는데 완전성은 마지막 슬롯 기준 창이라 77.4% 로 남았다 (VERIFICATION 110).
+        // 하루 동안 빠짐없이 받다가 하루 전부터 멈춘 경우 — 예전 계산은 마지막 슬롯까지의 24시간을 보아 1.0,
+        // 벽시계 창은 창 첫 슬롯 하나만 남아 1/289 이고 경고가 켜진다
+        jdbc.execute("TRUNCATE ts.road_corridor_tt");
+        jdbc.update("DELETE FROM ops.slot_gap");
+        seedCorridorSlots(48, 24);
+        mvc.perform(get("/api/v1/ops/collect-status")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.jobs[?(@.job == 'road_travel_time')].completeness24h")
+                        .value(hasItem(org.hamcrest.Matchers.closeTo(1.0 / 289, 0.002))))
+                .andExpect(jsonPath("$.jobs[?(@.job == 'road_travel_time')].warn").value(hasItem(true)));
     }
 
     @Test

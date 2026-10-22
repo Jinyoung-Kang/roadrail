@@ -164,15 +164,18 @@ public class OpsRepository {
 
     /** 길 통행시간의 24시간 완전성(원천 표본 없음은 분모에서 뺌) — 값이 없으면 빈 값 */
     public Optional<Double> roadCompleteness() {
+        // 창 끝 = 지금 − 공개 여유(4시간, 수집기 PUBLISH_MARGIN 과 같음) 를 5분으로 내림. 예전에는 마지막으로 받은 슬롯이 끝이라
+        // 원천이 며칠 멈춰도 그 전 24시간의 비율(77.4%)이 그대로 남았다 (VERIFICATION 110)
         return jdbc.sql("""
-                WITH wm AS (SELECT max(slot_ts) AS t, min(slot_ts) AS f FROM ts.road_corridor_tt),
+                WITH wm AS (SELECT to_timestamp(floor(extract(epoch FROM now() - interval '4 hours') / 300) * 300) AS t,
+                                   min(slot_ts) AS f FROM ts.road_corridor_tt),
                      series AS (SELECT count(DISTINCT (corridor_id, direction)) AS n FROM ref.corridor_road),
                      win AS (SELECT greatest(wm.t - interval '24 hours', date_trunc('day', wm.f)) AS s, wm.t FROM wm),
                      empty AS (SELECT count(*) AS n FROM ops.slot_gap, win
                                WHERE job_name = 'road_travel_time' AND reason = 'NO_SAMPLES' AND backfilled_at IS NULL
                                  AND slot_ts >= win.s AND slot_ts <= win.t)
-                SELECT count(*)::float / nullif((SELECT n FROM series)
-                         * (extract(epoch FROM (SELECT t - s FROM win)) / 300 + 1) - (SELECT n FROM empty), 0)
+                SELECT count(*)::float / nullif(greatest((SELECT n FROM series)
+                         * (extract(epoch FROM (SELECT t - s FROM win)) / 300 + 1) - (SELECT n FROM empty), 0), 0)
                 FROM ts.road_corridor_tt, win WHERE slot_ts >= win.s AND slot_ts <= win.t""")
                 .query(Double.class).optional();
     }
